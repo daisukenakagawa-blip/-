@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>♠ ブラックジャック ♠</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+            background: #0b5e2a;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            margin: 24px 0 8px;
+            font-size: 2rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        #chip-display {
+            font-size: 1.1rem;
+            margin-bottom: 16px;
+            color: #ffd700;
+        }
+        #message {
+            font-size: 1.3rem;
+            min-height: 2em;
+            text-align: center;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        .hand-area {
+            margin: 12px 0;
+            text-align: center;
+        }
+        .hand-label {
+            font-size: 1rem;
+            margin-bottom: 6px;
+            color: #ccc;
+        }
+        .hand-label span {
+            color: #ffd700;
+            font-weight: bold;
+        }
+        .cards {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            min-height: 120px;
+        }
+        .card {
+            width: 80px;
+            height: 112px;
+            background: #fff;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            font-weight: bold;
+            box-shadow: 2px 2px 8px rgba(0,0,0,0.3);
+            transition: transform 0.3s;
+        }
+        .card.red { color: #d32f2f; }
+        .card.black { color: #222; }
+        .card.hidden-card {
+            background: linear-gradient(135deg, #1a237e, #283593);
+            color: #fff;
+            font-size: 2rem;
+        }
+        .card-rank { font-size: 1.5rem; }
+        .card-suit { font-size: 1.8rem; }
+        .buttons {
+            margin: 16px 0;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        button {
+            padding: 12px 32px;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.1s, opacity 0.1s;
+        }
+        button:hover { transform: scale(1.05); }
+        button:active { transform: scale(0.97); }
+        button:disabled { opacity: 0.4; cursor: default; transform: none; }
+        #btn-hit { background: #43a047; color: #fff; }
+        #btn-stand { background: #e53935; color: #fff; }
+        #btn-deal { background: #ffd700; color: #333; }
+        .bet-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 12px 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .bet-area label { font-size: 1rem; }
+        .bet-btn {
+            padding: 8px 16px;
+            font-size: 1rem;
+            border-radius: 6px;
+            border: 2px solid #ffd700;
+            background: transparent;
+            color: #ffd700;
+        }
+        .bet-btn.selected {
+            background: #ffd700;
+            color: #333;
+        }
+        #game-over {
+            display: none;
+            text-align: center;
+            margin-top: 24px;
+        }
+        #game-over h2 { font-size: 1.8rem; color: #e53935; }
+        #btn-restart {
+            margin-top: 12px;
+            padding: 12px 32px;
+            font-size: 1.1rem;
+            background: #ffd700;
+            color: #333;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<h1>♠ ブラックジャック ♠</h1>
+<div id="chip-display">チップ: <span id="chips">100</span></div>
+
+<div id="message">ベット額を選んで「ディール」を押してください</div>
+
+<!-- ベットエリア -->
+<div id="bet-section">
+    <div class="bet-area">
+        <label>ベット:</label>
+        <button class="bet-btn" data-bet="5">5</button>
+        <button class="bet-btn selected" data-bet="10">10</button>
+        <button class="bet-btn" data-bet="25">25</button>
+        <button class="bet-btn" data-bet="50">50</button>
+        <button class="bet-btn" data-bet="100">ALL</button>
+    </div>
+    <div class="buttons">
+        <button id="btn-deal">ディール</button>
+    </div>
+</div>
+
+<!-- ディーラー -->
+<div class="hand-area">
+    <div class="hand-label">ディーラー <span id="dealer-value"></span></div>
+    <div class="cards" id="dealer-cards"></div>
+</div>
+
+<!-- プレイヤー -->
+<div class="hand-area">
+    <div class="hand-label">あなた <span id="player-value"></span></div>
+    <div class="cards" id="player-cards"></div>
+</div>
+
+<!-- アクションボタン -->
+<div class="buttons" id="action-buttons" style="display:none;">
+    <button id="btn-hit">ヒット</button>
+    <button id="btn-stand">スタンド</button>
+</div>
+
+<!-- 次のラウンドボタン -->
+<div class="buttons" id="next-section" style="display:none;">
+    <button id="btn-next">次のラウンド</button>
+</div>
+
+<!-- ゲームオーバー -->
+<div id="game-over">
+    <h2>ゲームオーバー</h2>
+    <p>チップがなくなりました…</p>
+    <button id="btn-restart">最初からやり直す</button>
+</div>
+
+<script>
+const SUITS = ["♠", "♥", "♦", "♣"];
+const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+
+let deck = [];
+let playerHand = [];
+let dealerHand = [];
+let chips = 100;
+let currentBet = 10;
+
+function createDeck() {
+    const d = [];
+    for (const s of SUITS) for (const r of RANKS) d.push({ rank: r, suit: s });
+    for (let i = d.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [d[i], d[j]] = [d[j], d[i]];
+    }
+    return d;
+}
+
+function cardValue(rank) {
+    if (["J","Q","K"].includes(rank)) return 10;
+    if (rank === "A") return 11;
+    return parseInt(rank);
+}
+
+function handValue(hand) {
+    let total = hand.reduce((s, c) => s + cardValue(c.rank), 0);
+    let aces = hand.filter(c => c.rank === "A").length;
+    while (total > 21 && aces > 0) { total -= 10; aces--; }
+    return total;
+}
+
+function isRed(suit) { return suit === "♥" || suit === "♦"; }
+
+function renderCard(card) {
+    const div = document.createElement("div");
+    div.className = "card " + (isRed(card.suit) ? "red" : "black");
+    div.innerHTML = `<div class="card-rank">${card.rank}</div><div class="card-suit">${card.suit}</div>`;
+    return div;
+}
+
+function renderHiddenCard() {
+    const div = document.createElement("div");
+    div.className = "card hidden-card";
+    div.textContent = "?";
+    return div;
+}
+
+function renderHands(revealDealer = false) {
+    const dc = document.getElementById("dealer-cards");
+    const pc = document.getElementById("player-cards");
+    dc.innerHTML = "";
+    pc.innerHTML = "";
+
+    dealerHand.forEach((c, i) => {
+        if (i === 1 && !revealDealer) dc.appendChild(renderHiddenCard());
+        else dc.appendChild(renderCard(c));
+    });
+
+    playerHand.forEach(c => pc.appendChild(renderCard(c)));
+
+    document.getElementById("player-value").textContent = handValue(playerHand);
+    if (revealDealer) {
+        document.getElementById("dealer-value").textContent = handValue(dealerHand);
+    } else {
+        document.getElementById("dealer-value").textContent = cardValue(dealerHand[0].rank);
+    }
+}
+
+function setMessage(msg) { document.getElementById("message").textContent = msg; }
+function updateChips() { document.getElementById("chips").textContent = chips; }
+
+function showSection(id, show) { document.getElementById(id).style.display = show ? "" : "none"; }
+
+function deal() {
+    if (currentBet > chips) {
+        currentBet = chips;
+        updateBetButtons();
+    }
+    if (chips <= 0) return;
+
+    if (deck.length < 10) deck = createDeck();
+
+    playerHand = [deck.pop(), deck.pop()];
+    dealerHand = [deck.pop(), deck.pop()];
+
+    showSection("bet-section", false);
+    showSection("action-buttons", true);
+    showSection("next-section", false);
+    renderHands(false);
+
+    // ナチュラルBJ判定
+    const pBJ = handValue(playerHand) === 21;
+    const dBJ = handValue(dealerHand) === 21;
+    if (pBJ || dBJ) {
+        renderHands(true);
+        showSection("action-buttons", false);
+        if (pBJ && dBJ) {
+            setMessage("両者ブラックジャック！ 引き分け。");
+        } else if (pBJ) {
+            const win = Math.floor(currentBet * 1.5);
+            chips += win;
+            setMessage(`ブラックジャック！ +${win} チップ！`);
+        } else {
+            chips -= currentBet;
+            setMessage("ディーラーがブラックジャック… 負け。");
+        }
+        updateChips();
+        endRound();
+        return;
+    }
+
+    setMessage("ヒット or スタンド？");
+}
+
+function hit() {
+    playerHand.push(deck.pop());
+    renderHands(false);
+    if (handValue(playerHand) > 21) {
+        chips -= currentBet;
+        updateChips();
+        setMessage(`バスト！ -${currentBet} チップ…`);
+        renderHands(true);
+        showSection("action-buttons", false);
+        endRound();
+    }
+}
+
+function stand() {
+    showSection("action-buttons", false);
+    renderHands(true);
+    dealerPlay();
+}
+
+function dealerPlay() {
+    function step() {
+        if (handValue(dealerHand) < 17) {
+            dealerHand.push(deck.pop());
+            renderHands(true);
+            setTimeout(step, 600);
+        } else {
+            resolve();
+        }
+    }
+    step();
+}
+
+function resolve() {
+    const pv = handValue(playerHand);
+    const dv = handValue(dealerHand);
+    if (dv > 21) {
+        chips += currentBet;
+        setMessage(`ディーラーがバスト！ +${currentBet} チップ！`);
+    } else if (pv > dv) {
+        chips += currentBet;
+        setMessage(`勝ち！ +${currentBet} チップ！`);
+    } else if (pv < dv) {
+        chips -= currentBet;
+        setMessage(`負け… -${currentBet} チップ`);
+    } else {
+        setMessage("引き分け。");
+    }
+    updateChips();
+    endRound();
+}
+
+function endRound() {
+    if (chips <= 0) {
+        showSection("game-over", true);
+        showSection("next-section", false);
+    } else {
+        showSection("next-section", true);
+    }
+}
+
+function nextRound() {
+    showSection("next-section", false);
+    showSection("bet-section", true);
+    showSection("action-buttons", false);
+    if (currentBet > chips) { currentBet = chips; }
+    updateBetButtons();
+    setMessage("ベット額を選んで「ディール」を押してください");
+}
+
+function restart() {
+    chips = 100;
+    currentBet = 10;
+    deck = createDeck();
+    updateChips();
+    showSection("game-over", false);
+    document.getElementById("dealer-cards").innerHTML = "";
+    document.getElementById("player-cards").innerHTML = "";
+    document.getElementById("dealer-value").textContent = "";
+    document.getElementById("player-value").textContent = "";
+    nextRound();
+}
+
+function updateBetButtons() {
+    document.querySelectorAll(".bet-btn").forEach(b => {
+        const v = parseInt(b.dataset.bet);
+        b.classList.toggle("selected", v === currentBet);
+    });
+}
+
+// イベント設定
+document.getElementById("btn-deal").addEventListener("click", deal);
+document.getElementById("btn-hit").addEventListener("click", hit);
+document.getElementById("btn-stand").addEventListener("click", stand);
+document.getElementById("btn-next").addEventListener("click", nextRound);
+document.getElementById("btn-restart").addEventListener("click", restart);
+
+document.querySelectorAll(".bet-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+        let v = parseInt(btn.dataset.bet);
+        if (v > chips) v = chips;
+        currentBet = v;
+        updateBetButtons();
+    });
+});
+
+// 初期化
+deck = createDeck();
+</script>
+</body>
+</html>
