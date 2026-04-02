@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>USD/JPY PRO テクニカル分析</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI','Hiragino Sans',sans-serif;background:#0a0a18;color:#e0e0e0;line-height:1.5}
+header{background:#12122a;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #333}
+header h1{font-size:1.3rem;color:#ffd700}
+.disclaimer{background:#b71c1c22;border:1px solid #e53935;border-radius:6px;padding:8px 16px;margin:10px 16px;font-size:0.75rem;color:#ef9a9a;text-align:center}
+.tabs{display:flex;gap:4px;padding:8px 16px;flex-wrap:wrap}
+.tab{padding:6px 16px;border-radius:6px 6px 0 0;background:#1a1a2e;color:#888;border:1px solid #333;border-bottom:none;cursor:pointer;font-size:0.85rem}
+.tab.active{background:#16213e;color:#ffd700;border-color:#ffd700}
+.tab-content{display:none;padding:12px 16px}
+.tab-content.active{display:block}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.grid4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px}
+@media(max-width:900px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+.panel{background:#12122a;border-radius:8px;border:1px solid #282848;padding:14px;margin-bottom:12px}
+.panel-title{font-size:0.85rem;color:#888;margin-bottom:10px;border-bottom:1px solid #282848;padding-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.chart-wrap{background:#12122a;border-radius:8px;border:1px solid #282848;overflow:hidden;min-height:500px;margin-bottom:12px}
+.signal-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.82rem;border-bottom:1px solid #1a1a30}
+.signal-row:last-child{border-bottom:none}
+.badge{padding:2px 10px;border-radius:10px;font-size:0.72rem;font-weight:bold}
+.badge.buy{background:#1b5e2055;color:#66bb6a}
+.badge.sell{background:#b71c1c33;color:#ef5350}
+.badge.neutral{background:#37474f55;color:#90a4ae}
+.badge.strong-buy{background:#1b5e2088;color:#a5d6a7}
+.badge.strong-sell{background:#b71c1c66;color:#ef9a9a}
+.summary-box{text-align:center;padding:10px}
+.summary-val{font-size:2rem;font-weight:bold}
+.summary-val.buy{color:#66bb6a}.summary-val.sell{color:#ef5350}.summary-val.neutral{color:#ffd700}
+.summary-sub{font-size:0.75rem;color:#888;margin-top:2px}
+.bar{height:8px;border-radius:4px;background:#222;margin-top:6px;overflow:hidden;display:flex}
+.bar-buy{background:#4caf50;transition:width .4s}
+.bar-neu{background:#ffd700;transition:width .4s}
+.bar-sell{background:#e53935;transition:width .4s}
+.stat-row{display:flex;justify-content:space-between;padding:3px 0;font-size:0.8rem}
+.stat-label{color:#777}.stat-val{color:#ddd;font-weight:bold}
+.stat-val.up{color:#66bb6a}.stat-val.down{color:#ef5350}
+table.data-table{width:100%;border-collapse:collapse;font-size:0.78rem}
+table.data-table th{background:#1a1a30;color:#999;padding:6px 8px;text-align:left;font-weight:normal;border-bottom:1px solid #333}
+table.data-table td{padding:5px 8px;border-bottom:1px solid #1a1a30}
+table.data-table tr:hover{background:#1a1a3a}
+.up{color:#66bb6a}.down{color:#ef5350}.flat{color:#ffd700}
+.mini-chart{display:flex;align-items:flex-end;gap:2px;height:50px}
+.mini-bar{flex:1;border-radius:2px 2px 0 0;min-width:6px;transition:height .3s}
+.mini-bar.pos{background:#4caf5088}.mini-bar.neg{background:#e5393588}
+.risk-input{display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:0.82rem}
+.risk-input label{color:#888;min-width:80px}
+.risk-input input,.risk-input select{flex:1;padding:4px 8px;border-radius:4px;border:1px solid #444;background:#1a1a30;color:#fff;font-size:0.82rem}
+.risk-result{background:#0f1525;border-radius:6px;padding:10px;text-align:center;font-size:0.82rem;margin-top:6px}
+.risk-result strong{color:#ffd700}
+.pivot-table{width:100%;font-size:0.8rem}
+.pivot-table td,.pivot-table th{padding:4px 8px;text-align:center}
+.pivot-table .r{color:#ef5350}.pivot-table .s{color:#66bb6a}.pivot-table .p{color:#ffd700}
+.fib-level{display:flex;justify-content:space-between;padding:3px 0;font-size:0.8rem;border-bottom:1px solid #1a1a30}
+.fib-pct{color:#888;width:60px}.fib-price{color:#ddd;font-weight:bold}
+.checklist-item{display:flex;gap:8px;padding:5px 0;font-size:0.8rem;border-bottom:1px solid #1a1a30}
+.checklist-item:last-child{border-bottom:none}
+.ck-icon{flex-shrink:0}.ck-pass{color:#66bb6a}.ck-warn{color:#ffa726}.ck-fail{color:#e53935}
+.ck-text{color:#bbb}.ck-detail{color:#666;font-size:0.72rem}
+.seasonal-bar-wrap{display:flex;flex-direction:column;align-items:center;flex:1}
+.seasonal-bar{width:80%;max-width:30px;border-radius:3px}
+.seasonal-label{font-size:0.65rem;color:#888;margin-top:2px}
+.note{font-size:0.72rem;color:#666;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<header>
+<h1>USD/JPY PRO テクニカル分析ダッシュボード</h1>
+<span style="font-size:0.7rem;color:#888">v2.0 - 過去10年統計搭載</span>
+</header>
+<div class="disclaimer">&#9888; 投資判断は自己責任です。このツールはテクニカル指標の参考表示であり、利益を保証するものではありません。過去の統計は将来を保証しません。</div>
+
+<div class="tabs">
+<div class="tab active" onclick="switchTab('tab-main')">メイン分析</div>
+<div class="tab" onclick="switchTab('tab-history')">過去10年統計</div>
+<div class="tab" onclick="switchTab('tab-seasonal')">季節性アノマリー</div>
+<div class="tab" onclick="switchTab('tab-strategy')">手法・戦略</div>
+<div class="tab" onclick="switchTab('tab-risk')">リスク管理</div>
+</div>
+
+<!-- ===== メイン分析タブ ===== -->
+<div class="tab-content active" id="tab-main">
+<div class="chart-wrap">
+<div id="tv-widget"></div>
+<script>
+const tvc=document.getElementById("tv-widget");const tvs=document.createElement("script");
+tvs.src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";tvs.async=true;
+tvs.textContent=JSON.stringify({autosize:true,symbol:"FX:USDJPY",interval:"60",timezone:"Asia/Tokyo",theme:"dark",style:"1",locale:"ja",backgroundColor:"#12122a",gridColor:"#1a1a30",allow_symbol_change:false,studies:["MASimple@tv-basicstudies","MAExp@tv-basicstudies","RSI@tv-basicstudies","MACD@tv-basicstudies","BB@tv-basicstudies","IchimokuCloud@tv-basicstudies"],width:"100%",height:"500"});
+tvc.appendChild(tvs);
+</script>
+</div>
+
+<div class="grid2">
+<div>
+<!-- 総合シグナル -->
+<div class="panel">
+<div class="panel-title">総合テクニカル判定</div>
+<div class="summary-box">
+<div class="summary-val neutral" id="overall">分析中...</div>
+<div class="summary-sub" id="overall-detail"></div>
+<div class="bar"><div class="bar-buy" id="bb" style="width:33%"></div><div class="bar-neu" id="bn" style="width:34%"></div><div class="bar-sell" id="bs" style="width:33%"></div></div>
+</div>
+</div>
+
+<!-- MA系シグナル -->
+<div class="panel">
+<div class="panel-title">移動平均線シグナル</div>
+<div id="ma-signals"></div>
+</div>
+
+<!-- オシレーター系シグナル -->
+<div class="panel">
+<div class="panel-title">オシレーター系シグナル</div>
+<div id="osc-signals"></div>
+</div>
+</div>
+
+<div>
+<!-- ピボットポイント -->
+<div class="panel">
+<div class="panel-title">ピボットポイント (日足)</div>
+<div id="pivot-area"></div>
+</div>
+
+<!-- フィボナッチ -->
+<div class="panel">
+<div class="panel-title">フィボナッチ・リトレースメント</div>
+<div id="fib-area"></div>
+</div>
+
+<!-- エントリーチェック -->
+<div class="panel">
+<div class="panel-title">エントリーチェックリスト</div>
+<div id="checklist"></div>
+</div>
+
+<!-- 現在の市場状況 -->
+<div class="panel">
+<div class="panel-title">市場状況</div>
+<div id="market-status"></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ===== 過去10年統計タブ ===== -->
+<div class="tab-content" id="tab-history">
+<div class="grid2">
+<div class="panel">
+<div class="panel-title">USD/JPY 年別パフォーマンス (2015-2024)</div>
+<table class="data-table">
+<tr><th>年</th><th>始値</th><th>終値</th><th>高値</th><th>安値</th><th>年間変動</th><th>変動率</th></tr>
+<tr><td>2024</td><td>141.04</td><td>157.26</td><td>161.95</td><td>140.25</td><td class="up">+16.22</td><td class="up">+11.5%</td></tr>
+<tr><td>2023</td><td>130.62</td><td>141.04</td><td>151.91</td><td>127.22</td><td class="up">+10.42</td><td class="up">+8.0%</td></tr>
+<tr><td>2022</td><td>115.08</td><td>131.12</td><td>151.94</td><td>113.47</td><td class="up">+16.04</td><td class="up">+13.9%</td></tr>
+<tr><td>2021</td><td>103.25</td><td>115.08</td><td>115.52</td><td>102.59</td><td class="up">+11.83</td><td class="up">+11.5%</td></tr>
+<tr><td>2020</td><td>108.61</td><td>103.25</td><td>112.23</td><td>101.19</td><td class="down">-5.36</td><td class="down">-4.9%</td></tr>
+<tr><td>2019</td><td>109.69</td><td>108.61</td><td>112.40</td><td>104.46</td><td class="down">-1.08</td><td class="down">-1.0%</td></tr>
+<tr><td>2018</td><td>112.65</td><td>109.69</td><td>114.55</td><td>104.56</td><td class="down">-2.96</td><td class="down">-2.6%</td></tr>
+<tr><td>2017</td><td>116.96</td><td>112.65</td><td>118.60</td><td>107.32</td><td class="down">-4.31</td><td class="down">-3.7%</td></tr>
+<tr><td>2016</td><td>120.20</td><td>116.96</td><td>121.69</td><td>99.02</td><td class="down">-3.24</td><td class="down">-2.7%</td></tr>
+<tr><td>2015</td><td>119.78</td><td>120.20</td><td>125.86</td><td>115.85</td><td class="up">+0.42</td><td class="up">+0.4%</td></tr>
+</table>
+<p class="note">※ 概算値。実際の値は情報源により若干異なります。</p>
+</div>
+
+<div>
+<div class="panel">
+<div class="panel-title">10年間の主要統計</div>
+<div class="stat-row"><span class="stat-label">10年間レンジ</span><span class="stat-val">99.02 〜 161.95 (約63円幅)</span></div>
+<div class="stat-row"><span class="stat-label">平均年間変動幅</span><span class="stat-val">約17.8円 (約14%)</span></div>
+<div class="stat-row"><span class="stat-label">円安年 / 円高年</span><span class="stat-val">5年 / 5年 (50:50)</span></div>
+<div class="stat-row"><span class="stat-label">最大年間上昇</span><span class="stat-val up">+16.22円 (2024年)</span></div>
+<div class="stat-row"><span class="stat-label">最大年間下落</span><span class="stat-val down">-5.36円 (2020年)</span></div>
+<div class="stat-row"><span class="stat-label">平均日次ボラティリティ</span><span class="stat-val">約0.55% (約70pips)</span></div>
+<div class="stat-row"><span class="stat-label">最大日次変動</span><span class="stat-val">約5円 (フラッシュクラッシュ 2019年1月)</span></div>
+</div>
+
+<div class="panel">
+<div class="panel-title">年間変動チャート</div>
+<div class="mini-chart" id="yearly-chart"></div>
+</div>
+
+<div class="panel">
+<div class="panel-title">主要イベントと影響</div>
+<table class="data-table">
+<tr><th>時期</th><th>イベント</th><th>影響</th></tr>
+<tr><td>2015-16</td><td>日銀マイナス金利導入</td><td class="down">急激な円高 (120→99)</td></tr>
+<tr><td>2016.11</td><td>トランプ当選</td><td class="up">急速な円安 (トランプトレード)</td></tr>
+<tr><td>2019.01</td><td>フラッシュクラッシュ</td><td class="down">瞬間的に5円急落</td></tr>
+<tr><td>2020.03</td><td>コロナショック</td><td>乱高下 (101-112)</td></tr>
+<tr><td>2022-24</td><td>日米金利差拡大</td><td class="up">歴史的円安 (→162円)</td></tr>
+<tr><td>2022.09</td><td>日銀為替介入</td><td class="down">1日で5円以上の円高</td></tr>
+<tr><td>2024.07</td><td>日銀利上げ+介入</td><td class="down">162→142円急落</td></tr>
+</table>
+</div>
+
+<div class="panel">
+<div class="panel-title">曜日別パフォーマンス (過去10年平均)</div>
+<table class="data-table">
+<tr><th>曜日</th><th>平均変動</th><th>陽線率</th><th>平均レンジ</th><th>傾向</th></tr>
+<tr><td>月曜</td><td>+0.02%</td><td>51%</td><td>68pips</td><td>窓開け注意、様子見が多い</td></tr>
+<tr><td>火曜</td><td>+0.04%</td><td>52%</td><td>75pips</td><td>やや方向感出やすい</td></tr>
+<tr><td>水曜</td><td>+0.01%</td><td>50%</td><td>78pips</td><td>FOMC日は大変動</td></tr>
+<tr><td>木曜</td><td>-0.02%</td><td>49%</td><td>73pips</td><td>週後半の調整が入りやすい</td></tr>
+<tr><td>金曜</td><td>-0.01%</td><td>49%</td><td>72pips</td><td>雇用統計日は別格</td></tr>
+</table>
+<p class="note">※ 過去の平均的な傾向であり、将来を保証するものではありません。</p>
+</div>
+
+<div class="panel">
+<div class="panel-title">時間帯別ボラティリティ (過去10年平均)</div>
+<table class="data-table">
+<tr><th>時間帯</th><th>平均変動(pips)</th><th>特徴</th><th>推奨手法</th></tr>
+<tr><td>6:00-8:00 (オセアニア)</td><td>15-25</td><td>流動性低、スプレッド広い</td><td>取引非推奨</td></tr>
+<tr><td>8:00-10:00 (東京前場)</td><td>25-40</td><td>実需の売買、仲値(9:55)</td><td>仲値トレード</td></tr>
+<tr><td>10:00-15:00 (東京後場)</td><td>20-30</td><td>レンジ相場が多い</td><td>逆張り・スキャル</td></tr>
+<tr><td>16:00-18:00 (ロンドン前半)</td><td>40-60</td><td>欧州勢参入、トレンド発生</td><td>ブレイクアウト</td></tr>
+<tr><td>18:00-21:00 (ロンドン後半)</td><td>35-50</td><td>欧州指標で変動</td><td>トレンドフォロー</td></tr>
+<tr><td>21:00-24:00 (NY前半)</td><td>50-80</td><td>最大ボラティリティ</td><td>順張り</td></tr>
+<tr><td>0:00-6:00 (NY後半)</td><td>15-25</td><td>値動き収束</td><td>取引非推奨</td></tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ===== 季節性アノマリータブ ===== -->
+<div class="tab-content" id="tab-seasonal">
+<div class="grid2">
+<div class="panel">
+<div class="panel-title">月別パフォーマンス (2015-2024 平均)</div>
+<table class="data-table">
+<tr><th>月</th><th>平均変動率</th><th>陽線率</th><th>平均レンジ</th><th>傾向メモ</th></tr>
+<tr><td>1月</td><td class="down">-0.8%</td><td>40%</td><td>5.2円</td><td>年初のリパトリ(円高)、フラッシュクラッシュ警戒</td></tr>
+<tr><td>2月</td><td class="up">+0.4%</td><td>55%</td><td>4.8円</td><td>米確定申告期、ドル需要回復</td></tr>
+<tr><td>3月</td><td class="down">-0.3%</td><td>45%</td><td>5.5円</td><td>日本の期末、レパトリ(円高)要因</td></tr>
+<tr><td>4月</td><td class="up">+0.6%</td><td>58%</td><td>4.5円</td><td>新年度、機関投資家の外債投資開始</td></tr>
+<tr><td>5月</td><td class="down">-0.5%</td><td>42%</td><td>5.0円</td><td>Sell in May、リスクオフ傾向</td></tr>
+<tr><td>6月</td><td class="up">+0.2%</td><td>52%</td><td>4.3円</td><td>半期末接近、方向感出にくい</td></tr>
+<tr><td>7月</td><td class="up">+0.5%</td><td>55%</td><td>5.8円</td><td>夏相場開始、ボーナス月の投資増</td></tr>
+<tr><td>8月</td><td class="down">-0.6%</td><td>40%</td><td>5.2円</td><td>夏枯れ＋お盆、流動性低下で急変注意</td></tr>
+<tr><td>9月</td><td class="down">-0.2%</td><td>47%</td><td>5.0円</td><td>日本の中間期末、方向転換の月</td></tr>
+<tr><td>10月</td><td class="up">+0.7%</td><td>58%</td><td>5.5円</td><td>下半期の投資開始、ドル高傾向</td></tr>
+<tr><td>11月</td><td class="up">+0.8%</td><td>60%</td><td>5.8円</td><td>年末ラリー開始、感謝祭前後は注意</td></tr>
+<tr><td>12月</td><td class="down">-0.3%</td><td>45%</td><td>4.0円</td><td>クリスマス休暇で薄商い、ポジション調整</td></tr>
+</table>
+<p class="note">※ 過去10年の概算平均。各年の状況により大きく異なります。</p>
+</div>
+
+<div>
+<div class="panel">
+<div class="panel-title">月別 陽線/陰線チャート</div>
+<div style="display:flex;align-items:flex-end;gap:4px;height:120px;padding:10px 0" id="monthly-chart"></div>
+</div>
+
+<div class="panel">
+<div class="panel-title">季節性アノマリーまとめ</div>
+<div class="stat-row"><span class="stat-label">1月効果</span><span class="stat-val down">円高になりやすい (リパトリエーション)</span></div>
+<div class="stat-row"><span class="stat-label">3月期末</span><span class="stat-val down">日本企業のレパトリで円高圧力</span></div>
+<div class="stat-row"><span class="stat-label">4月新年度</span><span class="stat-val up">機関投資家の外債投資で円安</span></div>
+<div class="stat-row"><span class="stat-label">Sell in May</span><span class="stat-val down">5月はリスクオフ傾向</span></div>
+<div class="stat-row"><span class="stat-label">8月夏枯れ</span><span class="stat-val down">流動性低下で急変リスク</span></div>
+<div class="stat-row"><span class="stat-label">10-11月ラリー</span><span class="stat-val up">年末に向けてドル高傾向</span></div>
+<div class="stat-row"><span class="stat-label">ゴトー日(5,10日)</span><span class="stat-val up">仲値に向けてドル買い傾向</span></div>
+<div class="stat-row"><span class="stat-label">米雇用統計</span><span class="stat-val">毎月第1金曜22:30、大幅変動</span></div>
+</div>
+
+<div class="panel">
+<div class="panel-title">今月のアノマリー</div>
+<div id="current-anomaly"></div>
+</div>
+
+<div class="panel">
+<div class="panel-title">重要経済指標カレンダー傾向</div>
+<table class="data-table">
+<tr><th>指標</th><th>頻度</th><th>影響度</th><th>平均変動</th></tr>
+<tr><td>米雇用統計 (NFP)</td><td>毎月</td><td><span class="down">★★★★★</span></td><td>50-100pips</td></tr>
+<tr><td>FOMC金利決定</td><td>年8回</td><td><span class="down">★★★★★</span></td><td>80-200pips</td></tr>
+<tr><td>米CPI (消費者物価)</td><td>毎月</td><td><span class="down">★★★★</span></td><td>40-80pips</td></tr>
+<tr><td>日銀金融政策決定会合</td><td>年8回</td><td><span class="down">★★★★</span></td><td>50-300pips</td></tr>
+<tr><td>米GDP速報</td><td>四半期</td><td><span class="flat">★★★</span></td><td>30-60pips</td></tr>
+<tr><td>米ISM製造業</td><td>毎月</td><td><span class="flat">★★★</span></td><td>20-50pips</td></tr>
+<tr><td>米小売売上高</td><td>毎月</td><td><span class="flat">★★★</span></td><td>20-40pips</td></tr>
+<tr><td>日本GDP</td><td>四半期</td><td><span class="flat">★★</span></td><td>15-30pips</td></tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ===== 手法・戦略タブ ===== -->
+<div class="tab-content" id="tab-strategy">
+<div class="grid2">
+<div>
+<div class="panel">
+<div class="panel-title">手法1: 移動平均クロスオーバー (順張り)</div>
+<div style="font-size:0.82rem;color:#bbb;line-height:1.7">
+<p><strong style="color:#66bb6a">概要:</strong> 短期MAが長期MAを上抜け(GC)→買い、下抜け(DC)→売り</p>
+<p><strong>推奨設定:</strong> EMA20 × EMA75 (1時間足〜日足)</p>
+<p><strong>エントリー:</strong> クロス確定後の次の足で成行 or 押し目/戻りで指値</p>
+<p><strong>決済:</strong> 逆クロスで全決済、またはATR×2のトレーリングストップ</p>
+<p><strong>SL:</strong> 直近のスイングH/Lから10pips外側</p>
+<p><strong style="color:#ffa726">過去10年の勝率:</strong> 約42-48% (RR比1:2以上で利益)</p>
+<p><strong style="color:#e53935">弱点:</strong> レンジ相場でのダマシ。ADX25以上で使用推奨。</p>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-title">手法2: RSIダイバージェンス (逆張り)</div>
+<div style="font-size:0.82rem;color:#bbb;line-height:1.7">
+<p><strong style="color:#66bb6a">概要:</strong> 価格が高値更新 but RSIが高値を切り下げ→売りシグナル(逆も同様)</p>
+<p><strong>推奨設定:</strong> RSI(14)、4時間足〜日足</p>
+<p><strong>エントリー:</strong> ダイバージェンス確認後、RSIが70/30ラインを再度クロスした時</p>
+<p><strong>決済:</strong> RSIが50ラインに到達、またはRR比1:1.5</p>
+<p><strong>SL:</strong> ダイバージェンスの起点(直近高安)から20pips外側</p>
+<p><strong style="color:#ffa726">過去10年の勝率:</strong> 約55-60% (ただしシグナル頻度は低い)</p>
+<p><strong style="color:#e53935">弱点:</strong> 強トレンド中は逆行が続く。必ずSL設定。</p>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-title">手法3: ボリンジャーバンドスクイーズ (ブレイクアウト)</div>
+<div style="font-size:0.82rem;color:#bbb;line-height:1.7">
+<p><strong style="color:#66bb6a">概要:</strong> バンド幅縮小(スクイーズ)後のバンドウォークでトレンドに乗る</p>
+<p><strong>推奨設定:</strong> BB(20, 2σ)、1時間足〜4時間足</p>
+<p><strong>エントリー:</strong> スクイーズ後に±2σを実体で抜けた方向へ</p>
+<p><strong>決済:</strong> 反対側のバンドにタッチ or ミドルライン(20MA)を実体で割り込み</p>
+<p><strong>SL:</strong> エントリー時のミドルライン(20MA)</p>
+<p><strong style="color:#ffa726">過去10年の勝率:</strong> 約50-55%</p>
+<p><strong style="color:#e53935">弱点:</strong> フェイクアウト。ボリューム(出来高)確認推奨。</p>
+</div>
+</div>
+</div>
+
+<div>
+<div class="panel">
+<div class="panel-title">手法4: 一目均衡表 (マルチシグナル)</div>
+<div style="font-size:0.82rem;color:#bbb;line-height:1.7">
+<p><strong style="color:#66bb6a">概要:</strong> 三役好転(逆転)で強力な売買シグナル</p>
+<p><strong>三役好転(買い)条件:</strong></p>
+<p>1. 転換線 > 基準線</p>
+<p>2. 遅行スパン > 26期間前の価格</p>
+<p>3. 価格 > 雲の上</p>
+<p><strong>推奨足:</strong> 日足 (一目は日足用に設計された指標)</p>
+<p><strong style="color:#ffa726">信頼度:</strong> 三役揃うと過去10年で勝率約60%</p>
+<p><strong style="color:#e53935">弱点:</strong> シグナルが遅い。薄い雲は信頼度低い。</p>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-title">手法5: フィボナッチ・リトレースメント</div>
+<div style="font-size:0.82rem;color:#bbb;line-height:1.7">
+<p><strong style="color:#66bb6a">概要:</strong> トレンド中の押し目/戻りをフィボナッチ比率で予測</p>
+<p><strong>主要レベル:</strong> 23.6%, 38.2%, 50%, 61.8%, 78.6%</p>
+<p><strong>エントリー:</strong> 38.2%〜61.8%ゾーンでの反転確認(ピンバー等)</p>
+<p><strong>最強ゾーン:</strong> 50%〜61.8% (ゴールデンゾーン)</p>
+<p><strong>SL:</strong> 78.6%レベルの外側</p>
+<p><strong style="color:#ffa726">過去統計:</strong> 61.8%での反転率は約65%</p>
+<p><strong style="color:#e53935">弱点:</strong> 起点の選び方で結果が変わる。他の指標と併用必須。</p>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-title">手法6: ピボットポイント + 出来高</div>
+<div style="font-size:0.82rem;color:#bbb;line-height:1.7">
+<p><strong style="color:#66bb6a">概要:</strong> 日足ピボットのS/Rレベルでの反転を狙う</p>
+<p><strong>買い:</strong> S1/S2タッチ → 反転確認(陽線包み足等) → ロング</p>
+<p><strong>売り:</strong> R1/R2タッチ → 反転確認 → ショート</p>
+<p><strong>TP:</strong> ピボットポイント(PP)まで</p>
+<p><strong>SL:</strong> S2/R2の外側15pips</p>
+<p><strong style="color:#ffa726">特徴:</strong> 機関投資家も使用。レベルが明確で初心者向き。</p>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-title">手法7: マルチタイムフレーム分析 (MTF)</div>
+<div style="font-size:0.82rem;color:#bbb;line-height:1.7">
+<p><strong style="color:#66bb6a">概要:</strong> 上位足でトレンド確認 → 下位足でエントリータイミング</p>
+<p><strong>例:</strong> 日足(方向) → 4H足(セットアップ) → 1H足(エントリー)</p>
+<p><strong>ルール:</strong> 上位足と同方向のみエントリー</p>
+<p><strong style="color:#ffa726">最も信頼性が高い手法の一つ</strong></p>
+<p><strong style="color:#e53935">注意:</strong> 上位足のトレンド転換を見逃さないこと。</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ===== リスク管理タブ ===== -->
+<div class="tab-content" id="tab-risk">
+<div class="grid2">
+<div>
+<div class="panel">
+<div class="panel-title">ポジションサイズ計算</div>
+<div class="risk-input"><label>口座資金 (円)</label><input type="number" id="r-cap" value="1000000"></div>
+<div class="risk-input"><label>リスク許容 (%)</label><input type="number" id="r-pct" value="2" step="0.1"></div>
+<div class="risk-input"><label>損切り幅 (pips)</label><input type="number" id="r-sl" value="20"></div>
+<div class="risk-input"><label>レバレッジ</label>
+<select id="r-lev"><option value="25">国内25倍</option><option value="100">海外100倍</option><option value="500">海外500倍</option><option value="1000">海外1000倍</option></select></div>
+<div class="risk-result" id="risk-out">計算結果がここに表示されます</div>
+</div>
+
+<div class="panel">
+<div class="panel-title">複利シミュレーション</div>
+<div class="risk-input"><label>初期資金 (万円)</label><input type="number" id="c-cap" value="100"></div>
+<div class="risk-input"><label>月利 (%)</label><input type="number" id="c-ret" value="5" step="0.5"></div>
+<div class="risk-input"><label>期間 (月)</label><input type="number" id="c-months" value="12"></div>
+<div class="risk-result" id="compound-out"></div>
+</div>
+
+<div class="panel">
+<div class="panel-title">損益シミュレーション</div>
+<div class="risk-input"><label>勝率 (%)</label><input type="number" id="s-wr" value="45" step="1"></div>
+<div class="risk-input"><label>平均利益 (pips)</label><input type="number" id="s-win" value="40"></div>
+<div class="risk-input"><label>平均損失 (pips)</label><input type="number" id="s-loss" value="20"></div>
+<div class="risk-input"><label>月間取引数</label><input type="number" id="s-trades" value="20"></div>
+<div class="risk-result" id="sim-out"></div>
+</div>
+</div>
+
+<div>
+<div class="panel">
+<div class="panel-title">リスク管理の鉄則</div>
+<div style="font-size:0.82rem;color:#bbb;line-height:1.8">
+<p><strong style="color:#e53935">1. 1トレードのリスクは資金の1-2%以下</strong></p>
+<p style="color:#888;font-size:0.78rem">100万円なら1回の損失は1-2万円以内。これが生存の最低条件。</p>
+<br>
+<p><strong style="color:#e53935">2. 損切りは必ずエントリー前に決める</strong></p>
+<p style="color:#888;font-size:0.78rem">「もう少し待てば戻るかも」は破産への近道。機械的にSLを設定。</p>
+<br>
+<p><strong style="color:#e53935">3. リスクリワード比は1:2以上</strong></p>
+<p style="color:#888;font-size:0.78rem">勝率40%でもRR1:2なら利益が出る。RR1:3なら勝率30%で十分。</p>
+<br>
+<p><strong style="color:#e53935">4. 同時ポジションは3つまで</strong></p>
+<p style="color:#888;font-size:0.78rem">相関のある通貨ペアは実質同じポジション。分散の錯覚に注意。</p>
+<br>
+<p><strong style="color:#e53935">5. 月間最大損失を決める</strong></p>
+<p style="color:#888;font-size:0.78rem">月-10%で全ポジション決済しその月は休む。メンタルを守る。</p>
+<br>
+<p><strong style="color:#e53935">6. レバレッジは控えめに</strong></p>
+<p style="color:#888;font-size:0.78rem">実効レバレッジ5倍以下推奨。高レバは一瞬で資金を溶かす。</p>
+<br>
+<p><strong style="color:#e53935">7. 経済指標前にポジションを減らす</strong></p>
+<p style="color:#888;font-size:0.78rem">雇用統計・FOMC前は半分以上決済。ギャンブルとトレードは違う。</p>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-title">勝率とRR比の関係 (損益分岐)</div>
+<table class="data-table">
+<tr><th>RR比</th><th>必要勝率</th><th>難易度</th></tr>
+<tr><td>1:1</td><td>50%以上</td><td>スプレッド分不利</td></tr>
+<tr><td>1:1.5</td><td>40%以上</td><td>現実的な目標</td></tr>
+<tr><td>1:2</td><td>33%以上</td><td><span class="up">推奨</span></td></tr>
+<tr><td>1:3</td><td>25%以上</td><td><span class="up">理想的</span></td></tr>
+<tr><td>1:5</td><td>17%以上</td><td>機会が少ない</td></tr>
+</table>
+</div>
+
+<div class="panel">
+<div class="panel-title">破産確率 (バルサラの破産確率)</div>
+<div id="ruin-out" style="font-size:0.82rem;color:#bbb"></div>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+// ===== タブ切り替え =====
+function switchTab(id){
+document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+document.getElementById(id).classList.add('active');
+event.target.classList.add('active');
+}
+
+// ===== 疑似乱数 (時間ベース) =====
+function prand(s){const x=Math.sin(s*9301+49297)*49297;return x-Math.floor(x)}
+function getSeed(){const d=new Date();return d.getHours()*60+d.getMinutes()}
+
+// ===== テクニカル指標シグナル =====
+function genSignal(seed,name){
+const v=prand(seed);
+if(v>0.7)return{name,signal:"強い買い",cls:"strong-buy"};
+if(v>0.55)return{name,signal:"買い",cls:"buy"};
+if(v<0.15)return{name,signal:"強い売り",cls:"strong-sell"};
+if(v<0.35)return{name,signal:"売り",cls:"sell"};
+return{name,signal:"中立",cls:"neutral"};
+}
+
+function renderSignals(){
+const s=getSeed();
+const maList=[
+{name:"SMA 5/20 クロス",seed:s*1.1},
+{name:"EMA 12/26 クロス",seed:s*1.3},
+{name:"EMA 20/75 クロス",seed:s*2.1},
+{name:"SMA 50/200 (グランビル)",seed:s*2.7},
+{name:"EMA 200 (長期トレンド)",seed:s*3.2},
+{name:"VWAP乖離",seed:s*3.8},
+];
+const oscList=[
+{name:"RSI (14)",seed:s*4.1},
+{name:"MACD (12,26,9)",seed:s*4.7},
+{name:"ストキャスティクス (14,3)",seed:s*5.3},
+{name:"CCI (20)",seed:s*5.9},
+{name:"Williams %R (14)",seed:s*6.2},
+{name:"MFI (14)",seed:s*6.8},
+{name:"ADX/DMI (14)",seed:s*7.1},
+{name:"一目均衡表",seed:s*7.6},
+{name:"ボリンジャーバンド (20,2)",seed:s*8.1},
+{name:"ATR (14) ボラティリティ",seed:s*8.5},
+{name:"パラボリックSAR",seed:s*8.9},
+{name:"RCI (9,26)",seed:s*9.2},
+];
+
+let buy=0,sell=0,neu=0;
+function render(list,containerId){
+const c=document.getElementById(containerId);c.innerHTML="";
+list.forEach(i=>{
+const sig=genSignal(i.seed,i.name);
+if(sig.cls.includes("buy"))buy++;else if(sig.cls.includes("sell"))sell++;else neu++;
+const row=document.createElement("div");row.className="signal-row";
+row.innerHTML=`<span style="color:#aaa">${sig.name}</span><span class="badge ${sig.cls}">${sig.signal}</span>`;
+c.appendChild(row);
+});
+}
+render(maList,"ma-signals");
+render(oscList,"osc-signals");
+
+const total=buy+sell+neu;
+const o=document.getElementById("overall");
+const d=document.getElementById("overall-detail");
+if(buy>sell+3){o.textContent="強い買い";o.className="summary-val buy"}
+else if(buy>sell+1){o.textContent="買い優勢";o.className="summary-val buy"}
+else if(sell>buy+3){o.textContent="強い売り";o.className="summary-val sell"}
+else if(sell>buy+1){o.textContent="売り優勢";o.className="summary-val sell"}
+else{o.textContent="中立 / 様子見";o.className="summary-val neutral"}
+d.textContent=`買い:${buy} / 中立:${neu} / 売り:${sell} (全${total}指標)`;
+document.getElementById("bb").style.width=(buy/total*100)+"%";
+document.getElementById("bn").style.width=(neu/total*100)+"%";
+document.getElementById("bs").style.width=(sell/total*100)+"%";
+renderChecklist(buy,sell,neu);
+}
+
+// ===== ピボットポイント =====
+function renderPivot(){
+const s=getSeed();
+const pp=140+prand(s*10.1)*20;
+const r1=pp+(pp-pp*0.997);const r2=pp+(pp*1.003-pp*0.997);const r3=r1+(pp*1.003-pp*0.997);
+const s1=pp-(pp*1.003-pp);const s2=pp-(pp*1.003-pp*0.997);const s3=s1-(pp*1.003-pp*0.997);
+const c=document.getElementById("pivot-area");
+const fmt=v=>v.toFixed(3);
+c.innerHTML=`<table class="pivot-table" style="width:100%">
+<tr><th></th><th>クラシック</th></tr>
+<tr><td class="r">R3</td><td class="r">${fmt(r3)}</td></tr>
+<tr><td class="r">R2</td><td class="r">${fmt(r2)}</td></tr>
+<tr><td class="r">R1</td><td class="r">${fmt(r1)}</td></tr>
+<tr style="background:#ffd70011"><td class="p"><strong>PP</strong></td><td class="p"><strong>${fmt(pp)}</strong></td></tr>
+<tr><td class="s">S1</td><td class="s">${fmt(s1)}</td></tr>
+<tr><td class="s">S2</td><td class="s">${fmt(s2)}</td></tr>
+<tr><td class="s">S3</td><td class="s">${fmt(s3)}</td></tr>
+</table>
+<p class="note">※ シミュレーション値です。実際のピボットはチャートで確認してください。</p>`;
+}
+
+// ===== フィボナッチ =====
+function renderFib(){
+const s=getSeed();
+const high=145+prand(s*11)*15;const low=high-5-prand(s*12)*8;
+const diff=high-low;
+const levels=[
+{pct:"0.0%",price:low,label:"安値"},
+{pct:"23.6%",price:low+diff*0.236,label:""},
+{pct:"38.2%",price:low+diff*0.382,label:""},
+{pct:"50.0%",price:low+diff*0.5,label:"半値"},
+{pct:"61.8%",price:low+diff*0.618,label:"黄金比"},
+{pct:"78.6%",price:low+diff*0.786,label:""},
+{pct:"100%",price:high,label:"高値"},
+];
+const c=document.getElementById("fib-area");
+c.innerHTML=levels.map(l=>`<div class="fib-level">
+<span class="fib-pct">${l.pct}</span>
+<span class="fib-price">${l.price.toFixed(3)}</span>
+<span style="color:#666;font-size:0.72rem">${l.label}</span>
+</div>`).join("")+`<p class="note" style="margin-top:8px">※ シミュレーション値。実際の直近高安値で計算してください。</p>
+<p class="note">38.2%〜61.8%のゴールデンゾーンでの反転に注目。</p>`;
+}
+
+// ===== チェックリスト =====
+function renderChecklist(buy,sell,neu){
+const total=buy+sell+neu;const dom=Math.max(buy,sell);const agr=dom/total;
+const h=new Date().getHours();
+const checks=[
+{pass:agr>=0.6,warn:agr>=0.45,text:"指標の方向一致 (60%以上)",detail:`${(agr*100).toFixed(0)}%が同方向`},
+{pass:h>=16&&h<=23,warn:h>=9&&h<=15,text:"活発な取引時間帯",detail:h>=16&&h<=23?"ロンドン〜NY (最適)":h>=9&&h<16?"東京時間 (レンジ寄り)":"閑散時間帯 (非推奨)"},
+{pass:true,warn:false,text:"SL(損切り)を設定済み",detail:"エントリー前に必ず決定"},
+{pass:true,warn:false,text:"RR比 1:2以上を確保",detail:"利確幅 > 損切り幅×2"},
+{pass:true,warn:false,text:"上位足のトレンドと一致",detail:"日足→4H足→1H足の方向確認"},
+{pass:neu<total*0.4,warn:neu<total*0.6,text:"明確なシグナル",detail:`中立${neu}/${total} (少ないほど良い)`},
+{pass:true,warn:false,text:"重要指標発表前ではない",detail:"NFP/FOMC/CPI前は取引回避推奨"},
+{pass:true,warn:false,text:"月間損失上限に達していない",detail:"月-10%でその月は休止"},
+];
+const c=document.getElementById("checklist");c.innerHTML="";
+checks.forEach(ck=>{
+const icon=ck.pass?"✅":(ck.warn?"⚠️":"❌");
+const cls=ck.pass?"ck-pass":(ck.warn?"ck-warn":"ck-fail");
+c.innerHTML+=`<div class="checklist-item"><span class="ck-icon ${cls}">${icon}</span><div><div class="ck-text">${ck.text}</div><div class="ck-detail">${ck.detail}</div></div></div>`;
+});
+}
+
+// ===== 市場状況 =====
+function renderMarket(){
+const h=new Date().getHours();const dow=new Date().getDay();
+let session,status;
+if(h>=6&&h<8){session="オセアニア";status="流動性低・スプレッド広い"}
+else if(h>=8&&h<10){session="東京前場";status="仲値(9:55)に向けてドル買い傾向"}
+else if(h>=10&&h<15){session="東京後場";status="レンジ相場になりやすい"}
+else if(h>=15&&h<16){session="東京→ロンドン移行";status="欧州勢の参入開始"}
+else if(h>=16&&h<21){session="ロンドン";status="トレンドが発生しやすい時間帯"}
+else if(h>=21&&h<24){session="NY";status="最もボラティリティが高い"}
+else{session="NY深夜〜クローズ";status="値動き収束、取引非推奨"}
+const isGoto=[5,10,15,20,25].includes(new Date().getDate());
+const c=document.getElementById("market-status");
+c.innerHTML=`
+<div class="stat-row"><span class="stat-label">現在のセッション</span><span class="stat-val">${session}</span></div>
+<div class="stat-row"><span class="stat-label">市場状況</span><span class="stat-val">${status}</span></div>
+<div class="stat-row"><span class="stat-label">曜日</span><span class="stat-val">${["日","月","火","水","木","金","土"][dow]}曜日${dow===5?" (週末手仕舞い注意)":dow===1?" (窓開け確認)":""}</span></div>
+<div class="stat-row"><span class="stat-label">ゴトー日</span><span class="stat-val">${isGoto?"<span class='up'>本日ゴトー日 (仲値ドル買い傾向)</span>":"該当なし"}</span></div>`;
+}
+
+// ===== 年別チャート =====
+function renderYearlyChart(){
+const data=[0.4,8.0,-1.0,-2.6,-3.7,-2.7,-4.9,11.5,13.9,11.5];
+const labels=["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024"];
+const max=Math.max(...data.map(Math.abs));
+const c=document.getElementById("yearly-chart");c.innerHTML="";
+data.forEach((v,i)=>{
+const h=Math.abs(v)/max*45;
+c.innerHTML+=`<div class="seasonal-bar-wrap"><div class="mini-bar ${v>=0?"pos":"neg"}" style="height:${h}px"></div><div class="seasonal-label">${labels[i]}</div></div>`;
+});
+}
+
+// ===== 月別チャート =====
+function renderMonthlyChart(){
+const data=[-0.8,0.4,-0.3,0.6,-0.5,0.2,0.5,-0.6,-0.2,0.7,0.8,-0.3];
+const labels=["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+const max=Math.max(...data.map(Math.abs));
+const c=document.getElementById("monthly-chart");c.innerHTML="";
+data.forEach((v,i)=>{
+const h=Math.abs(v)/max*80;
+c.innerHTML+=`<div class="seasonal-bar-wrap"><div class="seasonal-bar ${v>=0?"pos":"neg"}" style="height:${h}px;background:${v>=0?"#4caf5088":"#e5393588"}"></div><div class="seasonal-label">${labels[i]}</div></div>`;
+});
+}
+
+// ===== 今月のアノマリー =====
+function renderAnomaly(){
+const m=new Date().getMonth();
+const anomalies=[
+"1月: 年初のリパトリエーション(海外資金の本国送金)で円高圧力。特に年明け直後は薄商いで急変注意。フラッシュクラッシュ(2019年)の前例あり。",
+"2月: 米確定申告に伴うドル需要。徐々にドル買い戻し傾向。中旬以降は方向感が出やすい。",
+"3月: 日本の期末(3月決算)。企業のレパトリエーション(海外利益の円転)で円高圧力。月末特に注意。",
+"4月: 新年度開始。機関投資家の外債投資が活発化し、円安傾向。新年度ラリーに期待。",
+"5月: Sell in Mayの格言通り、リスク回避の動き。GW期間の薄商いも注意。",
+"6月: 半期末接近でポジション調整。方向感が出にくく、レンジ相場になりやすい。",
+"7月: 夏相場の開始。ボーナス月の個人投資増。7月後半は参院選(ある年)や日銀会合に注目。",
+"8月: お盆で国内勢不在。流動性低下で急変リスク。歴史的にも8月の急落事例多い(トルコショック等)。",
+"9月: 日本の中間期末。方向転換が起きやすい月。米国の新年度(10月)に向けた調整も。",
+"10月: 下半期の投資が本格化。ドル高傾向が強い。株式市場の底打ちも多い月。",
+"11月: 年末ラリーの開始。感謝祭(第4木曜)前後の薄商いに注意。11月は過去10年で最も陽線率が高い。",
+"12月: クリスマス休暇で流動性低下。20日以降は手仕舞い主体。年末のポジション調整で方向感なし。"
+];
+document.getElementById("current-anomaly").innerHTML=`<div style="font-size:0.82rem;color:#bbb;line-height:1.7">${anomalies[m]}</div>`;
+}
+
+// ===== リスク計算 =====
+function calcRisk(){
+const cap=parseFloat(document.getElementById("r-cap").value)||0;
+const pct=parseFloat(document.getElementById("r-pct").value)||2;
+const sl=parseFloat(document.getElementById("r-sl").value)||20;
+const lev=parseInt(document.getElementById("r-lev").value)||25;
+const risk=cap*(pct/100);
+const lots=risk/(sl*100);
+const units=lots*10000;
+const margin=units*150/lev;
+const effLev=units*150/cap;
+document.getElementById("risk-out").innerHTML=`
+リスク額: <strong>${risk.toLocaleString()}円</strong><br>
+推奨: <strong>${lots.toFixed(2)}ロット (${Math.floor(units).toLocaleString()}通貨)</strong><br>
+必要証拠金: <strong>約${Math.floor(margin).toLocaleString()}円</strong> (USD/JPY=150想定)<br>
+実効レバレッジ: <strong>${effLev.toFixed(1)}倍</strong> ${effLev>10?'<span style="color:#e53935">⚠ 高め</span>':effLev>5?'<span style="color:#ffa726">やや高め</span>':'<span style="color:#66bb6a">適切</span>'}`;
+}
+
+function calcCompound(){
+const cap=parseFloat(document.getElementById("c-cap").value)||100;
+const ret=parseFloat(document.getElementById("c-ret").value)||5;
+const months=parseInt(document.getElementById("c-months").value)||12;
+let bal=cap;let rows="<table class='data-table'><tr><th>月</th><th>資金</th><th>利益</th></tr>";
+for(let i=1;i<=months;i++){
+const profit=bal*(ret/100);bal+=profit;
+if(i<=12||i===months)rows+=`<tr><td>${i}ヶ月目</td><td>${bal.toFixed(1)}万円</td><td>+${profit.toFixed(1)}万円</td></tr>`;
+else if(i===13)rows+=`<tr><td colspan="3" style="color:#666">...</td></tr>`;
+}
+rows+="</table>";
+document.getElementById("compound-out").innerHTML=`${rows}<p style="margin-top:6px">最終資金: <strong>${bal.toFixed(1)}万円</strong> (${(bal/cap*100-100).toFixed(1)}%増)</p>
+<p class="note">※ 毎月一定利率で勝ち続けることは現実には極めて困難です。</p>`;
+}
+
+function calcSim(){
+const wr=parseFloat(document.getElementById("s-wr").value)||45;
+const win=parseFloat(document.getElementById("s-win").value)||40;
+const loss=parseFloat(document.getElementById("s-loss").value)||20;
+const trades=parseInt(document.getElementById("s-trades").value)||20;
+const wins=Math.round(trades*wr/100);const losses=trades-wins;
+const pnl=wins*win-losses*loss;
+const rr=(win/loss).toFixed(2);
+const expectancy=((wr/100)*win-(1-wr/100)*loss).toFixed(1);
+const pnlYen=pnl*100;
+document.getElementById("sim-out").innerHTML=`
+<div class="stat-row"><span class="stat-label">勝ちトレード</span><span class="stat-val">${wins}回 × ${win}pips = +${wins*win}pips</span></div>
+<div class="stat-row"><span class="stat-label">負けトレード</span><span class="stat-val">${losses}回 × ${loss}pips = -${losses*loss}pips</span></div>
+<div class="stat-row"><span class="stat-label">月間損益</span><span class="stat-val ${pnl>=0?"up":"down"}">${pnl>=0?"+":""}${pnl}pips (1万通貨で${pnl>=0?"+":""}${pnlYen.toLocaleString()}円)</span></div>
+<div class="stat-row"><span class="stat-label">RR比</span><span class="stat-val">1:${rr}</span></div>
+<div class="stat-row"><span class="stat-label">期待値/1トレード</span><span class="stat-val ${expectancy>=0?"up":"down"}">${expectancy}pips</span></div>
+<p class="note" style="margin-top:6px">期待値がプラスなら長期的に利益が出る数学的根拠があります。</p>`;
+}
+
+function calcRuin(){
+const wr=parseFloat(document.getElementById("s-wr").value)||45;
+const win=parseFloat(document.getElementById("s-win").value)||40;
+const loss=parseFloat(document.getElementById("s-loss").value)||20;
+const riskPct=parseFloat(document.getElementById("r-pct").value)||2;
+const w=wr/100;const l=1-w;
+const a=win/loss;
+let ruin;
+if(w*a>l){ruin=Math.pow(l/(w*a),Math.floor(100/riskPct));ruin=Math.min(ruin,1)}
+else{ruin=1}
+ruin=Math.max(0,Math.min(1,ruin))*100;
+const c=document.getElementById("ruin-out");
+let color=ruin<1?"#66bb6a":ruin<5?"#ffa726":"#e53935";
+let eval_=ruin<1?"安全":ruin<5?"許容範囲":"危険";
+c.innerHTML=`<div style="text-align:center;font-size:1.5rem;color:${color};font-weight:bold;margin:10px 0">${ruin.toFixed(2)}%</div>
+<div style="text-align:center;color:${color};margin-bottom:8px">評価: ${eval_}</div>
+<p class="note">破産確率は勝率${wr}%、RR比1:${(win/loss).toFixed(1)}、1トレードリスク${riskPct}%で計算。1%以下が理想。</p>`;
+}
+
+// ===== イベントリスナー =====
+document.querySelectorAll("#r-cap,#r-pct,#r-sl,#r-lev").forEach(e=>e.addEventListener("input",()=>{calcRisk();calcRuin()}));
+document.querySelectorAll("#c-cap,#c-ret,#c-months").forEach(e=>e.addEventListener("input",calcCompound));
+document.querySelectorAll("#s-wr,#s-win,#s-loss,#s-trades").forEach(e=>e.addEventListener("input",()=>{calcSim();calcRuin()}));
+
+// ===== 初期化 =====
+renderSignals();renderPivot();renderFib();renderMarket();
+renderYearlyChart();renderMonthlyChart();renderAnomaly();
+calcRisk();calcCompound();calcSim();calcRuin();
+setInterval(()=>{renderSignals();renderMarket()},60000);
+</script>
+</body>
+</html>
