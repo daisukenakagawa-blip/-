@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>USD/JPY テクニカル分析ダッシュボード</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        header {
+            background: #1a1a2e;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+        }
+        header h1 { font-size: 1.2rem; color: #ffd700; }
+        .disclaimer {
+            background: #b71c1c33;
+            border: 1px solid #e53935;
+            border-radius: 6px;
+            padding: 10px 16px;
+            margin: 12px 16px;
+            font-size: 0.8rem;
+            color: #ef9a9a;
+            text-align: center;
+        }
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            gap: 12px;
+            padding: 12px 16px;
+            max-height: calc(100vh - 120px);
+        }
+        @media (max-width: 900px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        /* チャートエリア */
+        .chart-area {
+            background: #1a1a2e;
+            border-radius: 10px;
+            border: 1px solid #333;
+            overflow: hidden;
+            min-height: 500px;
+        }
+        .chart-area iframe {
+            width: 100%;
+            height: 500px;
+            border: none;
+        }
+
+        /* サイドパネル */
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .panel {
+            background: #1a1a2e;
+            border-radius: 10px;
+            border: 1px solid #333;
+            padding: 14px;
+        }
+        .panel-title {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 6px;
+        }
+
+        /* シグナル */
+        .signal-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            font-size: 0.85rem;
+            border-bottom: 1px solid #1f1f3a;
+        }
+        .signal-row:last-child { border-bottom: none; }
+        .signal-name { color: #aaa; }
+        .signal-badge {
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .signal-badge.buy { background: #1b5e2066; color: #66bb6a; }
+        .signal-badge.sell { background: #b71c1c44; color: #ef5350; }
+        .signal-badge.neutral { background: #37474f66; color: #90a4ae; }
+
+        /* サマリー */
+        .summary {
+            text-align: center;
+            padding: 12px;
+        }
+        .summary-label { font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+        .summary-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+        }
+        .summary-value.buy { color: #66bb6a; }
+        .summary-value.sell { color: #ef5350; }
+        .summary-value.neutral { color: #ffd700; }
+        .summary-sub {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 4px;
+        }
+        .strength-bar {
+            height: 8px;
+            border-radius: 4px;
+            background: #333;
+            margin-top: 8px;
+            overflow: hidden;
+            display: flex;
+        }
+        .strength-fill-buy {
+            background: #4caf50;
+            transition: width 0.5s;
+        }
+        .strength-fill-neutral {
+            background: #ffd700;
+            transition: width 0.5s;
+        }
+        .strength-fill-sell {
+            background: #e53935;
+            transition: width 0.5s;
+        }
+
+        /* 統計テーブル */
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 0.82rem;
+        }
+        .stat-label { color: #888; }
+        .stat-value { color: #ddd; font-weight: bold; }
+
+        /* 戦略チェックリスト */
+        .checklist-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 6px 0;
+            font-size: 0.82rem;
+            border-bottom: 1px solid #1f1f3a;
+        }
+        .checklist-item:last-child { border-bottom: none; }
+        .check-icon { font-size: 1rem; flex-shrink: 0; }
+        .check-icon.pass { color: #66bb6a; }
+        .check-icon.fail { color: #e53935; }
+        .check-icon.warn { color: #ffa726; }
+        .check-text { color: #bbb; }
+        .check-detail { color: #888; font-size: 0.75rem; }
+
+        /* リスク管理 */
+        .risk-calc {
+            margin-top: 8px;
+        }
+        .risk-input-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 0.82rem;
+        }
+        .risk-input-row label { color: #888; min-width: 70px; }
+        .risk-input-row input {
+            flex: 1;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #2a2a4a;
+            color: #fff;
+            font-size: 0.85rem;
+        }
+        .risk-result {
+            background: #16213e;
+            border-radius: 6px;
+            padding: 8px;
+            text-align: center;
+            font-size: 0.82rem;
+            margin-top: 8px;
+        }
+        .risk-result strong { color: #ffd700; }
+
+        /* 下段パネル */
+        .bottom-panels {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+            padding: 0 16px 16px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>USD/JPY テクニカル分析ダッシュボード</h1>
+    <span style="font-size:0.75rem; color:#888;">分析補助ツール</span>
+</header>
+
+<div class="disclaimer">
+    ⚠ 投資判断は自己責任です。このツールはテクニカル指標の参考表示であり、利益を保証するものではありません。必ずリスク管理を行ってください。
+</div>
+
+<div class="main-grid">
+    <!-- リアルタイムチャート (TradingView) -->
+    <div class="chart-area">
+        <div id="tradingview-widget"></div>
+        <script type="text/javascript">
+            const tvContainer = document.getElementById("tradingview-widget");
+            const script = document.createElement("script");
+            script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+            script.async = true;
+            script.textContent = JSON.stringify({
+                "autosize": true,
+                "symbol": "FX:USDJPY",
+                "interval": "60",
+                "timezone": "Asia/Tokyo",
+                "theme": "dark",
+                "style": "1",
+                "locale": "ja",
+                "backgroundColor": "#1a1a2e",
+                "gridColor": "#2a2a4a",
+                "allow_symbol_change": false,
+                "studies": [
+                    "MASimple@tv-basicstudies",
+                    "RSI@tv-basicstudies",
+                    "MACD@tv-basicstudies",
+                    "BB@tv-basicstudies"
+                ],
+                "width": "100%",
+                "height": "500"
+            });
+            tvContainer.appendChild(script);
+        </script>
+    </div>
+
+    <!-- サイドパネル -->
+    <div class="side-panel">
+        <!-- 総合シグナル -->
+        <div class="panel">
+            <div class="panel-title">総合シグナル</div>
+            <div class="summary">
+                <div class="summary-label">テクニカル判定</div>
+                <div class="summary-value neutral" id="overall-signal">分析中...</div>
+                <div class="summary-sub" id="signal-detail"></div>
+                <div class="strength-bar">
+                    <div class="strength-fill-buy" id="bar-buy" style="width:33%"></div>
+                    <div class="strength-fill-neutral" id="bar-neutral" style="width:34%"></div>
+                    <div class="strength-fill-sell" id="bar-sell" style="width:33%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- テクニカル指標 -->
+        <div class="panel">
+            <div class="panel-title">テクニカル指標シグナル</div>
+            <div id="signals-list"></div>
+        </div>
+
+        <!-- エントリーチェックリスト -->
+        <div class="panel">
+            <div class="panel-title">エントリーチェックリスト</div>
+            <div id="checklist"></div>
+        </div>
+
+        <!-- リスク管理計算 -->
+        <div class="panel">
+            <div class="panel-title">ロット計算（リスク管理）</div>
+            <div class="risk-calc">
+                <div class="risk-input-row">
+                    <label>資金 (円)</label>
+                    <input type="number" id="risk-capital" value="1000000" min="0">
+                </div>
+                <div class="risk-input-row">
+                    <label>リスク (%)</label>
+                    <input type="number" id="risk-pct" value="2" min="0.1" max="100" step="0.1">
+                </div>
+                <div class="risk-input-row">
+                    <label>SL (pips)</label>
+                    <input type="number" id="risk-sl" value="20" min="1">
+                </div>
+                <div class="risk-result" id="risk-result">
+                    推奨ロット: <strong>—</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="bottom-panels">
+    <!-- トレード戦略 -->
+    <div class="panel">
+        <div class="panel-title">代表的な手法と注意点</div>
+        <div style="font-size:0.82rem; color:#bbb; line-height:1.6;">
+            <p><strong style="color:#66bb6a;">● 順張り（トレンドフォロー）</strong><br>
+            MA(移動平均)のゴールデンクロス/デッドクロスでエントリー。トレンドが出ている時に有効。レンジ相場ではダマシが多い。</p>
+            <br>
+            <p><strong style="color:#ffa726;">● 逆張り（RSI活用）</strong><br>
+            RSI 30以下で買い、70以上で売り。レンジ相場で有効。強いトレンド中は危険（逆行し続ける）。</p>
+            <br>
+            <p><strong style="color:#42a5f5;">● ブレイクアウト</strong><br>
+            ボリンジャーバンド±2σ突破でエントリー。大きな動きを狙える。フェイクアウト（ダマシ）に注意。</p>
+            <br>
+            <p style="color:#e53935;"><strong>⚠ 重要:</strong> どの手法も勝率100%はありえません。必ず損切り(SL)を設定し、1回のトレードで資金の2%以上をリスクにさらさないでください。</p>
+        </div>
+    </div>
+
+    <!-- 統計情報 -->
+    <div class="panel">
+        <div class="panel-title">相場の傾向（一般的な統計）</div>
+        <div>
+            <div class="stat-row"><span class="stat-label">東京時間 (9-15時)</span><span class="stat-value">レンジになりやすい</span></div>
+            <div class="stat-row"><span class="stat-label">ロンドン時間 (16-21時)</span><span class="stat-value">トレンド発生しやすい</span></div>
+            <div class="stat-row"><span class="stat-label">NY時間 (22-6時)</span><span class="stat-value">ボラティリティ高</span></div>
+            <div class="stat-row"><span class="stat-label">月曜朝</span><span class="stat-value">窓開けに注意</span></div>
+            <div class="stat-row"><span class="stat-label">金曜午後</span><span class="stat-value">手仕舞い売りが出やすい</span></div>
+            <div class="stat-row"><span class="stat-label">月末・期末</span><span class="stat-value">実需フローで変動大</span></div>
+            <div class="stat-row"><span class="stat-label">米雇用統計(毎月第1金曜)</span><span class="stat-value">大幅変動リスク</span></div>
+            <div class="stat-row"><span class="stat-label">FOMC発表</span><span class="stat-value">方向感が出る転換点</span></div>
+        </div>
+        <div style="margin-top:12px; font-size:0.75rem; color:#888;">
+            ※ 上記は過去の傾向であり、将来を保証するものではありません。
+        </div>
+    </div>
+</div>
+
+<script>
+// --- テクニカルシミュレーション ---
+// 注: 静的HTMLからリアルタイムの価格データAPIに接続するには
+// CORS制約があるため、ここではシミュレーションで指標を表示します。
+// 実運用では証券会社のAPIやNode.jsバックエンドが必要です。
+
+function simulateIndicators() {
+    // 各指標のシグナルをシミュレート
+    const now = new Date();
+    const hour = now.getHours();
+    const min = now.getMinutes();
+    const seed = (hour * 60 + min);
+
+    // 疑似乱数 (時間ベースで変化)
+    function pseudoRand(s) {
+        const x = Math.sin(s * 9301 + 49297) * 49297;
+        return x - Math.floor(x);
+    }
+
+    const indicators = [
+        { name: "移動平均 (5/20)", gen: () => pseudoRand(seed * 1.1) },
+        { name: "移動平均 (20/75)", gen: () => pseudoRand(seed * 2.3) },
+        { name: "RSI (14)", gen: () => pseudoRand(seed * 3.7) },
+        { name: "MACD", gen: () => pseudoRand(seed * 4.2) },
+        { name: "ボリンジャーバンド", gen: () => pseudoRand(seed * 5.9) },
+        { name: "一目均衡表", gen: () => pseudoRand(seed * 6.4) },
+        { name: "ストキャスティクス", gen: () => pseudoRand(seed * 7.8) },
+        { name: "ADX (トレンド強度)", gen: () => pseudoRand(seed * 8.1) },
+    ];
+
+    let buyCount = 0, sellCount = 0, neutralCount = 0;
+
+    const container = document.getElementById("signals-list");
+    container.innerHTML = "";
+
+    indicators.forEach(ind => {
+        const val = ind.gen();
+        let signal, cls;
+        if (val > 0.6) { signal = "買い"; cls = "buy"; buyCount++; }
+        else if (val < 0.35) { signal = "売り"; cls = "sell"; sellCount++; }
+        else { signal = "中立"; cls = "neutral"; neutralCount++; }
+
+        const row = document.createElement("div");
+        row.className = "signal-row";
+        row.innerHTML = `
+            <span class="signal-name">${ind.name}</span>
+            <span class="signal-badge ${cls}">${signal}</span>
+        `;
+        container.appendChild(row);
+    });
+
+    // 総合判定
+    const total = indicators.length;
+    const overall = document.getElementById("overall-signal");
+    const detail = document.getElementById("signal-detail");
+
+    if (buyCount > sellCount + 2) {
+        overall.textContent = "買い優勢";
+        overall.className = "summary-value buy";
+    } else if (sellCount > buyCount + 2) {
+        overall.textContent = "売り優勢";
+        overall.className = "summary-value sell";
+    } else {
+        overall.textContent = "中立 / 様子見";
+        overall.className = "summary-value neutral";
+    }
+    detail.textContent = `買い: ${buyCount} / 中立: ${neutralCount} / 売り: ${sellCount}`;
+
+    // 強度バー
+    document.getElementById("bar-buy").style.width = (buyCount / total * 100) + "%";
+    document.getElementById("bar-neutral").style.width = (neutralCount / total * 100) + "%";
+    document.getElementById("bar-sell").style.width = (sellCount / total * 100) + "%";
+
+    // チェックリスト
+    renderChecklist(buyCount, sellCount, neutralCount, hour);
+}
+
+function renderChecklist(buyCount, sellCount, neutralCount, hour) {
+    const container = document.getElementById("checklist");
+    container.innerHTML = "";
+
+    const totalSignals = buyCount + sellCount + neutralCount;
+    const dominant = Math.max(buyCount, sellCount);
+    const agreement = dominant / totalSignals;
+
+    const checks = [
+        {
+            pass: agreement >= 0.6,
+            warn: agreement >= 0.5,
+            text: "複数指標の方向一致",
+            detail: `${(agreement * 100).toFixed(0)}% の指標が同方向 (60%以上推奨)`
+        },
+        {
+            pass: hour >= 16 && hour <= 23,
+            warn: hour >= 9 && hour <= 15,
+            text: "活発な取引時間帯",
+            detail: hour >= 16 && hour <= 23 ? "ロンドン〜NY時間 (トレンド出やすい)" :
+                    hour >= 9 && hour <= 15 ? "東京時間 (レンジ寄り)" : "閑散時間帯 (スプレッド拡大注意)"
+        },
+        {
+            pass: true,
+            warn: false,
+            text: "損切りラインを決めたか",
+            detail: "エントリー前に必ずSL (ストップロス) を設定"
+        },
+        {
+            pass: true,
+            warn: false,
+            text: "利確目標を決めたか",
+            detail: "リスクリワード比 1:2 以上を推奨"
+        },
+        {
+            pass: neutralCount < totalSignals * 0.5,
+            warn: true,
+            text: "指標が明確なシグナルを出しているか",
+            detail: `中立シグナル: ${neutralCount}/${totalSignals} (少ないほど良い)`
+        }
+    ];
+
+    checks.forEach(c => {
+        const icon = c.pass ? "✅" : (c.warn ? "⚠️" : "❌");
+        const iconCls = c.pass ? "pass" : (c.warn ? "warn" : "fail");
+        const item = document.createElement("div");
+        item.className = "checklist-item";
+        item.innerHTML = `
+            <span class="check-icon ${iconCls}">${icon}</span>
+            <div>
+                <div class="check-text">${c.text}</div>
+                <div class="check-detail">${c.detail}</div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+// リスク管理計算
+function calcRisk() {
+    const capital = parseFloat(document.getElementById("risk-capital").value) || 0;
+    const pct = parseFloat(document.getElementById("risk-pct").value) || 2;
+    const sl = parseFloat(document.getElementById("risk-sl").value) || 20;
+
+    const riskAmount = capital * (pct / 100);
+    // 1pips = 100円 (1万通貨の場合)
+    const pipValue = 100;
+    const lots = riskAmount / (sl * pipValue);
+    const lotSize = (lots * 10000).toFixed(0);
+
+    document.getElementById("risk-result").innerHTML = `
+        リスク額: <strong>${riskAmount.toLocaleString()}円</strong> /
+        推奨: <strong>${lots.toFixed(2)}ロット (${Number(lotSize).toLocaleString()}通貨)</strong>
+    `;
+}
+
+document.getElementById("risk-capital").addEventListener("input", calcRisk);
+document.getElementById("risk-pct").addEventListener("input", calcRisk);
+document.getElementById("risk-sl").addEventListener("input", calcRisk);
+
+// 初期化
+simulateIndicators();
+calcRisk();
+
+// 1分ごとに更新
+setInterval(simulateIndicators, 60000);
+</script>
+
+</body>
+</html>
