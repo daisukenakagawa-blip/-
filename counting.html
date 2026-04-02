@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ブラックジャック カードカウンター</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 16px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 1.6rem;
+            margin-bottom: 8px;
+            color: #ffd700;
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 16px;
+        }
+
+        /* デッキ設定 */
+        .deck-setting {
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .deck-setting label { font-size: 0.9rem; color: #aaa; }
+        .deck-setting select {
+            padding: 4px 8px;
+            font-size: 1rem;
+            border-radius: 4px;
+            border: 1px solid #555;
+            background: #2a2a4a;
+            color: #fff;
+            margin-left: 8px;
+        }
+
+        /* カウント表示 */
+        .counts {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .count-box {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+        .count-label {
+            font-size: 0.8rem;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        .count-value {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        .count-value.positive { color: #4caf50; }
+        .count-value.negative { color: #e53935; }
+        .count-value.neutral { color: #ffd700; }
+
+        /* アドバイス */
+        .advice {
+            text-align: center;
+            margin-bottom: 16px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .advice.hot { background: #1b5e20; border: 1px solid #4caf50; color: #81c784; }
+        .advice.warm { background: #33691e; border: 1px solid #8bc34a; color: #aed581; }
+        .advice.neutral { background: #37474f; border: 1px solid #607d8b; color: #b0bec5; }
+        .advice.cold { background: #b71c1c22; border: 1px solid #e53935; color: #ef9a9a; }
+
+        /* カードボタン */
+        .card-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 6px;
+            margin-bottom: 20px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .card-btn {
+            width: 56px;
+            height: 64px;
+            border: 2px solid #555;
+            border-radius: 8px;
+            background: #2a2a4a;
+            color: #fff;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            position: relative;
+        }
+        .card-btn:hover { background: #3a3a5a; transform: scale(1.08); }
+        .card-btn:active { transform: scale(0.95); }
+        .card-btn .rank { font-size: 1.3rem; }
+        .card-btn .hi-lo {
+            font-size: 0.65rem;
+            position: absolute;
+            top: 2px;
+            right: 4px;
+        }
+        .card-btn .hi-lo.plus { color: #4caf50; }
+        .card-btn .hi-lo.minus { color: #e53935; }
+        .card-btn .hi-lo.zero { color: #888; }
+        .card-btn .remaining {
+            font-size: 0.6rem;
+            color: #888;
+            position: absolute;
+            bottom: 2px;
+        }
+        .card-btn.depleted {
+            opacity: 0.3;
+            cursor: default;
+        }
+
+        /* Hi-Lo説明 */
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 16px;
+            font-size: 0.8rem;
+            color: #888;
+        }
+        .legend span { display: flex; align-items: center; gap: 4px; }
+        .dot {
+            width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+        }
+        .dot.plus { background: #4caf50; }
+        .dot.minus { background: #e53935; }
+        .dot.zero { background: #888; }
+
+        /* 残りカード分布 */
+        .distribution {
+            max-width: 600px;
+            margin: 0 auto 16px;
+            background: #16213e;
+            border-radius: 10px;
+            padding: 12px;
+            border: 1px solid #333;
+        }
+        .dist-title {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        .dist-bars {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-end;
+            height: 80px;
+            gap: 4px;
+        }
+        .dist-bar-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+        .dist-bar {
+            width: 100%;
+            max-width: 36px;
+            border-radius: 3px 3px 0 0;
+            transition: height 0.3s;
+        }
+        .dist-bar.low { background: #4caf50; }
+        .dist-bar.mid { background: #ffd700; }
+        .dist-bar.high { background: #e53935; }
+        .dist-label {
+            font-size: 0.65rem;
+            color: #888;
+            margin-top: 3px;
+        }
+
+        /* ボタン */
+        .controls {
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .ctrl-btn {
+            padding: 8px 20px;
+            border: 1px solid #555;
+            border-radius: 6px;
+            background: #2a2a4a;
+            color: #ccc;
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin: 0 4px;
+        }
+        .ctrl-btn:hover { background: #3a3a5a; }
+        .ctrl-btn.reset { border-color: #e53935; color: #ef9a9a; }
+
+        /* 履歴 */
+        .history {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #16213e;
+            border-radius: 10px;
+            padding: 12px;
+            border: 1px solid #333;
+        }
+        .history-title {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .history-cards {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .history-card {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .history-card.plus { background: #1b5e2044; color: #81c784; }
+        .history-card.minus { background: #b71c1c44; color: #ef9a9a; }
+        .history-card.zero { background: #37474f44; color: #b0bec5; }
+    </style>
+</head>
+<body>
+
+<h1>カードカウンター</h1>
+<p class="subtitle">Hi-Lo カウンティングシステム</p>
+
+<div class="deck-setting">
+    <label>デッキ数:
+        <select id="deck-count">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+            <option value="6" selected>6</option>
+            <option value="8">8</option>
+        </select>
+    </label>
+</div>
+
+<div class="counts">
+    <div class="count-box">
+        <div class="count-label">ランニングカウント</div>
+        <div class="count-value neutral" id="running-count">0</div>
+    </div>
+    <div class="count-box">
+        <div class="count-label">トゥルーカウント</div>
+        <div class="count-value neutral" id="true-count">0</div>
+    </div>
+    <div class="count-box">
+        <div class="count-label">残りデッキ</div>
+        <div class="count-value neutral" id="remaining-decks">6.0</div>
+    </div>
+</div>
+
+<div class="advice neutral" id="advice">カードが出たらタップしてください</div>
+
+<div class="legend">
+    <span><span class="dot plus"></span> +1 (2〜6)</span>
+    <span><span class="dot zero"></span> 0 (7〜9)</span>
+    <span><span class="dot minus"></span> −1 (10〜A)</span>
+</div>
+
+<div class="card-buttons" id="card-buttons"></div>
+
+<div class="controls">
+    <button class="ctrl-btn" id="btn-undo">↩ 戻す</button>
+    <button class="ctrl-btn reset" id="btn-reset">リセット</button>
+</div>
+
+<div class="distribution">
+    <div class="dist-title">残りカード分布</div>
+    <div class="dist-bars" id="dist-bars"></div>
+</div>
+
+<div class="history">
+    <div class="history-title">履歴 (<span id="dealt-count">0</span>枚)</div>
+    <div class="history-cards" id="history-cards"></div>
+</div>
+
+<script>
+const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+
+// Hi-Lo値
+function hiLoValue(rank) {
+    if (["2","3","4","5","6"].includes(rank)) return 1;
+    if (["7","8","9"].includes(rank)) return 0;
+    return -1; // 10, J, Q, K, A
+}
+
+function hiLoLabel(rank) {
+    const v = hiLoValue(rank);
+    if (v === 1) return "+1";
+    if (v === -1) return "−1";
+    return "0";
+}
+
+function hiLoClass(rank) {
+    const v = hiLoValue(rank);
+    if (v === 1) return "plus";
+    if (v === -1) return "minus";
+    return "zero";
+}
+
+let numDecks = 6;
+let remaining = {};  // rank -> remaining count
+let runningCount = 0;
+let history = [];
+
+function init() {
+    numDecks = parseInt(document.getElementById("deck-count").value);
+    remaining = {};
+    for (const r of RANKS) {
+        remaining[r] = (r === "10" ? 4 : (["J","Q","K"].includes(r) ? 4 : 4)) * numDecks;
+    }
+    // 10系はまとめてカウント（10, J, Q, Kで各4枚×デッキ数 = 16×デッキ数）
+    // でも個別にボタン表示するので個別管理
+    runningCount = 0;
+    history = [];
+    renderAll();
+}
+
+function totalRemaining() {
+    return Object.values(remaining).reduce((a, b) => a + b, 0);
+}
+
+function remainingDecks() {
+    return totalRemaining() / 52;
+}
+
+function trueCount() {
+    const rd = remainingDecks();
+    if (rd <= 0) return 0;
+    return runningCount / rd;
+}
+
+function dealCard(rank) {
+    if (remaining[rank] <= 0) return;
+    remaining[rank]--;
+    runningCount += hiLoValue(rank);
+    history.push(rank);
+    renderAll();
+}
+
+function undoCard() {
+    if (history.length === 0) return;
+    const rank = history.pop();
+    remaining[rank]++;
+    runningCount -= hiLoValue(rank);
+    renderAll();
+}
+
+function getAdvice() {
+    const tc = trueCount();
+    if (tc >= 3) return { text: `TC ${tc >= 0 ? "+" : ""}${tc.toFixed(1)} → プレイヤー有利！ ベットを上げるチャンス`, cls: "hot" };
+    if (tc >= 1.5) return { text: `TC +${tc.toFixed(1)} → やや有利。ベットを少し上げてもOK`, cls: "warm" };
+    if (tc >= -1) return { text: `TC ${tc >= 0 ? "+" : ""}${tc.toFixed(1)} → ほぼ中立`, cls: "neutral" };
+    return { text: `TC ${tc.toFixed(1)} → ハウス有利。ベットは最小限に`, cls: "cold" };
+}
+
+function renderCounts() {
+    const rc = document.getElementById("running-count");
+    const tc = document.getElementById("true-count");
+    const rd = document.getElementById("remaining-decks");
+
+    rc.textContent = (runningCount >= 0 ? "+" : "") + runningCount;
+    rc.className = "count-value " + (runningCount > 0 ? "positive" : runningCount < 0 ? "negative" : "neutral");
+
+    const tcVal = trueCount();
+    tc.textContent = (tcVal >= 0 ? "+" : "") + tcVal.toFixed(1);
+    tc.className = "count-value " + (tcVal > 0.5 ? "positive" : tcVal < -0.5 ? "negative" : "neutral");
+
+    rd.textContent = remainingDecks().toFixed(1);
+    rd.className = "count-value neutral";
+}
+
+function renderAdvice() {
+    const adv = document.getElementById("advice");
+    if (history.length === 0) {
+        adv.textContent = "カードが出たらタップしてください";
+        adv.className = "advice neutral";
+    } else {
+        const a = getAdvice();
+        adv.textContent = a.text;
+        adv.className = "advice " + a.cls;
+    }
+}
+
+function renderButtons() {
+    const container = document.getElementById("card-buttons");
+    container.innerHTML = "";
+    for (const rank of RANKS) {
+        const btn = document.createElement("button");
+        const depleted = remaining[rank] <= 0;
+        btn.className = "card-btn" + (depleted ? " depleted" : "");
+        btn.innerHTML = `
+            <span class="hi-lo ${hiLoClass(rank)}">${hiLoLabel(rank)}</span>
+            <span class="rank">${rank}</span>
+            <span class="remaining">${remaining[rank]}</span>
+        `;
+        if (!depleted) {
+            btn.addEventListener("click", () => dealCard(rank));
+        }
+        container.appendChild(btn);
+    }
+}
+
+function renderDistribution() {
+    const container = document.getElementById("dist-bars");
+    container.innerHTML = "";
+
+    const total = numDecks * 4; // 1ランクあたりの初期枚数
+
+    for (const rank of RANKS) {
+        const wrap = document.createElement("div");
+        wrap.className = "dist-bar-wrap";
+
+        const bar = document.createElement("div");
+        const pct = total > 0 ? (remaining[rank] / total) * 100 : 0;
+        bar.className = "dist-bar " + (hiLoValue(rank) === 1 ? "low" : hiLoValue(rank) === 0 ? "mid" : "high");
+        bar.style.height = Math.max(pct * 0.7, 2) + "px";
+
+        const label = document.createElement("div");
+        label.className = "dist-label";
+        label.textContent = rank;
+
+        wrap.appendChild(bar);
+        wrap.appendChild(label);
+        container.appendChild(wrap);
+    }
+}
+
+function renderHistory() {
+    document.getElementById("dealt-count").textContent = history.length;
+    const container = document.getElementById("history-cards");
+    container.innerHTML = "";
+    for (const rank of history) {
+        const span = document.createElement("span");
+        span.className = "history-card " + hiLoClass(rank);
+        span.textContent = rank;
+        container.appendChild(span);
+    }
+    container.scrollTop = container.scrollHeight;
+}
+
+function renderAll() {
+    renderCounts();
+    renderAdvice();
+    renderButtons();
+    renderDistribution();
+    renderHistory();
+}
+
+// イベント
+document.getElementById("btn-undo").addEventListener("click", undoCard);
+document.getElementById("btn-reset").addEventListener("click", init);
+document.getElementById("deck-count").addEventListener("change", init);
+
+// キーボードショートカット
+document.addEventListener("keydown", (e) => {
+    const key = e.key;
+    if (key === "z" || key === "Z") { undoCard(); return; }
+    const map = {
+        "2": "2", "3": "3", "4": "4", "5": "5", "6": "6",
+        "7": "7", "8": "8", "9": "9", "0": "10",
+        "j": "J", "J": "J", "q": "Q", "Q": "Q",
+        "k": "K", "K": "K", "a": "A", "A": "A", "1": "A"
+    };
+    if (map[key]) dealCard(map[key]);
+});
+
+init();
+</script>
+</body>
+</html>
