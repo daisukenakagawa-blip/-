@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blackjack - Casino Edition</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#0b4d2c;background-image:radial-gradient(ellipse at center,#0b6e35 0%,#063d1e 70%);min-height:100vh;overflow-x:hidden;user-select:none}
+#game{max-width:900px;margin:0 auto;padding:10px;position:relative;min-height:100vh;display:flex;flex-direction:column}
+
+/* ヘッダー */
+.hud{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:rgba(0,0,0,.4);border-radius:10px;margin-bottom:8px;font-size:.85rem;color:#ccc}
+.hud .chips-display{color:#ffd700;font-weight:bold;font-size:1.1rem}
+.hud .shoe-info{font-size:.75rem;color:#888}
+
+/* テーブル */
+.table-area{flex:1;display:flex;flex-direction:column;justify-content:center;gap:10px;min-height:400px}
+.hand-section{text-align:center;min-height:140px}
+.hand-label{font-size:.8rem;color:rgba(255,255,255,.6);margin-bottom:4px}
+.hand-label .value{color:#ffd700;font-weight:bold;font-size:1rem}
+.hand-label .bj{color:#ff6;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.cards-row{display:flex;justify-content:center;gap:-10px;min-height:120px;flex-wrap:wrap}
+
+/* カード */
+.card{width:75px;height:108px;border-radius:8px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;font-weight:bold;box-shadow:2px 3px 10px rgba(0,0,0,.4);transition:transform .3s,opacity .3s;position:relative;margin:0 -4px;flex-shrink:0}
+.card.face-up{background:#fff}
+.card.face-down{background:linear-gradient(135deg,#1a237e,#0d47a1);background-image:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(255,255,255,.03) 5px,rgba(255,255,255,.03) 10px)}
+.card.face-down::after{content:"♠";font-size:2rem;color:rgba(255,255,255,.15)}
+.card .rank{font-size:1.4rem;line-height:1}.card .suit{font-size:1.6rem;line-height:1}
+.card.red{color:#d32f2f}.card.black{color:#1a1a1a}
+.card.deal-anim{animation:dealIn .4s ease-out}
+@keyframes dealIn{from{transform:translateY(-80px) rotate(-10deg);opacity:0}to{transform:translateY(0) rotate(0);opacity:1}}
+
+/* メッセージ */
+.message-area{text-align:center;min-height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.message{font-size:1.4rem;font-weight:bold;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+.message.win{color:#66bb6a}.message.lose{color:#ef5350}.message.push{color:#ffd700}.message.bj{color:#ffeb3b;font-size:1.6rem}
+.sub-message{font-size:.85rem;color:rgba(255,255,255,.5);margin-top:2px}
+
+/* ベットエリア */
+.bet-area{background:rgba(0,0,0,.3);border-radius:12px;padding:16px;text-align:center}
+.bet-area h3{color:#ffd700;font-size:.9rem;margin-bottom:10px}
+.chip-selector{display:flex;justify-content:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.chip{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:.85rem;cursor:pointer;border:3px dashed rgba(255,255,255,.3);transition:transform .15s,box-shadow .15s;position:relative}
+.chip:hover{transform:scale(1.12)}
+.chip:active{transform:scale(.95)}
+.chip.selected{box-shadow:0 0 0 3px #ffd700,0 0 15px rgba(255,215,0,.4);border-style:solid}
+.chip-1{background:linear-gradient(135deg,#fff,#ddd);color:#333;border-color:rgba(0,0,0,.2)}
+.chip-5{background:linear-gradient(135deg,#e53935,#c62828);color:#fff;border-color:rgba(255,255,255,.3)}
+.chip-25{background:linear-gradient(135deg,#43a047,#2e7d32);color:#fff;border-color:rgba(255,255,255,.3)}
+.chip-100{background:linear-gradient(135deg,#111,#333);color:#fff;border-color:rgba(255,255,255,.3)}
+.chip-500{background:linear-gradient(135deg,#6a1b9a,#4a148c);color:#fff;border-color:rgba(255,255,255,.3)}
+.bet-display{font-size:1.2rem;color:#ffd700;margin-bottom:10px}
+.bet-buttons{display:flex;justify-content:center;gap:8px}
+.bet-buttons button{padding:8px 20px}
+
+/* ボタン */
+button{padding:10px 24px;border:none;border-radius:8px;font-size:1rem;font-weight:bold;cursor:pointer;transition:transform .1s,opacity .15s}
+button:hover{transform:scale(1.05)}
+button:active{transform:scale(.96)}
+button:disabled{opacity:.35;cursor:default;transform:none}
+.btn-hit{background:linear-gradient(135deg,#43a047,#388e3c);color:#fff}
+.btn-stand{background:linear-gradient(135deg,#e53935,#c62828);color:#fff}
+.btn-double{background:linear-gradient(135deg,#ff8f00,#f57f17);color:#fff}
+.btn-split{background:linear-gradient(135deg,#1e88e5,#1565c0);color:#fff}
+.btn-surrender{background:linear-gradient(135deg,#78909c,#546e7a);color:#fff}
+.btn-insurance{background:linear-gradient(135deg,#8e24aa,#6a1b9a);color:#fff}
+.btn-deal{background:linear-gradient(135deg,#ffd700,#ffc107);color:#333;font-size:1.1rem;padding:12px 40px}
+.btn-clear{background:rgba(255,255,255,.1);color:#ccc;font-size:.85rem}
+.btn-rebet{background:rgba(255,215,0,.15);color:#ffd700;font-size:.85rem;border:1px solid rgba(255,215,0,.3)}
+.btn-newgame{background:linear-gradient(135deg,#ffd700,#ffc107);color:#333;padding:12px 32px}
+
+/* アクション */
+.actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;padding:10px 0}
+
+/* スプリットハンド表示 */
+.split-hands{display:flex;justify-content:center;gap:24px}
+.split-hand{text-align:center;padding:8px;border-radius:8px;min-width:120px}
+.split-hand.active{background:rgba(255,215,0,.1);border:1px solid rgba(255,215,0,.3)}
+.split-hand .hand-idx{font-size:.7rem;color:#888;margin-bottom:2px}
+
+/* 設定パネル */
+.settings-btn{background:none;border:1px solid #555;color:#999;font-size:.75rem;padding:4px 10px;border-radius:4px;cursor:pointer}
+.settings-panel{display:none;background:rgba(0,0,0,.85);border-radius:10px;padding:16px;position:absolute;top:50px;right:10px;z-index:100;min-width:250px}
+.settings-panel.show{display:block}
+.settings-panel h4{color:#ffd700;margin-bottom:10px;font-size:.9rem}
+.setting-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:.8rem;color:#ccc}
+.setting-row select,.setting-row input{background:#1a1a30;border:1px solid #444;color:#fff;padding:3px 6px;border-radius:4px;font-size:.8rem}
+
+/* ゲームオーバー */
+.overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.8);z-index:200;justify-content:center;align-items:center;flex-direction:column}
+.overlay.show{display:flex}
+.overlay h2{color:#e53935;font-size:2rem;margin-bottom:10px}
+.overlay p{color:#ccc;margin-bottom:20px}
+
+/* insurance dialog */
+.ins-dialog{display:none;background:rgba(0,0,0,.85);border-radius:12px;padding:20px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:150;text-align:center;min-width:280px}
+.ins-dialog.show{display:block}
+.ins-dialog h4{color:#ffd700;margin-bottom:12px}
+.ins-dialog p{color:#ccc;font-size:.85rem;margin-bottom:16px}
+.ins-dialog .ins-btns{display:flex;justify-content:center;gap:10px}
+</style>
+</head>
+<body>
+<div id="game">
+<div class="hud">
+<div>
+<span class="chips-display">$<span id="chip-count">1000</span></span>
+<span class="shoe-info" id="shoe-info">シュー: 312枚</span>
+</div>
+<div>
+<span id="hand-count" style="font-size:.75rem;color:#888">ハンド #0</span>
+<button class="settings-btn" onclick="toggleSettings()">設定</button>
+</div>
+</div>
+
+<div class="settings-panel" id="settings-panel">
+<h4>ルール設定</h4>
+<div class="setting-row"><span>デッキ数</span><select id="s-decks"><option value="1">1</option><option value="2">2</option><option value="6" selected>6</option><option value="8">8</option></select></div>
+<div class="setting-row"><span>ディーラー S17</span><select id="s-s17"><option value="1" selected>スタンド</option><option value="0">ヒット</option></select></div>
+<div class="setting-row"><span>BJ配当</span><select id="s-bjpay"><option value="1.5" selected>3:2</option><option value="1.2">6:5</option></select></div>
+<div class="setting-row"><span>ダブルダウン</span><select id="s-dbl"><option value="any" selected>いつでも</option><option value="9-11">9,10,11のみ</option></select></div>
+<div class="setting-row"><span>スプリット後DD</span><select id="s-das"><option value="1" selected>可</option><option value="0">不可</option></select></div>
+<div class="setting-row"><span>サレンダー</span><select id="s-surr"><option value="1" selected>あり</option><option value="0">なし</option></select></div>
+<div class="setting-row"><span>最大スプリット</span><select id="s-maxsplit"><option value="2">2ハンド</option><option value="3">3ハンド</option><option value="4" selected>4ハンド</option></select></div>
+<div style="text-align:center;margin-top:12px"><button class="btn-deal" onclick="applySettings()" style="padding:8px 20px;font-size:.85rem">適用してリセット</button></div>
+</div>
+
+<div class="table-area">
+<!-- ディーラー -->
+<div class="hand-section" id="dealer-section">
+<div class="hand-label">DEALER <span class="value" id="dealer-val"></span></div>
+<div class="cards-row" id="dealer-cards"></div>
+</div>
+
+<div class="message-area">
+<div class="message" id="message"></div>
+<div class="sub-message" id="sub-message"></div>
+</div>
+
+<!-- プレイヤー -->
+<div id="player-area"></div>
+</div>
+
+<!-- アクション -->
+<div class="actions" id="actions" style="display:none"></div>
+
+<!-- ベット -->
+<div class="bet-area" id="bet-area">
+<h3>BET</h3>
+<div class="chip-selector">
+<div class="chip chip-1" data-val="1" onclick="selectChip(1,this)">$1</div>
+<div class="chip chip-5" data-val="5" onclick="selectChip(5,this)">$5</div>
+<div class="chip chip-25 selected" data-val="25" onclick="selectChip(25,this)">$25</div>
+<div class="chip chip-100" data-val="100" onclick="selectChip(100,this)">$100</div>
+<div class="chip chip-500" data-val="500" onclick="selectChip(500,this)">$500</div>
+</div>
+<div class="bet-display">ベット: $<span id="current-bet">0</span></div>
+<div class="bet-buttons">
+<button class="btn-clear" onclick="clearBet()">クリア</button>
+<button class="btn-rebet" onclick="rebet()" id="btn-rebet" style="display:none">前回と同じ</button>
+<button class="btn-deal" onclick="startDeal()" id="btn-deal-main">ディール</button>
+</div>
+</div>
+
+<!-- インシュランス -->
+<div class="ins-dialog" id="ins-dialog">
+<h4>INSURANCE?</h4>
+<p>ディーラーのアップカードがAです。<br>インシュランス（ベットの半額）を賭けますか？</p>
+<div class="ins-btns">
+<button class="btn-insurance" onclick="takeInsurance(true)">賭ける</button>
+<button class="btn-stand" onclick="takeInsurance(false)">賭けない</button>
+</div>
+</div>
+
+<!-- ゲームオーバー -->
+<div class="overlay" id="game-over">
+<h2>GAME OVER</h2>
+<p>チップがなくなりました</p>
+<button class="btn-newgame" onclick="fullReset()">最初からやり直す ($1000)</button>
+</div>
+</div>
+<script>
+// ===== CONFIG =====
+let CFG={decks:6,s17:true,bjPay:1.5,dblRule:"any",das:true,surrender:true,maxSplit:4};
+
+// ===== STATE =====
+let shoe=[];let chips=1000;let currentBetAmt=0;let selectedChipVal=25;
+let dealerHand=[];let dealerHidden=true;
+let playerHands=[];let activeHandIdx=0;let handNum=0;let lastBet=0;
+let insuranceBet=0;let gamePhase="bet"; // bet, insurance, play, dealer, done
+
+const SUITS=["♠","♥","♦","♣"];
+const RANKS=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+function isRed(s){return s==="♥"||s==="♦"}
+function cardVal(r){if(["J","Q","K"].includes(r))return 10;if(r==="A")return 11;return parseInt(r)}
+
+function createShoe(){
+  const d=[];
+  for(let n=0;n<CFG.decks;n++)for(const s of SUITS)for(const r of RANKS)d.push({rank:r,suit:s});
+  for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]]}
+  return d;
+}
+
+function handValue(hand){
+  let t=0,a=0;
+  for(const c of hand){t+=cardVal(c.rank);if(c.rank==="A")a++}
+  while(t>21&&a>0){t-=10;a--}
+  return t;
+}
+
+function isSoft(hand){
+  let t=0,a=0;
+  for(const c of hand){t+=cardVal(c.rank);if(c.rank==="A")a++}
+  while(t>21&&a>0){t-=10;a--}
+  if(a>0&&t<=21)return true;
+  return false;
+}
+
+function isBJ(hand){return hand.length===2&&handValue(hand)===21}
+function canSplit(h){return h.cards.length===2&&cardVal(h.cards[0].rank)===cardVal(h.cards[1].rank)&&playerHands.length<CFG.maxSplit&&chips>=h.bet}
+function canDouble(h){
+  if(chips<h.bet)return false;
+  if(h.cards.length!==2)return false;
+  if(h.fromSplit&&!CFG.das)return false;
+  if(CFG.dblRule==="9-11"){const v=handValue(h.cards);if(v<9||v>11)return false}
+  return true;
+}
+
+// ===== RENDER =====
+function renderCard(c,hidden){
+  if(hidden)return `<div class="card face-down deal-anim"></div>`;
+  const col=isRed(c.suit)?"red":"black";
+  return `<div class="card face-up ${col} deal-anim"><div class="rank">${c.rank}</div><div class="suit">${c.suit}</div></div>`;
+}
+
+function renderDealer(){
+  const dc=document.getElementById("dealer-cards");
+  dc.innerHTML=dealerHand.map((c,i)=>renderCard(c,i===1&&dealerHidden)).join("");
+  const dv=document.getElementById("dealer-val");
+  if(dealerHidden){
+    dv.textContent=cardVal(dealerHand[0].rank);
+  }else{
+    const v=handValue(dealerHand);
+    dv.innerHTML=isBJ(dealerHand)?`<span class="bj">BJ!</span>`:v;
+  }
+}
+
+function renderPlayer(){
+  const area=document.getElementById("player-area");
+  if(playerHands.length===0){area.innerHTML="";return}
+  if(playerHands.length===1){
+    const h=playerHands[0];
+    const v=handValue(h.cards);
+    const bjLabel=isBJ(h.cards)&&!h.fromSplit?' <span class="bj">BLACKJACK!</span>':"";
+    area.innerHTML=`<div class="hand-section">
+      <div class="hand-label">YOU <span class="value">${v}${bjLabel}</span> <span style="font-size:.7rem;color:#888">($${h.bet})</span></div>
+      <div class="cards-row">${h.cards.map(c=>renderCard(c,false)).join("")}</div>
+    </div>`;
+  }else{
+    let html='<div class="split-hands">';
+    playerHands.forEach((h,i)=>{
+      const v=handValue(h.cards);
+      const active=i===activeHandIdx&&gamePhase==="play";
+      const status=h.done?(h.busted?"BUST":h.stood?"STAND":h.surrendered?"SURRENDER":""):""
+      html+=`<div class="split-hand ${active?"active":""}">
+        <div class="hand-idx">ハンド${i+1} ($${h.bet}) ${status}</div>
+        <div class="hand-label"><span class="value">${v}</span></div>
+        <div class="cards-row">${h.cards.map(c=>renderCard(c,false)).join("")}</div>
+      </div>`;
+    });
+    html+="</div>";
+    area.innerHTML=html;
+  }
+}
+
+function renderChips(){document.getElementById("chip-count").textContent=chips}
+function renderShoe(){document.getElementById("shoe-info").textContent=`シュー: ${shoe.length}枚`}
+
+function setMsg(text,cls,sub){
+  const m=document.getElementById("message");
+  m.textContent=text;m.className="message"+(cls?" "+cls:"");
+  document.getElementById("sub-message").textContent=sub||"";
+}
+
+function showBet(){document.getElementById("bet-area").style.display="";document.getElementById("actions").style.display="none"}
+function showActions(){document.getElementById("bet-area").style.display="none";document.getElementById("actions").style.display="flex"}
+
+// ===== BET =====
+function selectChip(val,el){
+  selectedChipVal=val;
+  document.querySelectorAll(".chip").forEach(c=>c.classList.remove("selected"));
+  el.classList.add("selected");
+}
+
+function addBet(){
+  if(selectedChipVal>chips-currentBetAmt)return;
+  currentBetAmt+=selectedChipVal;
+  document.getElementById("current-bet").textContent=currentBetAmt;
+}
+
+// Click on chip selector adds to bet
+document.querySelectorAll(".chip").forEach(c=>{
+  c.addEventListener("click",()=>{
+    selectedChipVal=parseInt(c.dataset.val);
+    document.querySelectorAll(".chip").forEach(x=>x.classList.remove("selected"));
+    c.classList.add("selected");
+    if(gamePhase==="bet")addBet();
+  });
+});
+
+function clearBet(){currentBetAmt=0;document.getElementById("current-bet").textContent=0}
+function rebet(){
+  if(lastBet>0&&lastBet<=chips){currentBetAmt=lastBet;document.getElementById("current-bet").textContent=currentBetAmt}
+}
+
+// ===== DEAL =====
+function startDeal(){
+  if(currentBetAmt<=0||currentBetAmt>chips)return;
+  if(shoe.length<52)shoe=createShoe();
+  
+  chips-=currentBetAmt;lastBet=currentBetAmt;handNum++;
+  document.getElementById("hand-count").textContent=`ハンド #${handNum}`;
+  
+  dealerHand=[shoe.pop(),shoe.pop()];
+  dealerHidden=true;
+  playerHands=[{cards:[shoe.pop(),shoe.pop()],bet:currentBetAmt,done:false,busted:false,stood:false,surrendered:false,doubled:false,fromSplit:false}];
+  activeHandIdx=0;insuranceBet=0;
+  
+  renderDealer();renderPlayer();renderChips();renderShoe();setMsg("","");
+  currentBetAmt=0;document.getElementById("current-bet").textContent=0;
+  
+  // Check dealer ace -> insurance
+  if(dealerHand[0].rank==="A"){
+    gamePhase="insurance";
+    document.getElementById("ins-dialog").classList.add("show");
+    document.getElementById("bet-area").style.display="none";
+    return;
+  }
+  
+  afterDeal();
+}
+
+function takeInsurance(yes){
+  document.getElementById("ins-dialog").classList.remove("show");
+  if(yes){
+    insuranceBet=Math.floor(playerHands[0].bet/2);
+    chips-=insuranceBet;renderChips();
+  }
+  afterDeal();
+}
+
+function afterDeal(){
+  const pBJ=isBJ(playerHands[0].cards);
+  const dBJ=isBJ(dealerHand);
+  
+  // Dealer BJ check (if upcard is 10 or A)
+  const upVal=cardVal(dealerHand[0].rank);
+  if(upVal===10||upVal===11){
+    if(dBJ){
+      dealerHidden=false;renderDealer();
+      if(insuranceBet>0){chips+=insuranceBet*3;renderChips()}
+      if(pBJ){
+        chips+=playerHands[0].bet;renderChips();
+        setMsg("PUSH","push","両者ブラックジャック");
+      }else{
+        setMsg("DEALER BLACKJACK","lose","ディーラーの勝ち");
+      }
+      renderPlayer();endRound();return;
+    }else if(insuranceBet>0){
+      setMsg("インシュランス失敗","","");
+    }
+  }
+  
+  if(pBJ){
+    dealerHidden=false;renderDealer();
+    const win=Math.floor(playerHands[0].bet*CFG.bjPay);
+    chips+=playerHands[0].bet+win;renderChips();
+    setMsg("BLACKJACK!","bj",`+$${win}`);
+    renderPlayer();endRound();return;
+  }
+  
+  gamePhase="play";
+  showActions();
+  renderActions();
+}
+
+// ===== ACTIONS =====
+function renderActions(){
+  const h=playerHands[activeHandIdx];
+  if(!h||h.done){nextHand();return}
+  const v=handValue(h.cards);
+  const ac=document.getElementById("actions");
+  let html=`<button class="btn-hit" onclick="doHit()">ヒット</button>`;
+  html+=`<button class="btn-stand" onclick="doStand()">スタンド</button>`;
+  if(canDouble(h))html+=`<button class="btn-double" onclick="doDouble()">ダブル</button>`;
+  if(canSplit(h))html+=`<button class="btn-split" onclick="doSplit()">スプリット</button>`;
+  if(CFG.surrender&&h.cards.length===2&&!h.fromSplit&&playerHands.length===1)
+    html+=`<button class="btn-surrender" onclick="doSurrender()">サレンダー</button>`;
+  ac.innerHTML=html;
+}
+
+function doHit(){
+  const h=playerHands[activeHandIdx];
+  h.cards.push(shoe.pop());renderShoe();
+  const v=handValue(h.cards);
+  if(v>21){h.done=true;h.busted=true;renderPlayer();nextHand();return}
+  if(v===21){h.done=true;h.stood=true;renderPlayer();nextHand();return}
+  renderPlayer();renderActions();
+}
+
+function doStand(){
+  playerHands[activeHandIdx].done=true;
+  playerHands[activeHandIdx].stood=true;
+  renderPlayer();nextHand();
+}
+
+function doDouble(){
+  const h=playerHands[activeHandIdx];
+  chips-=h.bet;h.bet*=2;h.doubled=true;renderChips();
+  h.cards.push(shoe.pop());renderShoe();
+  const v=handValue(h.cards);
+  if(v>21){h.busted=true}
+  h.done=true;h.stood=!h.busted;
+  renderPlayer();nextHand();
+}
+
+function doSplit(){
+  const h=playerHands[activeHandIdx];
+  const splitCard=h.cards.pop();
+  chips-=h.bet;renderChips();
+  
+  h.cards.push(shoe.pop());
+  const newHand={cards:[splitCard,shoe.pop()],bet:h.bet,done:false,busted:false,stood:false,surrendered:false,doubled:false,fromSplit:true};
+  playerHands.splice(activeHandIdx+1,0,newHand);
+  h.fromSplit=true;
+  
+  // Aces split: only one card each
+  if(splitCard.rank==="A"&&h.cards[0].rank==="A"){
+    h.done=true;h.stood=true;
+    newHand.done=true;newHand.stood=true;
+    renderPlayer();renderShoe();nextHand();return;
+  }
+  
+  renderPlayer();renderShoe();
+  if(handValue(h.cards)===21){h.done=true;h.stood=true;nextHand();return}
+  renderActions();
+}
+
+function doSurrender(){
+  const h=playerHands[activeHandIdx];
+  h.done=true;h.surrendered=true;
+  chips+=Math.floor(h.bet/2);renderChips();
+  renderPlayer();nextHand();
+}
+
+function nextHand(){
+  activeHandIdx++;
+  if(activeHandIdx<playerHands.length){
+    const h=playerHands[activeHandIdx];
+    if(h.done){nextHand();return}
+    renderPlayer();renderActions();
+    return;
+  }
+  // All hands done -> dealer turn
+  dealerTurn();
+}
+
+// ===== DEALER =====
+function dealerTurn(){
+  gamePhase="dealer";
+  dealerHidden=false;renderDealer();
+  
+  // Check if all hands busted/surrendered
+  const allDead=playerHands.every(h=>h.busted||h.surrendered);
+  if(allDead){resolveAll();return}
+  
+  dealerDraw();
+}
+
+function dealerDraw(){
+  const dv=handValue(dealerHand);
+  const soft=isSoft(dealerHand);
+  const mustHit=dv<17||(dv===17&&soft&&!CFG.s17);
+  
+  if(mustHit){
+    dealerHand.push(shoe.pop());renderDealer();renderShoe();
+    setTimeout(dealerDraw,500);
+  }else{
+    resolveAll();
+  }
+}
+
+function resolveAll(){
+  const dv=handValue(dealerHand);
+  const dBust=dv>21;
+  let totalWin=0;let results=[];
+  
+  playerHands.forEach((h,i)=>{
+    if(h.surrendered){results.push("SURRENDER");return}
+    if(h.busted){results.push("BUST");return}
+    
+    const pv=handValue(h.cards);
+    
+    if(dBust){chips+=h.bet*2;totalWin+=h.bet;results.push("WIN")}
+    else if(pv>dv){chips+=h.bet*2;totalWin+=h.bet;results.push("WIN")}
+    else if(pv===dv){chips+=h.bet;results.push("PUSH")}
+    else{totalWin-=h.bet;results.push("LOSE")}
+  });
+  
+  renderChips();renderPlayer();
+  
+  // Message
+  if(playerHands.length===1){
+    const r=results[0];
+    if(r==="WIN"){setMsg("WIN!","win",`+$${playerHands[0].bet}`)}
+    else if(r==="LOSE"){setMsg("LOSE","lose",`-$${playerHands[0].bet}`)}
+    else if(r==="PUSH"){setMsg("PUSH","push","引き分け")}
+    else if(r==="BUST"){setMsg("BUST","lose",`-$${playerHands[0].bet}`)}
+    else if(r==="SURRENDER"){setMsg("SURRENDER","lose",`-$${Math.floor(playerHands[0].bet/2)}`)}
+  }else{
+    const wins=results.filter(r=>r==="WIN").length;
+    const losses=results.filter(r=>r==="LOSE"||r==="BUST").length;
+    if(totalWin>0)setMsg(`${wins}WIN / ${losses}LOSE`,"win",`+$${totalWin}`);
+    else if(totalWin<0)setMsg(`${wins}WIN / ${losses}LOSE`,"lose",`$${totalWin}`);
+    else setMsg("EVEN","push","±$0");
+  }
+  
+  endRound();
+}
+
+function endRound(){
+  gamePhase="done";
+  document.getElementById("actions").style.display="none";
+  
+  if(chips<=0){
+    document.getElementById("game-over").classList.add("show");
+    return;
+  }
+  
+  // Show next round button after delay
+  setTimeout(()=>{
+    showBet();
+    if(lastBet>0)document.getElementById("btn-rebet").style.display="";
+  },1200);
+}
+
+// ===== SETTINGS =====
+function toggleSettings(){document.getElementById("settings-panel").classList.toggle("show")}
+function applySettings(){
+  CFG.decks=parseInt(document.getElementById("s-decks").value);
+  CFG.s17=document.getElementById("s-s17").value==="1";
+  CFG.bjPay=parseFloat(document.getElementById("s-bjpay").value);
+  CFG.dblRule=document.getElementById("s-dbl").value;
+  CFG.das=document.getElementById("s-das").value==="1";
+  CFG.surrender=document.getElementById("s-surr").value==="1";
+  CFG.maxSplit=parseInt(document.getElementById("s-maxsplit").value);
+  shoe=createShoe();
+  document.getElementById("settings-panel").classList.remove("show");
+  renderShoe();setMsg("ルール変更適用","");
+}
+
+function fullReset(){
+  chips=1000;handNum=0;lastBet=0;currentBetAmt=0;shoe=createShoe();
+  document.getElementById("game-over").classList.remove("show");
+  document.getElementById("current-bet").textContent=0;
+  renderChips();renderShoe();
+  document.getElementById("player-area").innerHTML="";
+  document.getElementById("dealer-cards").innerHTML="";
+  document.getElementById("dealer-val").textContent="";
+  setMsg("","");showBet();
+}
+
+// ===== KEYBOARD =====
+document.addEventListener("keydown",e=>{
+  if(gamePhase==="play"){
+    if(e.key==="h"||e.key==="H")doHit();
+    else if(e.key==="s"||e.key==="S")doStand();
+    else if(e.key==="d"||e.key==="D"){const h=playerHands[activeHandIdx];if(canDouble(h))doDouble()}
+    else if(e.key==="p"||e.key==="P"){const h=playerHands[activeHandIdx];if(canSplit(h))doSplit()}
+    else if(e.key==="r"||e.key==="R")if(CFG.surrender)doSurrender();
+  }else if(gamePhase==="bet"){
+    if(e.key==="Enter")startDeal();
+  }
+});
+
+// ===== INIT =====
+shoe=createShoe();renderShoe();
+</script>
+</body>
+</html>
