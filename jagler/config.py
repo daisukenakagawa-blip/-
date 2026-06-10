@@ -22,8 +22,13 @@ STORE_NAME = "ビッグディッパー新橋1号店"
 MACHINE_NAME = "マイジャグラー"
 
 # ------------------------------------------------------------------
-# 保存先
+# 保存先（ストレージ）
 # ------------------------------------------------------------------
+# "auto"   : 認証情報があれば Googleスプレッドシート、無ければ SQLite（推奨）
+# "sqlite" : 常にローカルの SQLite（このPC内に保存）
+# "gsheet" : 常に Googleスプレッドシート（クラウドでも消えない蓄積先）
+STORAGE_BACKEND = "auto"
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
@@ -112,3 +117,6 @@ GSHEET_ENABLED = False
 GSHEET_CREDENTIALS_PATH = str(BASE_DIR / "service_account.json")
 GSHEET_SPREADSHEET_NAME = "ジャグラーデータ"
 GSHEET_WORKSHEET_NAME = "data"
+# スプレッドシートをURL/キーで指定する場合（名前より確実。任意）
+# 例: シートURL https://docs.google.com/spreadsheets/d/<ここがキー>/edit
+GSHEET_SPREADSHEET_KEY = None

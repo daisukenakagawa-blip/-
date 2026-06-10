@@ -26,13 +26,24 @@ import pandas as pd
 import streamlit as st
 
 import config
-import database as db
+import storage as db
 import scraper
 import analysis
 import exporter
 import sample_data
 
 st.set_page_config(page_title="ジャグラー データ分析ツール", layout="wide")
+
+# --- 保存先の認証情報を Streamlit secrets から注入（クラウド永続化用） ---
+# .streamlit/secrets.toml もしくは Streamlit Cloud の Secrets に
+# [gcp_service_account] と（任意で）[gsheet] を設定すると蓄積先がSheetsになる。
+try:
+    if "gcp_service_account" in st.secrets:
+        db.set_gsheet_credentials(dict(st.secrets["gcp_service_account"]))
+        if "gsheet" in st.secrets:
+            db.set_gsheet_config(dict(st.secrets["gsheet"]))
+except Exception:  # noqa: BLE001  secrets未設定でもSQLiteで動く
+    pass
 
 # 表示用カラム名（日本語）
 DISPLAY_COLS = {
@@ -57,6 +68,7 @@ st.sidebar.caption(f"機種: {config.MACHINE_NAME}")
 
 mode = "🟢 実サイト接続" if config.SCRAPER_ENABLED else "🟡 デモデータ"
 st.sidebar.info(f"取得モード: {mode}")
+st.sidebar.caption(f"保存先: {db.backend_label()}")
 
 remaining = scraper.seconds_until_allowed()
 if remaining > 0:

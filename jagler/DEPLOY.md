@@ -36,19 +36,59 @@
 
 ---
 
-## ⚠️ 重要：公開後のデータ保存について
+## ⭐ データを消さずに毎日蓄積する（Googleスプレッドシート保存）
 
-Streamlit Community Cloud は、**アプリが再起動するとSQLiteの中身（蓄積データ）が
-リセットされます**（再デプロイ・一定時間アクセスなしでのスリープ復帰など）。
+Streamlit Cloud は再起動でSQLiteが消えますが、**保存先をGoogleスプレッドシートに
+すると消えません**。本ツールは保存先を自動切替できるようになっており、認証情報を
+設定するだけで「スプレッドシートをデータベース本体」として読み書きします
+（スマホのスプレッドシートアプリから中身を直接見ることもできます）。
 
-- **傾向の確認・デモ用途**：このままで問題ありません
-- **毎日コツコツ蓄積したい**：保存先を「消えない場所」にする必要があります
-  - 相性が良いのは **Googleスプレッドシート**（本ツールに出力機能あり）
-  - この改修が必要になったら、お申し付けください（`database.py` の保存先を
-    スプレッドシート/外部DBに切り替える対応をします）
+### 設定手順
 
-当面は「PCの `collect.py` で毎日蓄積 → スプレッドシートに出力 → スマホで閲覧」
-という運用でも実用になります。
+#### A. Google側（サービスアカウントの用意）
+1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作成
+2. 「APIとサービス」→ **Google Sheets API** と **Google Drive API** を有効化
+3. 「認証情報」→「サービスアカウント」を作成
+4. 作成したサービスアカウントの **キー（JSON）** をダウンロード
+5. Googleスプレッドシートを新規作成し、**サービスアカウントのメールアドレス**
+   （`xxxx@xxxx.iam.gserviceaccount.com`）に**編集権限で共有**
+6. そのシートのURL `https://docs.google.com/spreadsheets/d/<キー>/edit` の
+   `<キー>` 部分を控える
+
+#### B. Streamlit Cloud側（Secrets に貼り付け）
+アプリ管理画面 → **Settings → Secrets** に、ダウンロードしたJSONの中身を
+次の形式で貼り付けます（TOML形式）。
+
+```toml
+[gcp_service_account]
+type = "service_account"
+project_id = "xxxx"
+private_key_id = "xxxx"
+private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+client_email = "xxxx@xxxx.iam.gserviceaccount.com"
+client_id = "xxxx"
+token_uri = "https://oauth2.googleapis.com/token"
+
+[gsheet]
+spreadsheet_key = "ここに手順A-6で控えたキー"
+worksheet_name = "data"
+```
+
+保存して再デプロイすると、画面サイドバーの保存先表示が
+**「🟢 Googleスプレッドシート（蓄積OK）」** に変わります。これで再起動しても
+データが消えず、毎日蓄積されていきます。
+
+> `secrets.toml` の雛形は `jagler/.streamlit/secrets.toml.example` にあります。
+
+### ローカルPCでスプレッドシート蓄積を使う場合
+- JSONキーを `jagler/service_account.json` に置く（または環境変数
+  `GCP_SERVICE_ACCOUNT_JSON` にJSON文字列をセット）
+- `config.py` の `GSHEET_SPREADSHEET_KEY` にシートのキーを設定
+- `pip install gspread` 済みであれば `python collect.py` で自動的にシートへ蓄積
+
+### 補足
+- 認証情報を設定しなければ従来どおり SQLite（このPC内）で動きます
+- どちらの保存先でも、同日・同台の重複は自動でスキップされます
 
 ---
 

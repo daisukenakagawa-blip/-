@@ -5,6 +5,7 @@ data/last_fetch.json
 
 # 認証情報（絶対にコミットしない）
 service_account.json
+.streamlit/secrets.toml
 
 # Python
 __pycache__/
