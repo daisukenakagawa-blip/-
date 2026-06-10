@@ -32,6 +32,7 @@ import scraper
 import analysis
 import exporter
 import sample_data
+import importer
 
 st.set_page_config(page_title="ジャグラー データ分析ツール", layout="wide")
 
@@ -156,12 +157,47 @@ c3.metric("収集日数", f"{df_all['date'].nunique()} 日")
 c4.metric("最新データ", df_all["date"].max())
 
 tabs = st.tabs([
-    "📋 データ一覧", "🏆 店舗比較", "🏪 店舗傾向分析", "🔢 末尾分析",
-    "📅 曜日分析", "🎯 狙い台ランキング", "💾 CSVダウンロード",
+    "✍️ データ入力", "📋 データ一覧", "🏆 店舗比較", "🏪 店舗傾向分析",
+    "🔢 末尾分析", "📅 曜日分析", "🎯 狙い台ランキング", "💾 CSVダウンロード",
 ])
 
-# --- データ一覧 ---
+# --- データ入力（貼り付け／手動） ---
 with tabs[0]:
+    st.subheader("データ入力（貼り付け取り込み）")
+    st.caption("ブラウザで開いた台データ表をコピーして、下に貼り付けてください。"
+               "タブ・カンマ・スペース区切りに対応。見出し行があれば自動認識します。")
+    ic1, ic2, ic3 = st.columns(3)
+    in_store = ic1.text_input("店舗名", value=config.STORE_NAME)
+    in_machine = ic2.text_input("機種名", value=config.MACHINE_NAME)
+    in_date = ic3.date_input("日付", value=date.today(), key="paste_date")
+    order_label = st.selectbox(
+        "見出しが無いときの列の並び順",
+        ["台番号 / BIG / REG / 総回転数", "台番号 / 総回転数 / BIG / REG"],
+    )
+    order_map = {
+        "台番号 / BIG / REG / 総回転数": ["machine_no", "big", "reg", "total_games"],
+        "台番号 / 総回転数 / BIG / REG": ["machine_no", "total_games", "big", "reg"],
+    }
+    pasted = st.text_area("ここに貼り付け", height=200,
+                          placeholder="台番号\tBIG\tREG\t総回転数\n1\t52\t31\t7200 ...")
+    if st.button("🔍 プレビュー / 取り込み", type="primary"):
+        recs, warns = importer.parse_pasted_text(pasted, order_map[order_label])
+        for w in warns:
+            st.warning(w)
+        if recs:
+            prev = pd.DataFrame(recs)
+            prev["合算(1/N)"] = (prev["total_games"] /
+                                 (prev["big"] + prev["reg"]).replace(0, pd.NA)).round(1)
+            st.dataframe(prev, use_container_width=True)
+            ins, skip = db.save_records(recs, in_date.isoformat(), in_store, in_machine)
+            st.success(f"取り込み完了: {in_store} {in_date} → "
+                       f"新規{ins}件 / 重複スキップ{skip}件")
+            st.rerun()
+    st.info("※ サイトを自動巡回せず、ご自身が見たデータを取り込む方式です"
+            "（規約順守）。毎日の手間はコピペ1回だけ。")
+
+# --- データ一覧 ---
+with tabs[1]:
     st.subheader("データ一覧（合算・REG確率を色分け）")
     st.caption("合算: 黄(1/140-130)→橙(1/129-110)→赤(1/109-80) ｜ "
                "REG: 値が小さいほど高設定示唆")
@@ -177,7 +213,7 @@ with tabs[0]:
     )
 
 # --- 店舗比較（多店舗：どの店が出しているか） ---
-with tabs[1]:
+with tabs[2]:
     st.subheader("店舗比較ランキング（過去30日）")
     st.caption("平均合算が良い（分母が小さい）店ほど上位＝設定を入れている傾向。"
                "東京都内で狙う店を絞る材料に。")
@@ -190,7 +226,7 @@ with tabs[1]:
         st.caption("※ 棒が低い店ほど平均合算が良い")
 
 # --- 店舗傾向分析（台番号別） ---
-with tabs[2]:
+with tabs[3]:
     st.subheader(f"台番号別 傾向（{sel_store}）")
     mt = analysis.machine_trend(df)
     st.dataframe(mt, use_container_width=True)
@@ -219,7 +255,7 @@ with tabs[2]:
                      use_container_width=True)
 
 # --- 末尾分析 ---
-with tabs[3]:
+with tabs[4]:
     st.subheader(f"末尾別 傾向（{sel_store}）")
     tt = analysis.tail_trend(df)
     st.dataframe(tt, use_container_width=True)
@@ -228,7 +264,7 @@ with tabs[3]:
         st.caption("※ 棒が低い末尾ほど平均合算が良い傾向")
 
 # --- 曜日分析 ---
-with tabs[4]:
+with tabs[5]:
     st.subheader(f"曜日別 傾向（{sel_store}）")
     wt = analysis.weekday_trend(df)
     st.dataframe(wt, use_container_width=True)
@@ -237,7 +273,7 @@ with tabs[4]:
         st.caption("※ 棒が低い曜日ほど平均合算が良い傾向")
 
 # --- 狙い台ランキング ---
-with tabs[5]:
+with tabs[6]:
     st.subheader(f"翌日の狙い台ランキング（{sel_store}・1〜{config.RANKING_TOP_N}位）")
     st.caption("過去REG・合算・末尾・曜日・前日凹みを加点したスコア順。"
                "完璧な予想ではなく傾向の見える化です。")
@@ -257,7 +293,7 @@ with tabs[5]:
                     f"　スコア{row['スコア']}**  \n{row['おすすめ理由']}")
 
 # --- CSVダウンロード ---
-with tabs[6]:
+with tabs[7]:
     st.subheader("CSVダウンロード")
     st.download_button(
         "📥 全店・全データCSV（Excel対応・BOM付き）",
