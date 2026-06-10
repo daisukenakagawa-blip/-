@@ -322,6 +322,45 @@ function combinedInfo(v){
 function regColor(v){ if(v==null)return""; for(const[lo,hi,c]of REG_COLORS) if(v>=lo&&v<=hi)return c; return ""; }
 function cellStyle(info){ return info.cls? "class='"+info.cls+"'" : "style='background:"+info.bg+"'"; }
 
+// ---------- 設定推定エンジン（公式スペック表）----------
+// 各機種の設定1〜6の BIG/REG 確率（分母 N = 1/N）
+const JAG_SPECS={
+  "ネオアイムジャグラー":   {big:[273.1,269.7,269.7,259.0,259.0,255.0], reg:[439.8,399.6,331.0,315.1,255.0,255.0]},
+  "ファンキージャグラー2":  {big:[266.4,259.0,256.0,249.2,240.1,219.9], reg:[439.8,407.1,366.1,322.8,299.3,262.1]},
+  "マイジャグラー5":        {big:[273.1,270.8,266.4,254.0,240.1,229.1], reg:[409.6,385.5,336.1,290.0,268.6,229.1]},
+  "ハッピージャグラーV3":   {big:[273.1,270.8,263.2,254.0,239.2,226.0], reg:[397.2,362.1,332.7,300.6,273.1,256.0]},
+  "ゴーゴージャグラー3":     {big:[259.0,258.0,257.0,254.0,247.3,234.9], reg:[354.2,332.7,306.2,268.6,247.3,234.9]},
+  "ジャグラーガールズSS":   {big:[273.1,270.8,260.1,250.1,243.6,226.0], reg:[381.0,350.5,316.6,281.3,270.8,252.1]},
+  "ミスタージャグラー":     {big:[268.6,267.5,260.1,249.2,240.9,237.4], reg:[374.5,354.2,331.0,291.3,257.0,237.4]}
+};
+// 機種名→スペック（部分一致。Vや5の表記揺れは最も近い既知機種で代用）
+function matchSpec(name){
+  const n=name||"";
+  if(/ネオアイム/.test(n)) return JAG_SPECS["ネオアイムジャグラー"];
+  if(/アイム/.test(n))     return JAG_SPECS["ネオアイムジャグラー"];
+  if(/ファンキー/.test(n)) return JAG_SPECS["ファンキージャグラー2"];
+  if(/マイジャグラー/.test(n)) return JAG_SPECS["マイジャグラー5"];
+  if(/ハッピー/.test(n))   return JAG_SPECS["ハッピージャグラーV3"];
+  if(/ゴーゴー|ＧＯＧＯ/.test(n)) return JAG_SPECS["ゴーゴージャグラー3"];
+  if(/ガールズ/.test(n))   return JAG_SPECS["ジャグラーガールズSS"];
+  if(/ミスター/.test(n))   return JAG_SPECS["ミスタージャグラー"];
+  return null;
+}
+// BIG/REG回数と総回転からポアソン尤度で設定を推定
+function estimateSetting(rec){
+  const sp=matchSpec(rec&&rec.machine_name); if(!sp||!rec.total) return null;
+  const lls=[];
+  for(let s=0;s<6;s++){
+    const lb=rec.total/sp.big[s], lr=rec.total/sp.reg[s];
+    lls.push(rec.big*Math.log(lb)-lb + rec.reg*Math.log(lr)-lr);
+  }
+  const mx=Math.max(...lls); const ex=lls.map(x=>Math.exp(x-mx)); const sum=ex.reduce((a,b)=>a+b,0);
+  const probs=ex.map(x=>x/sum); let best=0; for(let i=1;i<6;i++) if(probs[i]>probs[best]) best=i;
+  return {setting:best+1, prob:probs[best], high:probs[3]+probs[4]+probs[5]}; // high=P(設定4以上)
+}
+function settingStyle(s){ if(s>=6)return "background:#7CFC00;font-weight:bold"; if(s===5)return "background:#b6f5a0";
+  if(s===4)return "background:#e6f8d8"; return ""; }
+
 // ---------- 派生指標 ----------
 function enrich(r){
   const bbreg=r.big+r.reg; const d=new Date(r.date+"T00:00:00");
@@ -675,17 +714,18 @@ function renderList(rows){
   const evCache={};
   const evOf=(date,store)=>{ const k=date+"|"+store; if(!(k in evCache)) evCache[k]=eventLabel(date,store); return evCache[k]; };
   let h="<tr><th>日付</th><th>曜</th><th>イベント</th><th>店舗</th><th>機種</th><th>台</th><th>BIG</th><th>REG</th>"+
-        "<th>総ｽﾀｰﾄ</th><th>合算</th><th>設定示唆</th><th>REG確率</th><th>差枚</th><th>ブドウ</th><th>末尾</th><th>操作</th></tr>";
+        "<th>総ｽﾀｰﾄ</th><th>合算</th><th>推定設定</th><th>REG確率</th><th>差枚</th><th>ブドウ</th><th>末尾</th><th>操作</th></tr>";
   for(const r of v.slice(0,500)){ const ci=combinedInfo(r.combined);
     const key=encodeURIComponent(r.date+"|"+r.store+"|"+r.machine_no);
     const sabe = r.sabe!=null ? (r.sabe>0?"+"+r.sabe:String(r.sabe)) : "-";
     const ev=evOf(r.date,r.store);
+    const est=estimateSetting(r);
+    const estCell = est? "<td style='"+settingStyle(est.setting)+"'>設定"+est.setting+"<br><span class='muted'>"+Math.round(est.prob*100)+"%</span></td>" : "<td>-</td>";
     h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.weekday+"</td>"+
       "<td>"+(ev?"🎉"+ev:"")+"</td><td>"+r.store+"</td><td>"+(r.machine_name||"")+
       "</td><td>"+r.machine_no+"</td><td>"+r.big+"</td><td>"+r.reg+"</td><td>"+r.total+
-      "</td><td "+cellStyle(ci)+">"+(r.combined?"1/"+r.combined:"-")+
-      "</td><td "+cellStyle(ci)+">"+ci.label+
-      "</td><td style='background:"+regColor(r.reg_prob)+"'>"+(r.reg_prob?"1/"+r.reg_prob:"-")+
+      "</td><td "+cellStyle(ci)+">"+(r.combined?"1/"+r.combined:"-")+"</td>"+estCell+
+      "<td style='background:"+regColor(r.reg_prob)+"'>"+(r.reg_prob?"1/"+r.reg_prob:"-")+
       "</td><td style='color:"+(r.sabe>0?'#1a7f37':r.sabe<0?'#c00':'#555')+"'>"+sabe+
       "</td><td>"+(r.budou||"-")+"</td><td>"+r.tail+"</td>"+
       "<td><button class='ghost' style='padding:3px 8px;color:#c00' onclick=\"deleteOne('"+key+"')\">削除</button></td></tr>"; }
@@ -785,6 +825,16 @@ function renderRank(rows){
     const aReg=avg(g.map(r=>r.reg_prob)), aComb=avg(g.map(r=>r.combined)), aTot=avg(g.map(r=>r.total));
     const mname=g[g.length-1].machine_name||""; const t=mno%10;
     let s=30; const reasons=[];
+
+    // (0) 設定推定（公式スペック表ベース・最重要）：高設定の出現確率を加点
+    const ests=g.map(r=>estimateSetting(r)).filter(Boolean);
+    if(ests.length){
+      const pHigh=avg(ests.map(e=>e.high));            // 平均 P(設定4以上)
+      if(pHigh!=null){ const p=Math.min(22,pHigh*32); s+=p;
+        if(pHigh>=0.35) reasons.push("設定推定で高設定率"+Math.round(pHigh*100)+"%(+"+p.toFixed(0)+")"); }
+      const eld=lastDay[mno]?estimateSetting(lastDay[mno]):null;
+      if(eld&&eld.setting>=5){ s+=6; reasons.push("前日は設定"+eld.setting+"推定("+Math.round(eld.prob*100)+"%)(+6)"); }
+    }
 
     // (1) 総回転数の信頼度補正：少ないとREG/合算の加点を割引、極端に少なければ減点
     const rel = aTot!=null ? Math.max(0.5,Math.min(1.1,aTot/6000)) : 0.8;
