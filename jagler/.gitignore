@@ -1,0 +1,13 @@
+# 収集データ・生成物（各自の環境で生成される）
+data/*.db
+data/*.csv
+data/last_fetch.json
+
+# 認証情報（絶対にコミットしない）
+service_account.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
