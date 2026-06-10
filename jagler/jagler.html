@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ジャグラー データ分析ツール</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
-  :root{ --red:#ff5b5b; --orange:#ffae42; --yellow:#ffe066; --bg:#f5f6fa; --line:#e1e4ea; }
+  :root{ --bg:#f5f6fa; --line:#e1e4ea; }
   *{ box-sizing:border-box; }
   body{ font-family:-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
         margin:0; background:var(--bg); color:#1a1a1a; -webkit-text-size-adjust:100%; }
@@ -14,7 +15,7 @@
   header p{ font-size:12px; margin:4px 0 0; color:#bbb; }
   .wrap{ max-width:980px; margin:0 auto; padding:12px; }
   .tabs{ display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
-  .tabs button{ border:1px solid var(--line); background:#fff; padding:8px 12px;
+  .tabs button{ border:1px solid var(--line); background:#fff; padding:8px 11px;
         border-radius:18px; font-size:13px; cursor:pointer; }
   .tabs button.active{ background:#222; color:#fff; border-color:#222; }
   .panel{ display:none; background:#fff; border:1px solid var(--line);
@@ -25,9 +26,9 @@
   label{ font-size:12px; color:#555; display:block; margin:8px 0 2px; }
   input,select,textarea{ width:100%; padding:8px; border:1px solid var(--line);
         border-radius:6px; font-size:14px; font-family:inherit; }
-  textarea{ min-height:160px; white-space:pre; }
+  textarea{ min-height:150px; white-space:pre; }
   .row{ display:flex; gap:8px; flex-wrap:wrap; }
-  .row>div{ flex:1; min-width:120px; }
+  .row>div{ flex:1; min-width:110px; }
   button.primary{ background:#e8462f; color:#fff; border:none; padding:11px 16px;
         border-radius:8px; font-size:15px; cursor:pointer; margin-top:10px; width:100%; }
   button.ghost{ background:#fff; border:1px solid var(--line); padding:8px 12px;
@@ -37,16 +38,21 @@
   th{ background:#fafbfc; position:sticky; top:0; }
   .scroll{ overflow:auto; max-height:62vh; }
   .metrics{ display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
-  .metric{ flex:1; min-width:90px; background:#fff; border:1px solid var(--line);
+  .metric{ flex:1; min-width:80px; background:#fff; border:1px solid var(--line);
         border-radius:8px; padding:8px; text-align:center; }
-  .metric b{ font-size:18px; display:block; }
+  .metric b{ font-size:17px; display:block; }
   .metric span{ font-size:11px; color:#777; }
   .reason{ font-size:12px; color:#444; }
-  .bar{ height:10px; background:#e8462f; border-radius:3px; }
   .note{ background:#fff7e6; border:1px solid #ffe0a3; border-radius:8px;
         padding:8px 10px; font-size:12px; margin-top:10px; }
   .ok{ color:#1a7f37; font-size:13px; margin-top:8px; }
   .warn{ color:#b35900; font-size:12px; }
+  .rainbow{ background:linear-gradient(90deg,#ff5b5b,#ffae42,#ffe066,#7CFC00,#46c8ff,#b06bff);
+        color:#111; font-weight:bold; }
+  .legend span{ display:inline-block; padding:2px 8px; border-radius:4px; margin:2px; font-size:11px; }
+  .score{ font-weight:bold; font-size:14px; }
+  .ev{ display:flex; justify-content:space-between; align-items:center;
+        border:1px solid var(--line); border-radius:6px; padding:6px 8px; margin-top:6px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -59,47 +65,86 @@
   <div class="metrics" id="metrics"></div>
 
   <div class="tabs" id="tabs">
-    <button data-t="input" class="active">✍️ データ入力</button>
+    <button data-t="input" class="active">✍️ 貼り付け入力</button>
+    <button data-t="photo">📷 写真取り込み</button>
+    <button data-t="event">🎉 イベント日</button>
     <button data-t="list">📋 データ一覧</button>
     <button data-t="store">🏆 店舗比較</button>
     <button data-t="tail">🔢 末尾分析</button>
     <button data-t="week">📅 曜日分析</button>
-    <button data-t="rank">🎯 狙い台ランキング</button>
+    <button data-t="rank">🎯 狙い台予想</button>
     <button data-t="csv">💾 CSV/管理</button>
   </div>
 
-  <!-- データ入力 -->
+  <!-- 貼り付け入力 -->
   <div class="panel active" id="p-input">
-    <h2>データ入力（貼り付け取り込み）</h2>
-    <p class="muted">データサイトをご自身のブラウザで開き、台データの表をコピーして
-      下に貼り付けてください。タブ・カンマ・スペース区切りに対応、見出し行は自動認識します。</p>
+    <h2>貼り付け取り込み（ペカセン等）</h2>
+    <p class="muted">サイトをご自身のブラウザで開き、台データの表をコピーして貼り付けてください。</p>
     <div class="row">
       <div><label>店舗名</label><input id="in-store" value="ビッグディッパー新橋1号店"></div>
       <div><label>機種名</label><input id="in-machine" value="マイジャグラー"></div>
       <div><label>日付</label><input id="in-date" type="date"></div>
     </div>
-    <label>見出しが無いときの列の並び順</label>
+    <label>データの形式（列の並び）</label>
     <select id="in-order">
-      <option value="machine_no,big,reg,total">台番号 / BIG / REG / 総回転数</option>
-      <option value="machine_no,total,big,reg">台番号 / 総回転数 / BIG / REG</option>
-      <option value="machine_no,big,reg">台番号 / BIG / REG（総回転は空欄→0）</option>
+      <option value="machine_no,total,big,reg">ペカセン（台番 / G数 / BIG / REG / 合成 / 差枚 / ブドウ）</option>
+      <option value="machine_no,big,reg,total">汎用（台番 / BIG / REG / 総スタート）</option>
+      <option value="machine_no,total,big,reg,skip">汎用（台番 / 総スタート / BIG / REG）</option>
     </select>
     <label>ここに貼り付け</label>
-    <textarea id="in-text" placeholder="台番号&#9;BIG&#9;REG&#9;総回転数&#10;1&#9;52&#9;31&#9;7200&#10;2&#9;40&#9;22&#9;5800"></textarea>
+    <textarea id="in-text" placeholder="台番&#9;G数&#9;BIG&#9;REG&#9;合成&#9;差枚&#9;ブドウ&#10;1&#9;7200&#9;52&#9;31 ..."></textarea>
     <button class="primary" onclick="doImport()">🔍 取り込む</button>
     <div id="import-msg"></div>
-    <div class="note">※ サイトを自動巡回せず、ご自身が見たデータを取り込む方式です（規約順守）。
-      毎日の手間はコピペ1回だけ。データはこの端末のブラウザ内に保存されます。</div>
+    <div class="note">※ サイトを自動巡回せず、ご自身が見たデータを取り込む方式です（規約順守）。</div>
     <details style="margin-top:10px;">
       <summary class="muted">デモデータを入れて試す</summary>
       <button class="ghost" style="margin-top:8px;" onclick="loadDemo()">🧪 デモ履歴（3店×60日）を生成</button>
     </details>
   </div>
 
+  <!-- 写真取り込み -->
+  <div class="panel" id="p-photo">
+    <h2>写真取り込み（papimo / PIAMO 用・OCR）</h2>
+    <p class="muted">papimoはコピペできないため、画面の写真から数字を読み取ります。
+      papimoの列は「BB数 / RB数 / BB確率 / 合成確率 / 総スタート / 持ちメダル」。
+      <b>BB数・RB数・総スタートだけ使い、持ちメダルは無視</b>します。
+      OCRは完璧ではないので、読み取り後に必ず内容を確認・修正してください。</p>
+    <div class="row">
+      <div><label>店舗名</label><input id="ph-store" value="papimo店舗"></div>
+      <div><label>機種名</label><input id="ph-machine" value="マイジャグラー"></div>
+    </div>
+    <div class="row">
+      <div><label>日付</label><input id="ph-date" type="date"></div>
+      <div><label>開始台番号</label><input id="ph-start" type="number" value="1"></div>
+    </div>
+    <label>台データの写真を選ぶ（撮影 or 画像）</label>
+    <input id="ph-file" type="file" accept="image/*" capture="environment" onchange="runOcr(event)">
+    <div id="ph-status" class="muted" style="margin-top:6px;"></div>
+    <label>読み取り結果（1行1台、確認・修正OK）<br>
+      <span class="muted">並び: BB数 RB数 BB確率 合成確率 総スタート 持ちメダル（数字だけでOK／確率や持メダルは無視されます）</span></label>
+    <textarea id="ph-text" placeholder="例:&#10;52 31 1/138 1/86 7200 1500&#10;40 22 1/145 1/94 5800 -800"></textarea>
+    <button class="primary" onclick="doPhotoImport()">📥 この内容で取り込む</button>
+    <div id="ph-msg"></div>
+  </div>
+
+  <!-- イベント日 -->
+  <div class="panel" id="p-event">
+    <h2>イベント日の登録</h2>
+    <p class="muted">取材・旧イベント・スロパチ系の日など、設定が入りやすいと思われる日を登録します。
+      狙い台予想に反映され、過去のイベント日傾向も分析します。</p>
+    <div class="row">
+      <div><label>日付</label><input id="ev-date" type="date"></div>
+      <div><label>店舗</label><input id="ev-store" placeholder="全店 でもOK" value="全店"></div>
+      <div><label>内容（任意）</label><input id="ev-name" placeholder="取材/月初 など"></div>
+    </div>
+    <button class="primary" onclick="addEvent()">➕ イベント日を追加</button>
+    <div id="ev-list" style="margin-top:12px;"></div>
+  </div>
+
   <!-- データ一覧 -->
   <div class="panel" id="p-list">
     <h2>データ一覧（色分け）</h2>
-    <p class="muted">合算: 黄(1/140-130)→橙(1/129-110)→赤(1/109-80) ／ REG: 値が小さいほど高設定示唆</p>
+    <div class="legend" id="legend"></div>
     <div class="row">
       <div><label>店舗</label><select id="f-store" onchange="render()"></select></div>
       <div><label>日付</label><select id="f-date" onchange="render()"></select></div>
@@ -116,23 +161,30 @@
 
   <!-- 末尾分析 -->
   <div class="panel" id="p-tail">
-    <h2>末尾別 傾向</h2>
-    <p class="muted">選択中の店舗で、末尾ごとの平均合算・平均REGを表示。</p>
+    <h2>末尾別 傾向（選択店舗）</h2>
     <div id="t-tail"></div>
   </div>
 
   <!-- 曜日分析 -->
   <div class="panel" id="p-week">
-    <h2>曜日別 傾向</h2>
+    <h2>曜日別 傾向（選択店舗）</h2>
     <div id="t-week"></div>
   </div>
 
-  <!-- 狙い台ランキング -->
+  <!-- 狙い台予想 -->
   <div class="panel" id="p-rank">
-    <h2>翌日の狙い台ランキング（1〜20位）</h2>
-    <p class="muted">過去REG・合算・末尾・曜日・前日凹みを加点したスコア順。
-      完璧な予想ではなく傾向の見える化です。店舗を選んでください。</p>
-    <label>店舗</label><select id="r-store" onchange="render()"></select>
+    <h2>翌日の狙い台予想（100点満点）</h2>
+    <p class="muted">蓄積データ＋イベントから、各台の「高設定が入る期待度」を100点満点で採点。
+      機種名・台番号・根拠つき。完璧な予想ではなく傾向の見える化です。</p>
+    <div class="row">
+      <div><label>店舗</label><select id="r-store" onchange="render()"></select></div>
+      <div style="display:flex;align-items:flex-end;">
+        <label style="margin:0;display:flex;gap:6px;align-items:center;">
+          <input type="checkbox" id="r-event" style="width:auto;" onchange="render()">
+          翌日はイベント日として予想
+        </label>
+      </div>
+    </div>
     <div id="t-rank"></div>
   </div>
 
@@ -140,7 +192,7 @@
   <div class="panel" id="p-csv">
     <h2>CSV / データ管理</h2>
     <button class="ghost" onclick="downloadCsv()">📥 全データをCSVでダウンロード</button>
-    <p class="muted" style="margin-top:12px;">バックアップ（端末を変えるときに使用）</p>
+    <p class="muted" style="margin-top:12px;">バックアップ（機種変更・端末変更時に使用）</p>
     <button class="ghost" onclick="exportJson()">⬇️ バックアップ（JSON）書き出し</button>
     <label style="margin-top:8px;">バックアップ（JSON）読み込み</label>
     <input type="file" id="imp-file" accept="application/json" onchange="importJson(event)">
@@ -152,298 +204,317 @@
 
 <script>
 "use strict";
-const KEY = "jagler_records_v1";
-const WD = ["日","月","火","水","木","金","土"];          // JS getDay() 0=日
-const WD_ORDER = ["月","火","水","木","金","土","日"];
-const COMBINED_COLORS = [[80,109,"#ff5b5b"],[110,129,"#ffae42"],[130,140,"#ffe066"]];
-const REG_COLORS = [[200,255,"#ff5b5b"],[256,290,"#ffae42"],[291,330,"#ffe066"]];
+const KEY="jagler_records_v1", EKEY="jagler_events_v1";
+const WD=["日","月","火","水","木","金","土"];
+const WD_ORDER=["月","火","水","木","金","土","日"];
+const REG_COLORS=[[200,255,"#ff5b5b"],[256,290,"#ffae42"],[291,330,"#ffe066"]];
 
-// ---------- 保存・読み込み ----------
-function load(){ try{ return JSON.parse(localStorage.getItem(KEY)) || []; }catch(e){ return []; } }
-function save(rows){ localStorage.setItem(KEY, JSON.stringify(rows)); }
+// ---------- 保存 ----------
+function load(){ try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return[];} }
+function save(r){ localStorage.setItem(KEY,JSON.stringify(r)); }
+function loadEvents(){ try{return JSON.parse(localStorage.getItem(EKEY))||[];}catch(e){return[];} }
+function saveEvents(e){ localStorage.setItem(EKEY,JSON.stringify(e)); }
+
+// ---------- 色分け（合算確率）----------
+// 140〜130:黄(設定4示唆) 129〜120:橙(設定5示唆) 119〜100:赤(設定6示唆) 99〜70:レインボー(設定6確定級)
+function combinedInfo(v){
+  if(v==null) return {bg:"",cls:"",label:""};
+  if(v>140)   return {bg:"",cls:"",label:""};
+  if(v>=130)  return {bg:"#ffe066",cls:"",label:"設定4示唆"};
+  if(v>=120)  return {bg:"#ffae42",cls:"",label:"設定5示唆"};
+  if(v>=100)  return {bg:"#ff5b5b",cls:"",label:"設定6示唆"};
+  return {bg:"",cls:"rainbow",label:"設定6確定級"};   // 99〜70（及びそれ以下）
+}
+function regColor(v){ if(v==null)return""; for(const[lo,hi,c]of REG_COLORS) if(v>=lo&&v<=hi)return c; return ""; }
+function cellStyle(info){ return info.cls? "class='"+info.cls+"'" : "style='background:"+info.bg+"'"; }
 
 // ---------- 派生指標 ----------
 function enrich(r){
-  const bbreg = r.big + r.reg;
-  const d = new Date(r.date + "T00:00:00");
-  r.weekday = WD[d.getDay()];
-  r.tail = r.machine_no % 10;
-  r.bbreg = bbreg;
-  r.big_prob = r.big ? +(r.total/r.big).toFixed(1) : null;
-  r.reg_prob = r.reg ? +(r.total/r.reg).toFixed(1) : null;
-  r.combined = bbreg ? +(r.total/bbreg).toFixed(1) : null;
-  r.reg_ratio = bbreg ? +(r.reg/bbreg).toFixed(3) : null;
+  const bbreg=r.big+r.reg; const d=new Date(r.date+"T00:00:00");
+  r.weekday=WD[d.getDay()]; r.tail=r.machine_no%10; r.bbreg=bbreg;
+  r.big_prob=r.big?+(r.total/r.big).toFixed(1):null;
+  r.reg_prob=r.reg?+(r.total/r.reg).toFixed(1):null;
+  r.combined=bbreg?+(r.total/bbreg).toFixed(1):null;
+  r.reg_ratio=bbreg?+(r.reg/bbreg).toFixed(3):null;
   return r;
 }
 
-// ---------- 貼り付け解析 ----------
+// ---------- 解析（貼り付け／写真テキスト共通）----------
 function splitLine(line){
   if(line.includes("\t")) return line.split("\t").map(s=>s.trim());
   if(/[ 　]{2,}/.test(line)) return line.trim().split(/[ 　]{2,}/).map(s=>s.trim()).filter(x=>x);
-  if((line.match(/,/g)||[]).length >= 3) return line.split(",").map(s=>s.trim());
+  if((line.match(/,/g)||[]).length>=3) return line.split(",").map(s=>s.trim());
   return line.trim().split(/[ 　]+/).filter(x=>x);
 }
-function toInt(t){ const d=(t||"").replace(/[^0-9]/g,""); return d? parseInt(d,10): null; }
-const HEADER_KW = {
-  machine_no:["台番","台番号","番号","台"], big:["big","bb","ビッグ"],
-  reg:["reg","rb","レギュラー"], total:["総回転","総ゲーム","回転","ゲーム","スタート"]
-};
-function looksHeader(cells){
-  const j = cells.join(" ").toLowerCase(); let hit=0;
-  for(const k in HEADER_KW){ if(HEADER_KW[k].some(w=>j.includes(w))) hit++; }
-  return hit>=2;
-}
-function mapHeader(cells){
-  const low = cells.map(c=>c.toLowerCase()); const m={}; const used=new Set();
-  for(const col in HEADER_KW){
-    for(let i=0;i<low.length;i++){
-      if(used.has(i)) continue;
-      if(HEADER_KW[col].some(w=>low[i].includes(w))){ m[col]=i; used.add(i); break; }
-    }
-  }
-  return m;
-}
-function parsePaste(text, order){
-  const warns=[]; const lines = text.split(/\r?\n/).filter(l=>l.trim()!=="");
+function toInt(t){ const d=(t||"").replace(/[^0-9]/g,""); return d?parseInt(d,10):null; }
+const HEADER_KW={ machine_no:["台番","台番号","番号","台"], big:["big","bb","ビッグ"],
+  reg:["reg","rb","レギュラー"], total:["総回転","総ゲーム","総スタート","g数","回転","ゲーム","スタート"] };
+function looksHeader(c){ const j=c.join(" ").toLowerCase(); let h=0;
+  for(const k in HEADER_KW) if(HEADER_KW[k].some(w=>j.includes(w))) h++; return h>=2; }
+function mapHeader(c){ const low=c.map(x=>x.toLowerCase()),m={},u=new Set();
+  for(const col in HEADER_KW) for(let i=0;i<low.length;i++){ if(u.has(i))continue;
+    if(HEADER_KW[col].some(w=>low[i].includes(w))){m[col]=i;u.add(i);break;} } return m; }
+
+// order: 列名の並び（"skip"可）。machine_no が無ければ startNo から連番。
+function parseRows(text, order, startNo){
+  const warns=[]; const lines=text.split(/\r?\n/).filter(l=>l.trim()!=="");
   if(!lines.length) return {recs:[],warns:["入力が空です。"]};
-  let map, dataLines;
-  const first = splitLine(lines[0]);
-  if(looksHeader(first)){
-    map = mapHeader(first); dataLines = lines.slice(1);
-    order.forEach((c,i)=>{ if(map[c]===undefined) map[c]=i; });
-  } else {
-    map={}; order.forEach((c,i)=>map[c]=i); dataLines = lines;
-  }
-  const recs=[];
+  let map,dataLines;
+  const first=splitLine(lines[0]);
+  if(looksHeader(first)){ map=mapHeader(first); dataLines=lines.slice(1);
+    order.forEach((c,i)=>{ if(c!=="skip"&&map[c]===undefined) map[c]=i; }); }
+  else{ map={}; order.forEach((c,i)=>{ if(c!=="skip") map[c]=i; }); dataLines=lines; }
+  const recs=[]; let auto=startNo||1;
   for(const ln of dataLines){
-    const c = splitLine(ln);
-    const mno=toInt(c[map.machine_no]), big=toInt(c[map.big]), reg=toInt(c[map.reg]);
-    const total = map.total!==undefined ? toInt(c[map.total]) : 0;
-    if(mno===null||big===null||reg===null){ warns.push("読めずスキップ: "+ln.slice(0,30)); continue; }
-    recs.push({machine_no:mno, big:big, reg:reg, total: total||0});
+    const c=splitLine(ln);
+    const big=toInt(c[map.big]), reg=toInt(c[map.reg]);
+    const total= map.total!==undefined ? (toInt(c[map.total])||0) : 0;
+    let mno = map.machine_no!==undefined ? toInt(c[map.machine_no]) : null;
+    if(mno===null && map.machine_no===undefined){ mno=auto; }
+    if(big===null||reg===null||mno===null){ warns.push("読めずスキップ: "+ln.slice(0,28)); continue; }
+    recs.push({machine_no:mno,big,reg,total}); auto++;
   }
-  if(!recs.length) warns.push("有効なデータ行がありません。列の並び順を確認してください。");
-  return {recs, warns};
+  if(!recs.length) warns.push("有効なデータ行がありません。形式（列の並び）を確認してください。");
+  return {recs,warns};
 }
 
-// ---------- 取り込み ----------
+function saveRecs(recs, store, machine, date){
+  const rows=load(); const keys=new Set(rows.map(r=>r.date+"|"+r.store+"|"+r.machine_no));
+  let ins=0,skip=0;
+  for(const r of recs){ const k=date+"|"+store+"|"+r.machine_no;
+    if(keys.has(k)){skip++;continue;} keys.add(k);
+    rows.push(enrich({date,store,machine_name:machine,machine_no:r.machine_no,big:r.big,reg:r.reg,total:r.total})); ins++; }
+  save(rows); refreshAll(); return {ins,skip};
+}
+
+// ---------- 貼り付け取り込み ----------
 function doImport(){
-  const store=val("in-store").trim(), machine=val("in-machine").trim(), date=val("in-date");
-  const order = val("in-order").split(",");
-  const msg = document.getElementById("import-msg");
+  const store=val("in-store").trim(),machine=val("in-machine").trim(),date=val("in-date");
+  const order=val("in-order").split(",");
+  const msg=document.getElementById("import-msg");
   if(!store||!date){ msg.innerHTML='<div class="warn">店舗名と日付を入力してください。</div>'; return; }
-  const {recs,warns} = parsePaste(val("in-text"), order);
-  let html = warns.map(w=>'<div class="warn">'+w+'</div>').join("");
-  if(recs.length){
-    const rows = load(); const keys = new Set(rows.map(r=>r.date+"|"+r.store+"|"+r.machine_no));
-    let ins=0, skip=0;
-    for(const r of recs){
-      const k = date+"|"+store+"|"+r.machine_no;
-      if(keys.has(k)){ skip++; continue; }
-      keys.add(k);
-      rows.push(enrich({date,store,machine_name:machine,machine_no:r.machine_no,big:r.big,reg:r.reg,total:r.total}));
-      ins++;
-    }
-    save(rows);
-    html += '<div class="ok">取り込み完了: '+store+' '+date+' → 新規'+ins+'件 / 重複スキップ'+skip+'件</div>';
-    document.getElementById("in-text").value="";
-    refreshAll();
-  }
-  msg.innerHTML = html;
+  const {recs,warns}=parseRows(val("in-text"),order,1);
+  let html=warns.map(w=>'<div class="warn">'+w+'</div>').join("");
+  if(recs.length){ const {ins,skip}=saveRecs(recs,store,machine,date);
+    html+='<div class="ok">取り込み完了: '+store+' '+date+' → 新規'+ins+'件 / 重複'+skip+'件</div>';
+    document.getElementById("in-text").value=""; }
+  msg.innerHTML=html;
+}
+
+// ---------- 写真OCR ----------
+async function runOcr(e){
+  const f=e.target.files[0]; if(!f)return;
+  const st=document.getElementById("ph-status");
+  if(typeof Tesseract==="undefined"){ st.innerHTML='<span class="warn">OCRライブラリを読み込めませんでした（電波の良い所で再読み込みを）。手入力でも取り込めます。</span>'; return; }
+  st.textContent="読み取り中…（数十秒かかることがあります）";
+  try{
+    const {data}=await Tesseract.recognize(f,"eng",{ tessedit_char_whitelist:"0123456789/.-, " });
+    document.getElementById("ph-text").value=data.text.trim();
+    st.innerHTML='<span class="ok">読み取り完了。数字を確認・修正して「取り込む」を押してください。</span>';
+  }catch(x){ st.innerHTML='<span class="warn">読み取りに失敗しました。明るく正面から撮り直すか、手入力してください。</span>'; }
+}
+function doPhotoImport(){
+  const store=val("ph-store").trim(),machine=val("ph-machine").trim(),date=val("ph-date");
+  const start=parseInt(val("ph-start"),10)||1;
+  const msg=document.getElementById("ph-msg");
+  if(!store||!date){ msg.innerHTML='<div class="warn">店舗名と日付を入力してください。</div>'; return; }
+  // papimo: BB数 RB数 BB確率 合成確率 総スタート 持ちメダル → big,reg,skip,skip,total,(skip)
+  const order=["big","reg","skip","skip","total","skip"];
+  const {recs,warns}=parseRows(val("ph-text"),order,start);
+  let html=warns.map(w=>'<div class="warn">'+w+'</div>').join("");
+  if(recs.length){ const {ins,skip}=saveRecs(recs,store,machine,date);
+    html+='<div class="ok">取り込み完了: '+store+' '+date+' → 新規'+ins+'件 / 重複'+skip+'件（台番'+start+'から連番）</div>'; }
+  msg.innerHTML=html;
+}
+
+// ---------- イベント日 ----------
+function addEvent(){
+  const date=val("ev-date"); if(!date){ alert("日付を入れてください"); return; }
+  const ev=loadEvents(); ev.push({date,store:val("ev-store").trim()||"全店",name:val("ev-name").trim()});
+  saveEvents(ev); renderEvents();
+}
+function delEvent(i){ const ev=loadEvents(); ev.splice(i,1); saveEvents(ev); renderEvents(); render(); }
+function isEventDate(date,store){ return loadEvents().some(e=>e.date===date&&(e.store==="全店"||e.store===store)); }
+function eventDatesFor(store){ return loadEvents().filter(e=>e.store==="全店"||e.store===store).map(e=>e.date); }
+function renderEvents(){
+  const ev=loadEvents().slice().sort((a,b)=>b.date<a.date?-1:1);
+  const el=document.getElementById("ev-list");
+  if(!ev.length){ el.innerHTML='<p class="muted">まだ登録がありません。</p>'; return; }
+  el.innerHTML=ev.map((e,i)=>'<div class="ev"><span>📅 '+e.date+'　<b>'+e.store+'</b>　'+(e.name||"")+
+    '</span><button class="ghost" onclick="delEvent('+i+')">削除</button></div>').join("");
 }
 
 // ---------- 集計ユーティリティ ----------
-const val = id => document.getElementById(id).value;
-function maxDate(rows){ return rows.reduce((a,r)=>r.date>a?r.date:a, ""); }
-function recent(rows, days){
-  if(!rows.length) return [];
-  const md = maxDate(rows); const c = new Date(md+"T00:00:00"); c.setDate(c.getDate()-days);
-  const cut = c.toISOString().slice(0,10);
-  return rows.filter(r=>r.date>cut);
-}
-function avg(arr){ const a=arr.filter(x=>x!=null); return a.length? a.reduce((s,x)=>s+x,0)/a.length : null; }
-function groupBy(rows, key){ const m={}; rows.forEach(r=>{ (m[r[key]]=m[r[key]]||[]).push(r); }); return m; }
-
-function combinedColor(v){ if(v==null)return""; for(const[lo,hi,c]of COMBINED_COLORS) if(v>=lo&&v<=hi)return c; return ""; }
-function regColor(v){ if(v==null)return""; for(const[lo,hi,c]of REG_COLORS) if(v>=lo&&v<=hi)return c; return ""; }
+const val=id=>document.getElementById(id).value;
+function maxDate(rows){ return rows.reduce((a,r)=>r.date>a?r.date:a,""); }
+function recent(rows,days){ if(!rows.length)return[]; const md=maxDate(rows);
+  const c=new Date(md+"T00:00:00"); c.setDate(c.getDate()-days);
+  const cut=c.toISOString().slice(0,10); return rows.filter(r=>r.date>cut); }
+function avg(a){ const x=a.filter(v=>v!=null); return x.length?x.reduce((s,v)=>s+v,0)/x.length:null; }
+function groupBy(rows,key){ const m={}; rows.forEach(r=>{(m[r[key]]=m[r[key]]||[]).push(r);}); return m; }
 
 // ---------- 描画 ----------
 function refreshAll(){
-  // 店舗セレクタ
-  const rows = load();
-  const stores = [...new Set(rows.map(r=>r.store))].sort();
-  fillSelect("f-store", ["（全店）",...stores]);
-  fillSelect("r-store", stores.length?stores:["（データなし）"]);
-  const dates = [...new Set(rows.map(r=>r.date))].sort().reverse();
-  fillSelect("f-date", ["（全期間）",...dates]);
-  render();
+  const rows=load(); const stores=[...new Set(rows.map(r=>r.store))].sort();
+  fillSelect("f-store",["（全店）",...stores]);
+  fillSelect("r-store",stores.length?stores:["（データなし）"]);
+  fillSelect("f-date",["（全期間）",...[...new Set(rows.map(r=>r.date))].sort().reverse()]);
+  renderEvents(); render();
 }
-function fillSelect(id, opts){
-  const el = document.getElementById(id); const cur = el.value;
-  el.innerHTML = opts.map(o=>'<option>'+o+'</option>').join("");
-  if(opts.includes(cur)) el.value = cur;
-}
+function fillSelect(id,opts){ const el=document.getElementById(id); const cur=el.value;
+  el.innerHTML=opts.map(o=>'<option>'+o+'</option>').join(""); if(opts.includes(cur))el.value=cur; }
 function render(){
-  const rows = load();
-  // メトリクス
-  const stores = new Set(rows.map(r=>r.store)), dates = new Set(rows.map(r=>r.date));
-  document.getElementById("metrics").innerHTML =
-    metric(rows.length,"レコード") + metric(stores.size,"店舗") +
-    metric(dates.size,"収集日数") + metric(rows.length?maxDate(rows):"-","最新");
-  renderList(rows); renderStore(rows); renderTail(rows);
-  renderWeek(rows); renderRank(rows);
+  const rows=load();
+  document.getElementById("metrics").innerHTML=
+    metric(rows.length,"レコード")+metric(new Set(rows.map(r=>r.store)).size,"店舗")+
+    metric(new Set(rows.map(r=>r.date)).size,"収集日数")+metric(loadEvents().length,"イベント")+
+    metric(rows.length?maxDate(rows):"-","最新");
+  document.getElementById("legend").innerHTML=
+    "<span style='background:#ffe066'>1/140-130 設定4示唆</span>"+
+    "<span style='background:#ffae42'>1/129-120 設定5示唆</span>"+
+    "<span style='background:#ff5b5b'>1/119-100 設定6示唆</span>"+
+    "<span class='rainbow'>1/99-70 設定6確定級</span>";
+  renderList(rows); renderStore(rows); renderTail(rows); renderWeek(rows); renderRank(rows);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
+function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
 
 function renderList(rows){
-  let v = rows.slice();
-  const s = val("f-store"), d = val("f-date");
-  if(s && s!=="（全店）") v=v.filter(r=>r.store===s);
-  if(d && d!=="（全期間）") v=v.filter(r=>r.date===d);
-  v.sort((a,b)=> b.date<a.date?-1: b.date>a.date?1: a.machine_no-b.machine_no);
-  let h="<tr><th>日付</th><th>曜</th><th>店舗</th><th>台</th><th>BIG</th><th>REG</th>"+
-        "<th>総回転</th><th>合算</th><th>REG確率</th><th>末尾</th></tr>";
-  for(const r of v.slice(0,500)){
-    h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.weekday+"</td><td>"+r.store+"</td><td>"+r.machine_no+
-      "</td><td>"+r.big+"</td><td>"+r.reg+"</td><td>"+r.total+
-      "</td><td style='background:"+combinedColor(r.combined)+"'>"+(r.combined?("1/"+r.combined):"-")+
-      "</td><td style='background:"+regColor(r.reg_prob)+"'>"+(r.reg_prob?("1/"+r.reg_prob):"-")+
-      "</td><td>"+r.tail+"</td></tr>";
-  }
-  document.getElementById("t-list").innerHTML = h;
+  let v=rows.slice(); const s=val("f-store"),d=val("f-date");
+  if(s&&s!=="（全店）") v=v.filter(r=>r.store===s);
+  if(d&&d!=="（全期間）") v=v.filter(r=>r.date===d);
+  v.sort((a,b)=>b.date<a.date?-1:b.date>a.date?1:a.machine_no-b.machine_no);
+  let h="<tr><th>日付</th><th>曜</th><th>店舗</th><th>機種</th><th>台</th><th>BIG</th><th>REG</th>"+
+        "<th>総ｽﾀｰﾄ</th><th>合算</th><th>設定示唆</th><th>REG確率</th><th>末尾</th></tr>";
+  for(const r of v.slice(0,500)){ const ci=combinedInfo(r.combined);
+    h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.weekday+"</td><td>"+r.store+"</td><td>"+(r.machine_name||"")+
+      "</td><td>"+r.machine_no+"</td><td>"+r.big+"</td><td>"+r.reg+"</td><td>"+r.total+
+      "</td><td "+cellStyle(ci)+">"+(r.combined?"1/"+r.combined:"-")+
+      "</td><td "+cellStyle(ci)+">"+ci.label+
+      "</td><td style='background:"+regColor(r.reg_prob)+"'>"+(r.reg_prob?"1/"+r.reg_prob:"-")+
+      "</td><td>"+r.tail+"</td></tr>"; }
+  document.getElementById("t-list").innerHTML=h;
 }
-
-function trendTable(groups, label, fmt){
+function trendTable(groups,label,order){
   let h="<div class='scroll'><table><tr><th>"+label+"</th><th>件数</th><th>平均合算</th><th>平均REG</th></tr>";
-  for(const k of fmt(Object.keys(groups))){
-    const g=groups[k]; const c=avg(g.map(r=>r.combined)), rg=avg(g.map(r=>r.reg_prob));
-    const barw = c? Math.max(2, 160-(c-80)*2):0;
-    h+="<tr><td>"+k+"</td><td>"+g.length+"</td><td style='background:"+combinedColor(c?+c.toFixed(1):null)+"'>"+
-       (c?"1/"+c.toFixed(1):"-")+"</td><td>"+(rg?"1/"+rg.toFixed(1):"-")+"</td></tr>";
-  }
+  for(const k of order(Object.keys(groups))){ const g=groups[k];
+    const c=avg(g.map(r=>r.combined)),rg=avg(g.map(r=>r.reg_prob)); const ci=combinedInfo(c?+c.toFixed(1):null);
+    h+="<tr><td>"+k+"</td><td>"+g.length+"</td><td "+cellStyle(ci)+">"+(c?"1/"+c.toFixed(1):"-")+
+       "</td><td>"+(rg?"1/"+rg.toFixed(1):"-")+"</td></tr>"; }
   return h+"</table></div>";
 }
-function selectedStoreRows(rows){
-  const s = val("f-store");
-  return (s && s!=="（全店）") ? rows.filter(r=>r.store===s) : rows;
-}
 function renderStore(rows){
-  const rec = recent(rows,30); const g = groupBy(rec,"store");
-  const keys = Object.keys(g).sort((a,b)=> (avg(g[a].map(r=>r.combined))||999)-(avg(g[b].map(r=>r.combined))||999));
+  const g=groupBy(recent(rows,30),"store");
+  const ks=Object.keys(g).sort((a,b)=>(avg(g[a].map(r=>r.combined))||999)-(avg(g[b].map(r=>r.combined))||999));
   let h="<div class='scroll'><table><tr><th>店舗</th><th>件数</th><th>平均合算</th><th>平均REG</th></tr>";
-  for(const k of keys){
-    const c=avg(g[k].map(r=>r.combined)), rg=avg(g[k].map(r=>r.reg_prob));
-    h+="<tr><td style='text-align:left'>"+k+"</td><td>"+g[k].length+"</td><td style='background:"+
-       combinedColor(c?+c.toFixed(1):null)+"'>"+(c?"1/"+c.toFixed(1):"-")+"</td><td>"+(rg?"1/"+rg.toFixed(1):"-")+"</td></tr>";
-  }
-  document.getElementById("t-store").innerHTML = h+"</table></div>";
+  for(const k of ks){ const c=avg(g[k].map(r=>r.combined)),rg=avg(g[k].map(r=>r.reg_prob)); const ci=combinedInfo(c?+c.toFixed(1):null);
+    h+="<tr><td style='text-align:left'>"+k+"</td><td>"+g[k].length+"</td><td "+cellStyle(ci)+">"+
+       (c?"1/"+c.toFixed(1):"-")+"</td><td>"+(rg?"1/"+rg.toFixed(1):"-")+"</td></tr>"; }
+  document.getElementById("t-store").innerHTML=h+"</table></div>";
 }
-function renderTail(rows){
-  const g = groupBy(selectedStoreRows(rows),"tail");
-  document.getElementById("t-tail").innerHTML =
-    trendTable(g,"末尾",ks=>ks.map(Number).sort((a,b)=>a-b));
-}
-function renderWeek(rows){
-  const g = groupBy(selectedStoreRows(rows),"weekday");
-  document.getElementById("t-week").innerHTML =
-    trendTable(g,"曜日",ks=>WD_ORDER.filter(w=>ks.includes(w)));
-}
+function renderTail(rows){ document.getElementById("t-tail").innerHTML=
+  trendTable(groupBy(selStoreRows(rows),"tail"),"末尾",ks=>ks.map(Number).sort((a,b)=>a-b)); }
+function renderWeek(rows){ document.getElementById("t-week").innerHTML=
+  trendTable(groupBy(selStoreRows(rows),"weekday"),"曜日",ks=>WD_ORDER.filter(w=>ks.includes(w))); }
 
-// ---------- 狙い台ランキング ----------
+// ---------- 狙い台予想（100点満点）----------
 function renderRank(rows){
-  const store = val("r-store");
-  const el = document.getElementById("t-rank");
-  if(!store || store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
-  const sr = rows.filter(r=>r.store===store);
+  const store=val("r-store"); const el=document.getElementById("t-rank");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const sr=rows.filter(r=>r.store===store);
   if(sr.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
-  const rec = recent(sr,30);
-  const gM = groupBy(rec,"machine_no");
-  const gComb = avg(rec.map(r=>r.combined)), gReg = avg(rec.map(r=>r.reg_prob));
-  const tailAvg={}; const gT=groupBy(rec,"tail"); for(const t in gT) tailAvg[t]=avg(gT[t].map(r=>r.combined));
-  const wAvg={}; const gW=groupBy(rec,"weekday"); for(const w in gW) wAvg[w]=avg(gW[w].map(r=>r.combined));
-  const md = maxDate(sr); const nd = new Date(md+"T00:00:00"); nd.setDate(nd.getDate()+1);
-  const nextWd = WD[nd.getDay()];
-  const lastDay = {}; sr.filter(r=>r.date===md).forEach(r=>lastDay[r.machine_no]=r);
+  const rec=recent(sr,30);
+  const gM=groupBy(rec,"machine_no");
+  const gComb=avg(rec.map(r=>r.combined)), gReg=avg(rec.map(r=>r.reg_prob));
+  const tailAvg={},gT=groupBy(rec,"tail"); for(const t in gT) tailAvg[t]=avg(gT[t].map(r=>r.combined));
+  const wAvg={},gW=groupBy(rec,"weekday"); for(const w in gW) wAvg[w]=avg(gW[w].map(r=>r.combined));
+  const md=maxDate(sr); const nd=new Date(md+"T00:00:00"); nd.setDate(nd.getDate()+1);
+  const nextWd=WD[nd.getDay()];
+  const lastDay={}; sr.filter(r=>r.date===md).forEach(r=>lastDay[r.machine_no]=r);
+  const evDates=new Set(eventDatesFor(store));
+  const eventTomorrow=document.getElementById("r-event").checked;
 
   const out=[];
   for(const mno in gM){
     const g=gM[mno]; if(g.length<2) continue;
     const aReg=avg(g.map(r=>r.reg_prob)), aComb=avg(g.map(r=>r.combined));
-    let score=0; const reasons=[];
-    if(aReg!=null&&gReg!=null){ score+=Math.max(0,gReg-aReg)*0.15;
-      if(aReg<=gReg-10) reasons.push("過去30日のREGが1/"+aReg.toFixed(0)+"と全体平均より優秀"); }
-    if(aComb!=null&&gComb!=null){ score+=Math.max(0,gComb-aComb)*0.10;
-      if(aComb<=gComb-5) reasons.push("過去30日の合算が1/"+aComb.toFixed(0)+"と好調"); }
+    const mname=g[g.length-1].machine_name||"";
+    let s=30; const reasons=[];
+    if(aReg!=null&&gReg!=null&&aReg<gReg){ const p=Math.min(25,(gReg-aReg)*0.5); s+=p;
+      if(aReg<=gReg-10) reasons.push("過去30日REGが1/"+aReg.toFixed(0)+"と優秀(+"+p.toFixed(0)+")"); }
+    if(aComb!=null&&gComb!=null&&aComb<gComb){ const p=Math.min(15,(gComb-aComb)*0.4); s+=p;
+      if(aComb<=gComb-5) reasons.push("過去30日合算が1/"+aComb.toFixed(0)+"と好調(+"+p.toFixed(0)+")"); }
     const t=mno%10;
-    if(tailAvg[t]!=null){ score+=Math.max(0,gComb-tailAvg[t])*0.06;
-      if(tailAvg[t]<=gComb-4) reasons.push("末尾"+t+"は平均より出ている傾向"); }
-    if(wAvg[nextWd]!=null){ score+=Math.max(0,gComb-wAvg[nextWd])*0.05;
-      if(wAvg[nextWd]<=gComb-3) reasons.push("翌日("+nextWd+"曜)は好調傾向"); }
+    if(tailAvg[t]!=null&&gComb!=null&&tailAvg[t]<gComb){ const p=Math.min(8,(gComb-tailAvg[t])*0.4); s+=p;
+      if(tailAvg[t]<=gComb-4) reasons.push("末尾"+t+"が好調傾向(+"+p.toFixed(0)+")"); }
+    if(wAvg[nextWd]!=null&&gComb!=null&&wAvg[nextWd]<gComb){ const p=Math.min(6,(gComb-wAvg[nextWd])*0.3); s+=p;
+      if(wAvg[nextWd]<=gComb-3) reasons.push("翌日("+nextWd+"曜)が好調傾向(+"+p.toFixed(0)+")"); }
     const ld=lastDay[mno];
-    if(ld && ld.combined!=null && gComb!=null && ld.combined>gComb+8){
-      score+=4; reasons.push("前日は合算1/"+ld.combined.toFixed(0)+"と凹み（据え置き・狙い目の可能性）"); }
-    if(!reasons.length) reasons.push("過去データは平均的。様子見推奨");
-    out.push({mno:+mno, tail:t, score:+score.toFixed(1),
-      aComb:aComb?+aComb.toFixed(1):null, aReg:aReg?+aReg.toFixed(1):null, reasons:reasons.join(" / ")});
+    if(ld&&ld.combined!=null&&gComb!=null&&ld.combined>gComb+8){ s+=10;
+      reasons.push("前日は1/"+ld.combined.toFixed(0)+"と凹み→据え置き期待(+10)"); }
+    // イベント日傾向（この台の過去イベント日が良ければ加点）
+    const evRows=g.filter(r=>evDates.has(r.date));
+    if(evRows.length>=1){ const ae=avg(evRows.map(r=>r.combined));
+      if(ae!=null&&aComb!=null&&ae<aComb-3){ s+=8; reasons.push("過去イベント日に強い台(平均1/"+ae.toFixed(0)+")(+8)"); } }
+    if(eventTomorrow){ s+=15; reasons.push("翌日はイベント日→高設定投入に期待(+15)"); }
+    if(!reasons.length) reasons.push("過去データは平均的。様子見");
+    s=Math.max(0,Math.min(100,Math.round(s)));
+    let mark = s>=80?"◎ 本命": s>=65?"○ 対抗": s>=50?"△ 注意": "… 見送り";
+    out.push({mno:+mno,mname,tail:t,score:s,mark,aComb:aComb?+aComb.toFixed(1):null,
+      aReg:aReg?+aReg.toFixed(1):null,reasons:reasons.join(" / ")});
   }
   out.sort((a,b)=>b.score-a.score);
-  const top = out.slice(0,20);
-  let h="<div class='scroll'><table><tr><th>順位</th><th>台</th><th>末尾</th><th>スコア</th>"+
-        "<th>平均合算</th><th>平均REG</th><th>おすすめ理由</th></tr>";
-  top.forEach((r,i)=>{ h+="<tr><td>"+(i+1)+"</td><td>"+r.mno+"</td><td>"+r.tail+"</td><td>"+r.score+
-    "</td><td>"+(r.aComb?"1/"+r.aComb:"-")+"</td><td>"+(r.aReg?"1/"+r.aReg:"-")+
-    "</td><td style='text-align:left' class='reason'>"+r.reasons+"</td></tr>"; });
-  document.getElementById("t-rank").innerHTML = h+"</table></div>";
+  if(!out.length){ el.innerHTML="<p class='muted'>判定できる台がありません。</p>"; return; }
+  let h="<p class='muted'>"+store+" ／ 翌日="+nextWd+"曜"+(eventTomorrow?"・イベント想定":"")+"</p>"+
+    "<div class='scroll'><table><tr><th>順位</th><th>判定</th><th>機種</th><th>台</th><th>末尾</th>"+
+    "<th>点数</th><th>平均合算</th><th>平均REG</th><th>根拠</th></tr>";
+  out.slice(0,20).forEach((r,i)=>{ const ci=combinedInfo(r.aComb);
+    h+="<tr><td>"+(i+1)+"</td><td>"+r.mark+"</td><td>"+r.mname+"</td><td>"+r.mno+"</td><td>"+r.tail+
+      "</td><td class='score' "+cellStyle(combinedInfo(r.score>=80?75:r.score>=65?115:140))+">"+r.score+"点</td>"+
+      "<td "+cellStyle(ci)+">"+(r.aComb?"1/"+r.aComb:"-")+"</td><td>"+(r.aReg?"1/"+r.aReg:"-")+
+      "</td><td style='text-align:left' class='reason'>"+r.reasons+"</td></tr>"; });
+  el.innerHTML=h+"</table></div>";
 }
 
 // ---------- CSV / 管理 ----------
 function downloadCsv(){
   const rows=load(); if(!rows.length){ alert("データがありません"); return; }
   const cols=["date","weekday","store","machine_name","machine_no","big","reg","total","big_prob","reg_prob","combined","reg_ratio","tail"];
-  const head=["日付","曜日","店舗","機種","台番号","BIG","REG","総回転数","BIG確率","REG確率","合算確率","REG比率","末尾"];
-  let csv=head.join(",")+"\n";
-  rows.forEach(r=>{ csv+=cols.map(c=>r[c]??"").join(",")+"\n"; });
-  dl("﻿"+csv, "jagler.csv", "text/csv");
+  const head=["日付","曜日","店舗","機種","台番号","BIG","REG","総スタート","BIG確率","REG確率","合算確率","REG比率","末尾"];
+  let csv=head.join(",")+"\n"; rows.forEach(r=>{ csv+=cols.map(c=>r[c]??"").join(",")+"\n"; });
+  dl("﻿"+csv,"jagler.csv","text/csv");
 }
-function exportJson(){ dl(JSON.stringify(load()), "jagler_backup.json", "application/json"); }
-function importJson(e){
-  const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
-  rd.onload=()=>{ try{ const d=JSON.parse(rd.result); if(Array.isArray(d)){ save(d.map(enrich)); refreshAll(); alert("読み込みました："+d.length+"件"); } }catch(x){ alert("読み込み失敗"); } };
-  rd.readAsText(f);
-}
+function exportJson(){ dl(JSON.stringify({records:load(),events:loadEvents()}),"jagler_backup.json","application/json"); }
+function importJson(e){ const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
+  rd.onload=()=>{ try{ const d=JSON.parse(rd.result);
+    const recs=Array.isArray(d)?d:(d.records||[]); save(recs.map(enrich));
+    if(d.events) saveEvents(d.events); refreshAll(); alert("読み込みました："+recs.length+"件");
+  }catch(x){ alert("読み込み失敗"); } }; rd.readAsText(f); }
 function clearAll(){ if(confirm("全データを削除します。よろしいですか？")){ localStorage.removeItem(KEY); refreshAll(); } }
-function dl(text, name, type){
-  const b=new Blob([text],{type}); const u=URL.createObjectURL(b);
-  const a=document.createElement("a"); a.href=u; a.download=name; a.click(); URL.revokeObjectURL(u);
-}
+function dl(text,name,type){ const b=new Blob([text],{type}),u=URL.createObjectURL(b);
+  const a=document.createElement("a"); a.href=u; a.download=name; a.click(); URL.revokeObjectURL(u); }
 
 // ---------- デモ ----------
 function loadDemo(){
-  const SC={1:146,2:144,3:138,4:132,5:126,6:120}, SR={1:410,2:380,3:345,4:315,5:290,6:273};
+  const SC={1:146,2:144,3:138,4:132,5:126,6:120},SR={1:410,2:380,3:345,4:315,5:290,6:273};
   const STORES=[["ビッグディッパー新橋1号店","マイジャグラーV",0],["デモホール渋谷","アイムジャグラーEX",0.6],["デモホール新宿東口","ファンキージャグラー2",-0.4]];
-  function rnd(seed){ let h=2166136261; for(const c of seed){ h^=c.charCodeAt(0); h=Math.imul(h,16777619); } return ()=>{ h^=h<<13;h^=h>>>17;h^=h<<5; return ((h>>>0)%10000)/10000; }; }
+  function rnd(seed){ let h=2166136261; for(const c of seed){h^=c.charCodeAt(0);h=Math.imul(h,16777619);} return ()=>{h^=h<<13;h^=h>>>17;h^=h<<5;return((h>>>0)%10000)/10000;}; }
   const rows=load(); const keys=new Set(rows.map(r=>r.date+"|"+r.store+"|"+r.machine_no));
   const today=new Date(); let ins=0;
-  for(let i=0;i<60;i++){
-    const d=new Date(today); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
-    for(const [name,mac,tight] of STORES){
-      for(let m=1;m<=20;m++){
-        const r=rnd(name+m+ds); const tail=m%10;
-        let w={1:40,2:22,3:14,4:10,5:8,6:6};
-        if(tail===7){w[5]+=10;w[6]+=10;} if(m===1||m===20){w[5]+=6;w[6]+=4;}
-        if(d.getDay()===0||d.getDay()===6){w[5]+=6;w[6]+=6;}
-        w[5]=Math.max(1,w[5]-10*tight); w[6]=Math.max(1,w[6]-10*tight); w[1]+=10*tight;
-        const tot=Object.values(w).reduce((s,x)=>s+x,0); let pick=r()*tot, set=1;
-        for(const k in w){ pick-=w[k]; if(pick<=0){ set=+k; break; } }
-        const total=3000+Math.floor(r()*6000);
-        const bbreg=Math.max(1,Math.round(total/(SC[set]*(0.85+r()*0.3))));
-        let reg=Math.min(bbreg,Math.max(0,Math.round(total/(SR[set]*(0.8+r()*0.4)))));
-        const big=bbreg-reg; const k=ds+"|"+name+"|"+m;
-        if(keys.has(k))continue; keys.add(k);
-        rows.push(enrich({date:ds,store:name,machine_name:mac,machine_no:m,big,reg,total})); ins++;
-      }
-    }
-  }
+  for(let i=0;i<60;i++){ const d=new Date(today); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
+    for(const[name,mac,tight]of STORES){ for(let m=1;m<=20;m++){ const r=rnd(name+m+ds); const tail=m%10;
+      let w={1:40,2:22,3:14,4:10,5:8,6:6};
+      if(tail===7){w[5]+=10;w[6]+=10;} if(m===1||m===20){w[5]+=6;w[6]+=4;}
+      if(d.getDay()===0||d.getDay()===6){w[5]+=6;w[6]+=6;}
+      w[5]=Math.max(1,w[5]-10*tight); w[6]=Math.max(1,w[6]-10*tight); w[1]+=10*tight;
+      const tot=Object.values(w).reduce((s,x)=>s+x,0); let pick=r()*tot,set=1;
+      for(const k in w){ pick-=w[k]; if(pick<=0){set=+k;break;} }
+      const total=3000+Math.floor(r()*6000);
+      const bbreg=Math.max(1,Math.round(total/(SC[set]*(0.85+r()*0.3))));
+      let reg=Math.min(bbreg,Math.max(0,Math.round(total/(SR[set]*(0.8+r()*0.4)))));
+      const big=bbreg-reg; const k=ds+"|"+name+"|"+m;
+      if(keys.has(k))continue; keys.add(k);
+      rows.push(enrich({date:ds,store:name,machine_name:mac,machine_no:m,big,reg,total})); ins++; } } }
   save(rows); refreshAll(); alert("デモ生成: "+ins+"件");
 }
 
@@ -457,7 +528,8 @@ document.getElementById("tabs").addEventListener("click",e=>{
 });
 
 // ---------- 初期化 ----------
-document.getElementById("in-date").value = new Date().toISOString().slice(0,10);
+const _t=new Date().toISOString().slice(0,10);
+["in-date","ph-date","ev-date"].forEach(id=>document.getElementById(id).value=_t);
 refreshAll();
 </script>
 </body>
