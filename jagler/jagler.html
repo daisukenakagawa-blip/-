@@ -82,9 +82,9 @@
     <p class="muted">サイトをご自身のブラウザで開き、台データの表をコピーして貼り付けてください。</p>
     <div class="row">
       <div><label>店舗名</label><input id="in-store" value="ビッグディッパー新橋1号店"></div>
-      <div><label>機種名</label><input id="in-machine" value="マイジャグラー"></div>
       <div><label>日付</label><input id="in-date" type="date"></div>
     </div>
+    <p class="muted">機種名は貼り付けたデータから自動で読み取ります（「○○ジャグラー」の行があればそれを使用）。</p>
     <label>データの形式（列の並び）</label>
     <select id="in-order">
       <option value="machine_no,total,big,reg">ペカセン（台番 / G数 / BIG / REG / 合成 / 差枚 / ブドウ）</option>
@@ -290,16 +290,29 @@ function saveRecs(recs, store, machine, date){
   save(rows); refreshAll(); return {ins,skip};
 }
 
+// 貼り付けテキストから機種名（○○ジャグラー）を拾い、その行は本文から除く
+function extractMachineName(text){
+  const lines=text.split(/\r?\n/); let name=""; const kept=[];
+  for(const ln of lines){
+    // 「ジャグラ」を含み、台データらしい大きな数字を含まない行＝機種名の見出しとみなす
+    if(!name && /ジャグラ/.test(ln) && !/\d{3,}/.test(ln)){ name=ln.trim(); continue; }
+    kept.push(ln);
+  }
+  return {name, text:kept.join("\n")};
+}
+
 // ---------- 貼り付け取り込み ----------
 function doImport(){
-  const store=val("in-store").trim(),machine=val("in-machine").trim(),date=val("in-date");
+  const store=val("in-store").trim(), date=val("in-date");
   const order=val("in-order").split(",");
   const msg=document.getElementById("import-msg");
   if(!store||!date){ msg.innerHTML='<div class="warn">店舗名と日付を入力してください。</div>'; return; }
-  const {recs,warns}=parseRows(val("in-text"),order,1);
+  const ex=extractMachineName(val("in-text"));
+  const machine = ex.name || "ジャグラー";
+  const {recs,warns}=parseRows(ex.text,order,1);
   let html=warns.map(w=>'<div class="warn">'+w+'</div>').join("");
   if(recs.length){ const {ins,skip}=saveRecs(recs,store,machine,date);
-    html+='<div class="ok">取り込み完了: '+store+' '+date+' → 新規'+ins+'件 / 重複'+skip+'件</div>';
+    html+='<div class="ok">取り込み完了: '+store+' '+date+'（機種: '+machine+'） → 新規'+ins+'件 / 重複'+skip+'件</div>';
     document.getElementById("in-text").value=""; }
   msg.innerHTML=html;
 }
