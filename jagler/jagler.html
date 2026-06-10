@@ -149,6 +149,9 @@
       <div><label>店舗</label><select id="f-store" onchange="render()"></select></div>
       <div><label>日付</label><select id="f-date" onchange="render()"></select></div>
     </div>
+    <button class="ghost" style="color:#c00;border-color:#f3b;margin:6px 0;"
+            onclick="deleteFiltered()">🗑 表示中（この店・この日）をまとめて削除</button>
+    <p class="muted">各行の「削除」で1台ずつ消せます。間違えて入れたデータの修正にどうぞ。</p>
     <div class="scroll"><table id="t-list"></table></div>
   </div>
 
@@ -385,14 +388,16 @@ function renderList(rows){
   if(d&&d!=="（全期間）") v=v.filter(r=>r.date===d);
   v.sort((a,b)=>b.date<a.date?-1:b.date>a.date?1:a.machine_no-b.machine_no);
   let h="<tr><th>日付</th><th>曜</th><th>店舗</th><th>機種</th><th>台</th><th>BIG</th><th>REG</th>"+
-        "<th>総ｽﾀｰﾄ</th><th>合算</th><th>設定示唆</th><th>REG確率</th><th>末尾</th></tr>";
+        "<th>総ｽﾀｰﾄ</th><th>合算</th><th>設定示唆</th><th>REG確率</th><th>末尾</th><th>操作</th></tr>";
   for(const r of v.slice(0,500)){ const ci=combinedInfo(r.combined);
+    const key=encodeURIComponent(r.date+"|"+r.store+"|"+r.machine_no);
     h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.weekday+"</td><td>"+r.store+"</td><td>"+(r.machine_name||"")+
       "</td><td>"+r.machine_no+"</td><td>"+r.big+"</td><td>"+r.reg+"</td><td>"+r.total+
       "</td><td "+cellStyle(ci)+">"+(r.combined?"1/"+r.combined:"-")+
       "</td><td "+cellStyle(ci)+">"+ci.label+
       "</td><td style='background:"+regColor(r.reg_prob)+"'>"+(r.reg_prob?"1/"+r.reg_prob:"-")+
-      "</td><td>"+r.tail+"</td></tr>"; }
+      "</td><td>"+r.tail+"</td>"+
+      "<td><button class='ghost' style='padding:3px 8px;color:#c00' onclick=\"deleteOne('"+key+"')\">削除</button></td></tr>"; }
   document.getElementById("t-list").innerHTML=h;
 }
 function trendTable(groups,label,order){
@@ -490,6 +495,22 @@ function importJson(e){ const f=e.target.files[0]; if(!f)return; const rd=new Fi
     const recs=Array.isArray(d)?d:(d.records||[]); save(recs.map(enrich));
     if(d.events) saveEvents(d.events); refreshAll(); alert("読み込みました："+recs.length+"件");
   }catch(x){ alert("読み込み失敗"); } }; rd.readAsText(f); }
+// ---------- 個別削除 ----------
+function deleteOne(enc){
+  const key=decodeURIComponent(enc); const [date,store,mno]=key.split("|");
+  if(!confirm(date+" "+store+" "+mno+"番 のデータを削除します。よろしいですか？")) return;
+  const rows=load().filter(r=>!(r.date===date&&r.store===store&&String(r.machine_no)===String(mno)));
+  save(rows); refreshAll();
+}
+function deleteFiltered(){
+  const rows=load(); const s=val("f-store"),d=val("f-date");
+  const match=r=> (s==="（全店）"||r.store===s) && (d==="（全期間）"||r.date===d);
+  const n=rows.filter(match).length;
+  if(!n){ alert("削除対象がありません。"); return; }
+  const label=(s==="（全店）"?"全店":s)+" / "+(d==="（全期間）"?"全期間":d);
+  if(!confirm(label+" の "+n+"件を削除します。よろしいですか？")) return;
+  save(rows.filter(r=>!match(r))); refreshAll();
+}
 function clearAll(){ if(confirm("全データを削除します。よろしいですか？")){ localStorage.removeItem(KEY); refreshAll(); } }
 function dl(text,name,type){ const b=new Blob([text],{type}),u=URL.createObjectURL(b);
   const a=document.createElement("a"); a.href=u; a.download=name; a.click(); URL.revokeObjectURL(u); }
