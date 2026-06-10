@@ -68,6 +68,7 @@
     <button data-t="input" class="active">✍️ 貼り付け入力</button>
     <button data-t="photo">📷 写真取り込み</button>
     <button data-t="event">🎉 イベント日</button>
+    <button data-t="hint">🔮 示唆分析</button>
     <button data-t="list">📋 データ一覧</button>
     <button data-t="store">🏆 店舗比較</button>
     <button data-t="tail">🔢 末尾分析</button>
@@ -169,8 +170,62 @@
       <div><label>店舗</label><input id="ev-store" placeholder="全店 でもOK" value="全店"></div>
       <div><label>内容（任意）</label><input id="ev-name" placeholder="取材/旧イベント など"></div>
     </div>
+    <label>詳細（店長ツイート・告知文など。示唆のメモにも）</label>
+    <textarea id="ev-detail" style="min-height:70px;white-space:pre-wrap;"
+      placeholder="例: 明日は全力!! 末尾7に注目..."></textarea>
+    <details>
+      <summary class="muted">示唆（任意・予想に加点されます／「🔮 示唆分析」から自動入力も可）</summary>
+      <div class="row">
+        <div><label>示唆 末尾</label><input id="ev-h-tail" placeholder="例 7"></div>
+        <div><label>示唆 機種</label><input id="ev-h-machine" placeholder="例 マイジャグラー"></div>
+        <div><label>示唆 台番号(カンマ区切り)</label><input id="ev-h-nums" placeholder="例 2007,2107"></div>
+      </div>
+    </details>
     <button class="primary" onclick="addEvent()">➕ イベントを追加</button>
     <div id="ev-list" style="margin-top:12px;"></div>
+  </div>
+
+  <!-- 示唆分析 -->
+  <div class="panel" id="p-hint">
+    <h2>🔮 示唆分析（告知画像・店長ツイート）</h2>
+    <p class="muted">告知の写真やツイートから、隠れた示唆（末尾・機種・台番号）を読み取ります。
+      簡易解析はキー不要。<b>しっかりAIで判断</b>するには、ご自身のAnthropic APIキーが必要です（有料）。</p>
+    <label>告知画像（任意）</label>
+    <input id="an-file" type="file" accept="image/*" capture="environment" onchange="anPickImage(event)">
+    <div id="an-imgstat" class="muted"></div>
+    <label>店長ツイート・告知文</label>
+    <textarea id="an-text" style="min-height:110px;white-space:pre-wrap;"
+      placeholder="ツイート本文や告知のテキストを貼り付け（または画像のみでもOK）"></textarea>
+    <div class="row">
+      <div><button class="ghost" style="width:100%" onclick="anHeuristic()">🔍 簡易解析（キー不要）</button></div>
+      <div><button class="primary" style="margin-top:0" onclick="anAI()">🤖 AIで判断</button></div>
+    </div>
+    <div id="an-result" style="margin-top:10px;"></div>
+
+    <details style="margin-top:10px;">
+      <summary class="muted">AI設定（Anthropic APIキー）</summary>
+      <label>APIキー（端末に保存。共有端末では注意）</label>
+      <input id="ai-key" type="password" placeholder="sk-ant-...">
+      <label>モデルID</label>
+      <input id="ai-model" placeholder="例: 最新のClaudeモデルID">
+      <button class="ghost" style="margin-top:8px;" onclick="aiSave()">💾 設定を保存</button>
+      <p class="muted">※ キーはこの端末のブラウザに保存され、Anthropicへ直接送信されます。
+        提供元の規約・料金をご確認のうえご利用ください。</p>
+    </details>
+
+    <div id="an-apply" style="margin-top:12px;display:none;">
+      <h3 style="font-size:14px;margin:0 0 6px;">この示唆をイベントに登録</h3>
+      <div class="row">
+        <div><label>日付</label><input id="an-date" type="date"></div>
+        <div><label>店舗</label><input id="an-store" value="全店"></div>
+      </div>
+      <div class="row">
+        <div><label>末尾</label><input id="an-tail"></div>
+        <div><label>機種</label><input id="an-machine"></div>
+        <div><label>台番号</label><input id="an-nums"></div>
+      </div>
+      <button class="primary" onclick="anRegister()">➕ この示唆でイベント登録</button>
+    </div>
   </div>
 
   <!-- データ一覧 -->
@@ -441,6 +496,83 @@ function doPhotoImport(){
   msg.innerHTML=html;
 }
 
+// ---------- 示唆分析（簡易 + AI）----------
+let _anImg=null;  // 告知画像のdataURL
+function anPickImage(e){
+  const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
+  rd.onload=()=>{ _anImg=rd.result; document.getElementById("an-imgstat").innerHTML='<span class="ok">画像を読み込みました</span>'; };
+  rd.readAsDataURL(f);
+}
+const JUG_NAMES=["マイジャグラー","アイムジャグラー","ファンキージャグラー","ゴーゴージャグラー",
+  "ハッピージャグラー","ジャグラーガールズ","ミスタージャグラー","ウルトラミラクルジャグラー","ジャグラー"];
+function heuristicHints(text){
+  const t=text||""; const out={tail:"",machine:"",numbers:[],summary:[]};
+  let m=t.match(/末尾\s*([0-9])/)||t.match(/([0-9])\s*の\s*つく/)||t.match(/([0-9])\s*が\s*つく/);
+  if(m) out.tail=m[1];
+  for(const n of JUG_NAMES){ if(t.includes(n)){ out.machine=n; break; } }
+  const nums=[...t.matchAll(/([0-9]{2,4})\s*番/g)].map(x=>+x[1]); if(nums.length) out.numbers=[...new Set(nums)];
+  ["全力","全開","全台","ぶっこ","据え置き","角","角台","朝一","一斉","新台","入替","旧","設定6","設定５","勝負"]
+    .forEach(w=>{ if(t.includes(w)) out.summary.push(w); });
+  return out;
+}
+function showHints(h, note){
+  const el=document.getElementById("an-result");
+  const parts=[]; if(h.tail)parts.push("末尾 "+h.tail); if(h.machine)parts.push("機種 "+h.machine);
+  if(h.numbers&&h.numbers.length)parts.push("台番 "+h.numbers.join("・"));
+  el.innerHTML='<div class="note"><b>読み取った示唆</b>'+(note?'（'+note+'）':'')+'<br>'+
+    (parts.length?parts.join(" ／ "):"明確な示唆は見つかりませんでした")+
+    (h.summary&&h.summary.length?'<br><span class="muted">強調ワード: '+h.summary.join("、")+'</span>':"")+
+    (h.text?'<br><span class="muted">'+h.text+'</span>':"")+'</div>';
+  // 反映フォームに展開
+  document.getElementById("an-apply").style.display="block";
+  document.getElementById("an-tail").value=h.tail||"";
+  document.getElementById("an-machine").value=h.machine||"";
+  document.getElementById("an-nums").value=(h.numbers||[]).join(",");
+}
+function anHeuristic(){ showHints(heuristicHints(val("an-text")), "簡易解析"); }
+
+function aiSave(){ localStorage.setItem("jagler_ai",JSON.stringify({key:val("ai-key"),model:val("ai-model")})); alert("AI設定を保存しました"); }
+function aiLoad(){ try{ const a=JSON.parse(localStorage.getItem("jagler_ai")||"{}");
+  if(a.key)document.getElementById("ai-key").value=a.key; if(a.model)document.getElementById("ai-model").value=a.model; }catch(e){} }
+
+async function anAI(){
+  const key=val("ai-key").trim(), model=val("ai-model").trim();
+  const el=document.getElementById("an-result");
+  if(!key||!model){ el.innerHTML='<div class="warn">AI設定でAPIキーとモデルIDを入力してください。</div>'; return; }
+  const content=[];
+  if(_anImg){ const mm=_anImg.match(/^data:(.*?);base64,(.*)$/);
+    if(mm) content.push({type:"image",source:{type:"base64",media_type:mm[1],data:mm[2]}}); }
+  const prompt="あなたはパチスロ（ジャグラー）の店舗イベント告知を読み解く専門家です。"+
+    "次の告知画像/ツイートから、翌日に高設定が入りそうな示唆を推測してください。"+
+    "結果は必ず次のJSONのみで返答: {\"tail\":\"末尾の数字1桁または空\",\"machine\":\"機種名または空\","+
+    "\"numbers\":[台番号の配列],\"summary\":\"日本語の根拠を簡潔に\"}。\n\n告知文:\n"+(val("an-text")||"(画像のみ)");
+  content.push({type:"text",text:prompt});
+  el.innerHTML='<div class="muted">AIが解析中…</div>';
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"content-type":"application/json","x-api-key":key,
+        "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model,max_tokens:1024,messages:[{role:"user",content}]})
+    });
+    if(!r.ok){ const e=await r.text(); el.innerHTML='<div class="warn">AIエラー('+r.status+'): '+e.slice(0,200)+'</div>'; return; }
+    const data=await r.json();
+    const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+    let h; try{ h=JSON.parse(txt.match(/\{[\s\S]*\}/)[0]); }catch(e){ el.innerHTML='<div class="note">AI回答:<br>'+txt+'</div>'; return; }
+    showHints({tail:(h.tail||"").toString().replace(/[^0-9]/g,""),machine:h.machine||"",
+      numbers:Array.isArray(h.numbers)?h.numbers.map(Number):[],summary:[],text:h.summary||""}, "AI判断");
+  }catch(x){ el.innerHTML='<div class="warn">通信に失敗しました: '+x+'</div>'; }
+}
+
+function anRegister(){
+  const date=val("an-date"); if(!date){ alert("日付を入れてください"); return; }
+  const hints=buildHints(val("an-tail"),val("an-machine"),val("an-nums"));
+  const e={type:"single",date,store:val("an-store").trim()||"全店",name:"告知示唆",
+    detail:val("an-text").trim(),hints};
+  const ev=loadEvents(); ev.push(e); saveEvents(ev); renderEvents(); render();
+  alert("イベント（示唆つき）を登録しました。狙い台予想に反映されます。");
+}
+
 // ---------- イベント日（繰り返し対応）----------
 function evTypeChange(){
   const t=val("ev-type");
@@ -449,14 +581,21 @@ function evTypeChange(){
   document.getElementById("ev-f-monthly").style.display= t==="monthly"?"":"none";
   document.getElementById("ev-f-single").style.display = t==="single" ?"":"none";
 }
+function parseNums(s){ return (s||"").split(/[,、\s]+/).map(x=>x.replace(/[^0-9]/g,"")).filter(x=>x).map(Number); }
+function buildHints(tail,machine,nums){
+  const h={tail:(tail||"").replace(/[^0-9]/g,""), machine:(machine||"").trim(), numbers:parseNums(nums)};
+  return (h.tail||h.machine||h.numbers.length)?h:null;
+}
 function addEvent(){
   const type=val("ev-type"), store=val("ev-store").trim()||"全店", name=val("ev-name").trim();
-  const e={type,store,name};
+  const e={type,store,name, detail:val("ev-detail").trim(),
+           hints:buildHints(val("ev-h-tail"),val("ev-h-machine"),val("ev-h-nums"))};
   if(type==="single"){ if(!val("ev-date")){ alert("日付を入れてください"); return; } e.date=val("ev-date"); }
   else if(type==="weekly") e.weekday=Number(val("ev-weekday"));
   else if(type==="monthly") e.day=Number(val("ev-day"));
   else if(type==="digit") e.digit=val("ev-digit");
   const ev=loadEvents(); ev.push(e); saveEvents(ev); renderEvents(); render();
+  document.getElementById("ev-detail").value=""; ["ev-h-tail","ev-h-machine","ev-h-nums"].forEach(i=>document.getElementById(i).value="");
 }
 function delEvent(i){ const ev=loadEvents(); ev.splice(i,1); saveEvents(ev); renderEvents(); render(); }
 function eventDesc(e){
@@ -481,8 +620,14 @@ function eventLabel(dateStr,store){
 function renderEvents(){
   const ev=loadEvents(); const el=document.getElementById("ev-list");
   if(!ev.length){ el.innerHTML='<p class="muted">まだ登録がありません。</p>'; return; }
-  el.innerHTML=ev.map((e,i)=>'<div class="ev"><span>🎉 <b>'+eventDesc(e)+'</b>　'+(e.store||"全店")+
-    (e.name?'　'+e.name:'')+'</span><button class="ghost" onclick="delEvent('+i+')">削除</button></div>').join("");
+  el.innerHTML=ev.map((e,i)=>{
+    let h=""; if(e.hints){ const p=[]; if(e.hints.tail)p.push("末尾"+e.hints.tail);
+      if(e.hints.machine)p.push(e.hints.machine); if(e.hints.numbers&&e.hints.numbers.length)p.push("台"+e.hints.numbers.join("・"));
+      if(p.length)h='<br><span class="muted">示唆: '+p.join(" / ")+'</span>'; }
+    const d=e.detail?'<br><span class="muted">📝 '+e.detail.slice(0,60)+'</span>':"";
+    return '<div class="ev"><span>🎉 <b>'+eventDesc(e)+'</b>　'+(e.store||"全店")+
+      (e.name?'　'+e.name:'')+h+d+'</span><button class="ghost" onclick="delEvent('+i+')">削除</button></div>';
+  }).join("");
 }
 
 // ---------- 集計ユーティリティ ----------
@@ -613,6 +758,7 @@ function renderRank(rows){
   // 翌日がイベントか自動判定（＋手動チェックでも有効）
   const autoEv=eventsOn(ndStr,store);
   const evLabelNext=autoEv.map(e=>e.name||eventDesc(e)).join("・");
+  const evHints=autoEv.map(e=>e.hints).filter(Boolean);
   const eventTomorrow=document.getElementById("r-event").checked || autoEv.length>0;
 
   const out=[];
@@ -638,6 +784,12 @@ function renderRank(rows){
     if(evRows.length>=1){ const ae=avg(evRows.map(r=>r.combined));
       if(ae!=null&&aComb!=null&&ae<aComb-3){ s+=8; reasons.push("過去イベント日に強い台(平均1/"+ae.toFixed(0)+")(+8)"); } }
     if(eventTomorrow){ s+=15; reasons.push("翌日はイベント"+(evLabelNext?"("+evLabelNext+")":"")+"→高設定投入に期待(+15)"); }
+    // 告知の示唆との合致を加点
+    for(const hr of evHints){
+      if(hr.machine && mname && mname.includes(hr.machine)){ s+=12; reasons.push("告知の示唆機種("+hr.machine+")に合致(+12)"); }
+      if(hr.tail!==""&&hr.tail!=null&&String(hr.tail)===String(t)){ s+=12; reasons.push("告知の示唆末尾"+hr.tail+"に合致(+12)"); }
+      if(Array.isArray(hr.numbers)&&hr.numbers.map(Number).includes(+mno)){ s+=22; reasons.push("告知で台番"+mno+"を名指し示唆(+22)"); }
+    }
     if(!reasons.length) reasons.push("過去データは平均的。様子見");
     s=Math.max(0,Math.min(100,Math.round(s)));
     let mark = s>=80?"◎ 本命": s>=65?"○ 対抗": s>=50?"△ 注意": "… 見送り";
@@ -727,7 +879,8 @@ document.getElementById("tabs").addEventListener("click",e=>{
 
 // ---------- 初期化 ----------
 const _t=new Date().toISOString().slice(0,10);
-["in-date","ph-date","ev-date"].forEach(id=>document.getElementById(id).value=_t);
+["in-date","ph-date","ev-date","an-date"].forEach(id=>{const el=document.getElementById(id); if(el)el.value=_t;});
+aiLoad();
 refreshAll();
 </script>
 </body>
