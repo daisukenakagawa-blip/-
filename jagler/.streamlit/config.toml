@@ -1,0 +1,14 @@
+# Streamlit 設定（スマホ表示・テーマ）
+[theme]
+primaryColor = "#ff5b5b"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f6fa"
+textColor = "#1a1a1a"
+font = "sans serif"
+
+[server]
+# クラウド公開時は Streamlit Cloud 側がポート等を制御するため最小限でOK
+headless = true
+
+[browser]
+gatherUsageStats = false

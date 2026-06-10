@@ -1,0 +1,8 @@
+# Streamlit Community Cloud 用（jagler/app.py の依存パッケージ）
+# 実体は jagler/requirements.txt と同じです。
+pandas>=2.0
+requests>=2.31
+beautifulsoup4>=4.12
+streamlit>=1.30
+# Googleスプレッドシート連携を使う場合のみ:
+# gspread>=6.0
