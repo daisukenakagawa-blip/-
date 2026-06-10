@@ -133,14 +133,43 @@
   <!-- イベント日 -->
   <div class="panel" id="p-event">
     <h2>イベント日の登録</h2>
-    <p class="muted">取材・旧イベント・スロパチ系の日など、設定が入りやすいと思われる日を登録します。
-      狙い台予想に反映され、過去のイベント日傾向も分析します。</p>
+    <p class="muted">「7のつく日」などをネットで拾って登録します。毎週・毎月・単発を選べます。
+      繰り返しイベントは該当日すべてが自動でイベント扱いになり、データ一覧・狙い台予想に反映されます。</p>
     <div class="row">
-      <div><label>日付</label><input id="ev-date" type="date"></div>
-      <div><label>店舗</label><input id="ev-store" placeholder="全店 でもOK" value="全店"></div>
-      <div><label>内容（任意）</label><input id="ev-name" placeholder="取材/月初 など"></div>
+      <div><label>種別</label>
+        <select id="ev-type" onchange="evTypeChange()">
+          <option value="digit">○のつく日（毎月／例 7→7・17・27日）</option>
+          <option value="weekly">毎週（曜日）</option>
+          <option value="monthly">毎月（日にち）</option>
+          <option value="single">単発（特定の日）</option>
+        </select>
+      </div>
+      <div id="ev-f-digit">
+        <label>数字</label>
+        <select id="ev-digit">
+          <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option>
+          <option selected>7</option><option>5</option><option>6</option><option>8</option><option>9</option>
+        </select>
+      </div>
+      <div id="ev-f-weekly" style="display:none">
+        <label>曜日</label>
+        <select id="ev-weekday">
+          <option value="0">日</option><option value="1">月</option><option value="2">火</option>
+          <option value="3">水</option><option value="4">木</option><option value="5">金</option><option value="6">土</option>
+        </select>
+      </div>
+      <div id="ev-f-monthly" style="display:none">
+        <label>日にち</label><input id="ev-day" type="number" min="1" max="31" value="1">
+      </div>
+      <div id="ev-f-single" style="display:none">
+        <label>日付</label><input id="ev-date" type="date">
+      </div>
     </div>
-    <button class="primary" onclick="addEvent()">➕ イベント日を追加</button>
+    <div class="row">
+      <div><label>店舗</label><input id="ev-store" placeholder="全店 でもOK" value="全店"></div>
+      <div><label>内容（任意）</label><input id="ev-name" placeholder="取材/旧イベント など"></div>
+    </div>
+    <button class="primary" onclick="addEvent()">➕ イベントを追加</button>
     <div id="ev-list" style="margin-top:12px;"></div>
   </div>
 
@@ -191,7 +220,7 @@
       <div style="display:flex;align-items:flex-end;">
         <label style="margin:0;display:flex;gap:6px;align-items:center;">
           <input type="checkbox" id="r-event" style="width:auto;" onchange="render()">
-          翌日はイベント日として予想
+          翌日を強制的にイベント扱い（登録ルールに無い日でも）
         </label>
       </div>
     </div>
@@ -412,21 +441,48 @@ function doPhotoImport(){
   msg.innerHTML=html;
 }
 
-// ---------- イベント日 ----------
+// ---------- イベント日（繰り返し対応）----------
+function evTypeChange(){
+  const t=val("ev-type");
+  document.getElementById("ev-f-digit").style.display  = t==="digit"  ?"":"none";
+  document.getElementById("ev-f-weekly").style.display = t==="weekly" ?"":"none";
+  document.getElementById("ev-f-monthly").style.display= t==="monthly"?"":"none";
+  document.getElementById("ev-f-single").style.display = t==="single" ?"":"none";
+}
 function addEvent(){
-  const date=val("ev-date"); if(!date){ alert("日付を入れてください"); return; }
-  const ev=loadEvents(); ev.push({date,store:val("ev-store").trim()||"全店",name:val("ev-name").trim()});
-  saveEvents(ev); renderEvents();
+  const type=val("ev-type"), store=val("ev-store").trim()||"全店", name=val("ev-name").trim();
+  const e={type,store,name};
+  if(type==="single"){ if(!val("ev-date")){ alert("日付を入れてください"); return; } e.date=val("ev-date"); }
+  else if(type==="weekly") e.weekday=Number(val("ev-weekday"));
+  else if(type==="monthly") e.day=Number(val("ev-day"));
+  else if(type==="digit") e.digit=val("ev-digit");
+  const ev=loadEvents(); ev.push(e); saveEvents(ev); renderEvents(); render();
 }
 function delEvent(i){ const ev=loadEvents(); ev.splice(i,1); saveEvents(ev); renderEvents(); render(); }
-function isEventDate(date,store){ return loadEvents().some(e=>e.date===date&&(e.store==="全店"||e.store===store)); }
-function eventDatesFor(store){ return loadEvents().filter(e=>e.store==="全店"||e.store===store).map(e=>e.date); }
+function eventDesc(e){
+  if(e.type==="weekly")  return "毎週 "+WD[e.weekday]+"曜";
+  if(e.type==="monthly") return "毎月 "+e.day+"日";
+  if(e.type==="digit")   return e.digit+"のつく日";
+  return "単発 "+(e.date||"");
+}
+function eventMatches(e,dateStr,store){
+  if(e.store && e.store!=="全店" && e.store!==store) return false;
+  const d=new Date(dateStr+"T00:00:00"), wd=d.getDay(), dom=d.getDate();
+  if(e.type==="weekly")  return Number(e.weekday)===wd;
+  if(e.type==="monthly") return Number(e.day)===dom;
+  if(e.type==="digit")   return String(dom).includes(String(e.digit));
+  return e.date===dateStr;   // single / 旧形式
+}
+function eventsOn(dateStr,store){ return loadEvents().filter(e=>eventMatches(e,dateStr,store)); }
+function isEventDate(dateStr,store){ return eventsOn(dateStr,store).length>0; }
+function eventLabel(dateStr,store){
+  return eventsOn(dateStr,store).map(e=>e.name||eventDesc(e)).join("・");
+}
 function renderEvents(){
-  const ev=loadEvents().slice().sort((a,b)=>b.date<a.date?-1:1);
-  const el=document.getElementById("ev-list");
+  const ev=loadEvents(); const el=document.getElementById("ev-list");
   if(!ev.length){ el.innerHTML='<p class="muted">まだ登録がありません。</p>'; return; }
-  el.innerHTML=ev.map((e,i)=>'<div class="ev"><span>📅 '+e.date+'　<b>'+e.store+'</b>　'+(e.name||"")+
-    '</span><button class="ghost" onclick="delEvent('+i+')">削除</button></div>').join("");
+  el.innerHTML=ev.map((e,i)=>'<div class="ev"><span>🎉 <b>'+eventDesc(e)+'</b>　'+(e.store||"全店")+
+    (e.name?'　'+e.name:'')+'</span><button class="ghost" onclick="delEvent('+i+')">削除</button></div>').join("");
 }
 
 // ---------- 集計ユーティリティ ----------
@@ -470,12 +526,16 @@ function renderList(rows){
   if(d&&d!=="（全期間）") v=v.filter(r=>r.date===d);
   v.sort((a,b)=>b.date<a.date?-1:b.date>a.date?1:a.machine_no-b.machine_no);
   renderSummary(v);
-  let h="<tr><th>日付</th><th>曜</th><th>店舗</th><th>機種</th><th>台</th><th>BIG</th><th>REG</th>"+
+  const evCache={};
+  const evOf=(date,store)=>{ const k=date+"|"+store; if(!(k in evCache)) evCache[k]=eventLabel(date,store); return evCache[k]; };
+  let h="<tr><th>日付</th><th>曜</th><th>イベント</th><th>店舗</th><th>機種</th><th>台</th><th>BIG</th><th>REG</th>"+
         "<th>総ｽﾀｰﾄ</th><th>合算</th><th>設定示唆</th><th>REG確率</th><th>差枚</th><th>ブドウ</th><th>末尾</th><th>操作</th></tr>";
   for(const r of v.slice(0,500)){ const ci=combinedInfo(r.combined);
     const key=encodeURIComponent(r.date+"|"+r.store+"|"+r.machine_no);
     const sabe = r.sabe!=null ? (r.sabe>0?"+"+r.sabe:String(r.sabe)) : "-";
-    h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.weekday+"</td><td>"+r.store+"</td><td>"+(r.machine_name||"")+
+    const ev=evOf(r.date,r.store);
+    h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.weekday+"</td>"+
+      "<td>"+(ev?"🎉"+ev:"")+"</td><td>"+r.store+"</td><td>"+(r.machine_name||"")+
       "</td><td>"+r.machine_no+"</td><td>"+r.big+"</td><td>"+r.reg+"</td><td>"+r.total+
       "</td><td "+cellStyle(ci)+">"+(r.combined?"1/"+r.combined:"-")+
       "</td><td "+cellStyle(ci)+">"+ci.label+
@@ -546,10 +606,14 @@ function renderRank(rows){
   const tailAvg={},gT=groupBy(rec,"tail"); for(const t in gT) tailAvg[t]=avg(gT[t].map(r=>r.combined));
   const wAvg={},gW=groupBy(rec,"weekday"); for(const w in gW) wAvg[w]=avg(gW[w].map(r=>r.combined));
   const md=maxDate(sr); const nd=new Date(md+"T00:00:00"); nd.setDate(nd.getDate()+1);
-  const nextWd=WD[nd.getDay()];
+  const nextWd=WD[nd.getDay()]; const ndStr=nd.toISOString().slice(0,10);
   const lastDay={}; sr.filter(r=>r.date===md).forEach(r=>lastDay[r.machine_no]=r);
-  const evDates=new Set(eventDatesFor(store));
-  const eventTomorrow=document.getElementById("r-event").checked;
+  // 過去のイベント日（繰り返しルールを含めて記録日から判定）
+  const evDates=new Set(sr.map(r=>r.date).filter(d=>isEventDate(d,store)));
+  // 翌日がイベントか自動判定（＋手動チェックでも有効）
+  const autoEv=eventsOn(ndStr,store);
+  const evLabelNext=autoEv.map(e=>e.name||eventDesc(e)).join("・");
+  const eventTomorrow=document.getElementById("r-event").checked || autoEv.length>0;
 
   const out=[];
   for(const mno in gM){
@@ -573,7 +637,7 @@ function renderRank(rows){
     const evRows=g.filter(r=>evDates.has(r.date));
     if(evRows.length>=1){ const ae=avg(evRows.map(r=>r.combined));
       if(ae!=null&&aComb!=null&&ae<aComb-3){ s+=8; reasons.push("過去イベント日に強い台(平均1/"+ae.toFixed(0)+")(+8)"); } }
-    if(eventTomorrow){ s+=15; reasons.push("翌日はイベント日→高設定投入に期待(+15)"); }
+    if(eventTomorrow){ s+=15; reasons.push("翌日はイベント"+(evLabelNext?"("+evLabelNext+")":"")+"→高設定投入に期待(+15)"); }
     if(!reasons.length) reasons.push("過去データは平均的。様子見");
     s=Math.max(0,Math.min(100,Math.round(s)));
     let mark = s>=80?"◎ 本命": s>=65?"○ 対抗": s>=50?"△ 注意": "… 見送り";
@@ -582,7 +646,8 @@ function renderRank(rows){
   }
   out.sort((a,b)=>b.score-a.score);
   if(!out.length){ el.innerHTML="<p class='muted'>判定できる台がありません。</p>"; return; }
-  let h="<p class='muted'>"+store+" ／ 翌日="+nextWd+"曜"+(eventTomorrow?"・イベント想定":"")+"</p>"+
+  let h="<p class='muted'>"+store+" ／ 翌日="+ndStr.slice(5)+"("+nextWd+"曜)"+
+    (autoEv.length?" 🎉"+evLabelNext:(document.getElementById("r-event").checked?"・イベント想定":""))+"</p>"+
     "<div class='scroll'><table><tr><th>順位</th><th>判定</th><th>機種</th><th>台</th><th>末尾</th>"+
     "<th>点数</th><th>平均合算</th><th>平均REG</th><th>根拠</th></tr>";
   out.slice(0,20).forEach((r,i)=>{ const ci=combinedInfo(r.aComb);
