@@ -182,6 +182,21 @@
       </div>
     </details>
     <button class="primary" onclick="addEvent()">➕ イベントを追加</button>
+
+    <details style="margin-top:12px;">
+      <summary class="muted">📋 ネットの予定表からまとめて登録（何日分でもOK）</summary>
+      <p class="muted">「6/7 取材」「6/11 ゾロ目」「6/17 マイジャグラー全力」のように日付が入った行を貼り付け。
+        日付を自動で読み取って登録します（末尾・機種の示唆も自動で拾います）。</p>
+      <div class="row">
+        <div><label>年</label><input id="bulk-year" type="number" style="width:100px"></div>
+        <div><label>店舗</label><input id="bulk-store" value="全店"></div>
+      </div>
+      <textarea id="bulk-text" style="min-height:120px;white-space:pre-wrap;"
+        placeholder="6/7(土) 取材 末尾7&#10;6/11 ゾロ目の日&#10;6/17 マイジャグラー全力"></textarea>
+      <button class="primary" onclick="bulkAddEvents()">📥 まとめて登録</button>
+      <div id="bulk-msg"></div>
+    </details>
+
     <div id="ev-list" style="margin-top:12px;"></div>
   </div>
 
@@ -288,6 +303,9 @@
   <div class="panel" id="p-csv">
     <h2>CSV / データ管理</h2>
     <button class="ghost" onclick="downloadCsv()">📥 全データをCSVでダウンロード</button>
+    <button class="ghost" onclick="copyCsv()">📋 CSVをコピー（送信用）</button>
+    <p class="muted" style="margin-top:6px;">コピーがうまくいかない端末は、下の枠を長押し→全選択→コピーしてください。</p>
+    <textarea id="csv-box" readonly style="min-height:120px;white-space:pre;" placeholder="「CSVをコピー」を押すとここに表示されます"></textarea>
     <p class="muted" style="margin-top:12px;">バックアップ（機種変更・端末変更時に使用）</p>
     <button class="ghost" onclick="exportJson()">⬇️ バックアップ（JSON）書き出し</button>
     <label style="margin-top:8px;">バックアップ（JSON）読み込み</label>
@@ -640,6 +658,31 @@ function addEvent(){
   document.getElementById("ev-detail").value=""; ["ev-h-tail","ev-h-machine","ev-h-nums"].forEach(i=>document.getElementById(i).value="");
 }
 function delEvent(i){ const ev=loadEvents(); ev.splice(i,1); saveEvents(ev); renderEvents(); render(); }
+// ネットの予定表（複数日）を貼り付けて一括登録
+function bulkAddEvents(){
+  const year=parseInt(val("bulk-year"),10)||new Date().getFullYear();
+  const store=val("bulk-store").trim()||"全店";
+  const lines=val("bulk-text").split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+  const ev=loadEvents(); const existing=new Set(ev.filter(e=>e.type==="single").map(e=>e.date+"|"+e.store));
+  let added=0, skip=0;
+  for(const ln of lines){
+    const m=ln.match(/(\d{1,2})\s*[\/月.]\s*(\d{1,2})/);  // 6/7・6月7日・6.7
+    if(!m){ skip++; continue; }
+    const mo=String(m[1]).padStart(2,"0"), da=String(m[2]).padStart(2,"0");
+    const date=year+"-"+mo+"-"+da;
+    if(existing.has(date+"|"+store)){ skip++; continue; }
+    existing.add(date+"|"+store);
+    // 日付・曜日カッコを除いた残りを内容に、示唆も自動抽出
+    const name=ln.replace(/\d{1,2}\s*[\/月.]\s*\d{1,2}\s*(日)?/,"").replace(/[（(][日月火水木金土][)）]/,"").trim();
+    const hh=heuristicHints(ln);
+    ev.push({type:"single",date,store,name:name||"イベント",
+      hints:buildHints(hh.tail,hh.machine,(hh.numbers||[]).join(","))});
+    added++;
+  }
+  saveEvents(ev); renderEvents(); render();
+  document.getElementById("bulk-msg").innerHTML='<div class="ok">登録: '+added+'件 / スキップ(日付なし・重複) '+skip+'件</div>';
+  if(added) document.getElementById("bulk-text").value="";
+}
 function eventDesc(e){
   if(e.type==="weekly")  return "毎週 "+WD[e.weekday]+"曜";
   if(e.type==="monthly") return "毎月 "+e.day+"日";
@@ -674,11 +717,12 @@ function renderEvents(){
 
 // ---------- 集計ユーティリティ ----------
 const val=id=>document.getElementById(id).value;
+function fmtDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function dayDiff(a,b){ return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000); }
 function maxDate(rows){ return rows.reduce((a,r)=>r.date>a?r.date:a,""); }
 function recent(rows,days){ if(!rows.length)return[]; const md=maxDate(rows);
   const c=new Date(md+"T00:00:00"); c.setDate(c.getDate()-days);
-  const cut=c.toISOString().slice(0,10); return rows.filter(r=>r.date>cut); }
+  const cut=fmtDate(c); return rows.filter(r=>r.date>cut); }
 function avg(a){ const x=a.filter(v=>v!=null); return x.length?x.reduce((s,v)=>s+v,0)/x.length:null; }
 function groupBy(rows,key){ const m={}; rows.forEach(r=>{(m[r[key]]=m[r[key]]||[]).push(r);}); return m; }
 
@@ -819,7 +863,7 @@ function renderRank(rows){
   const tailAvg={},gT=groupBy(rec,"tail"); for(const t in gT) tailAvg[t]=avg(gT[t].map(r=>r.combined));
   const wAvg={},gW=groupBy(rec,"weekday"); for(const w in gW) wAvg[w]=avg(gW[w].map(r=>r.combined));
   const md=maxDate(sr); const nd=new Date(md+"T00:00:00"); nd.setDate(nd.getDate()+1);
-  const nextWd=WD[nd.getDay()]; const ndStr=nd.toISOString().slice(0,10);
+  const nextWd=WD[nd.getDay()]; const ndStr=fmtDate(nd);
   const lastDay={}; sr.filter(r=>r.date===md).forEach(r=>lastDay[r.machine_no]=r);
   const autoEv=eventsOn(ndStr,store);
   const evLabelNext=autoEv.map(e=>e.name||eventDesc(e)).join("・");
@@ -882,10 +926,10 @@ function renderRank(rows){
     if(wAvg[nextWd]!=null&&gComb!=null&&wAvg[nextWd]<gComb){ const p=Math.min(6,(gComb-wAvg[nextWd])*0.3); s+=p;
       if(wAvg[nextWd]<=gComb-3) reasons.push("翌日("+nextWd+"曜)が好調傾向(+"+p.toFixed(0)+")"); }
 
-    // 前日凹み（据え置き期待）
+    // 前日凹み（翌日の上げ狙い）：前日に大きく凹んだ台は翌日に設定を上げてくる期待
     const ld=lastDay[mno];
     if(ld&&ld.combined!=null&&gComb!=null&&ld.combined>gComb+8){ s+=10;
-      reasons.push("前日は1/"+ld.combined.toFixed(0)+"と凹み→据え置き期待(+10)"); }
+      reasons.push("前日は1/"+ld.combined.toFixed(0)+"と凹み→翌日の上げ狙い(+10)"); }
 
     // (3) 連続不発日数＋イベント＝上げ狙い
     let streak=0; for(let i=arr.length-1;i>=0;i--){ if(arr[i].combined!=null&&gComb!=null&&arr[i].combined>gComb)streak++; else break; }
@@ -957,12 +1001,20 @@ function renderRank(rows){
 }
 
 // ---------- CSV / 管理 ----------
-function downloadCsv(){
-  const rows=load(); if(!rows.length){ alert("データがありません"); return; }
+function buildCsv(){
+  const rows=load(); if(!rows.length) return "";
   const cols=["date","weekday","store","machine_name","machine_no","big","reg","total","big_prob","reg_prob","combined","reg_ratio","sabe","budou","tail"];
   const head=["日付","曜日","店舗","機種","台番号","BIG","REG","総スタート","BIG確率","REG確率","合算確率","REG比率","差枚","ブドウ逆算","末尾"];
   let csv=head.join(",")+"\n"; rows.forEach(r=>{ csv+=cols.map(c=>r[c]??"").join(",")+"\n"; });
-  dl("﻿"+csv,"jagler.csv","text/csv");
+  return csv;
+}
+function downloadCsv(){ const csv=buildCsv(); if(!csv){ alert("データがありません"); return; } dl("﻿"+csv,"jagler.csv","text/csv"); }
+function copyCsv(){
+  const csv=buildCsv(); if(!csv){ alert("データがありません"); return; }
+  const box=document.getElementById("csv-box"); box.value=csv;
+  const done=()=>alert("CSVをコピーしました（"+(load().length)+"件）。貼り付けて送れます。");
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(csv).then(done).catch(()=>{box.focus();box.select();}); }
+  else { box.focus(); box.select(); try{document.execCommand("copy");done();}catch(e){} }
 }
 function exportJson(){ dl(JSON.stringify({records:load(),events:loadEvents()}),"jagler_backup.json","application/json"); }
 function importJson(e){ const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
@@ -997,7 +1049,7 @@ function loadDemo(){
   function rnd(seed){ let h=2166136261; for(const c of seed){h^=c.charCodeAt(0);h=Math.imul(h,16777619);} return ()=>{h^=h<<13;h^=h>>>17;h^=h<<5;return((h>>>0)%10000)/10000;}; }
   const rows=load(); const keys=new Set(rows.map(r=>r.date+"|"+r.store+"|"+r.machine_no));
   const today=new Date(); let ins=0;
-  for(let i=0;i<60;i++){ const d=new Date(today); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
+  for(let i=0;i<60;i++){ const d=new Date(today); d.setDate(d.getDate()-i); const ds=fmtDate(d);
     for(const[name,mac,tight]of STORES){ for(let m=1;m<=20;m++){ const r=rnd(name+m+ds); const tail=m%10;
       let w={1:40,2:22,3:14,4:10,5:8,6:6};
       if(tail===7){w[5]+=10;w[6]+=10;} if(m===1||m===20){w[5]+=6;w[6]+=4;}
@@ -1024,8 +1076,9 @@ document.getElementById("tabs").addEventListener("click",e=>{
 });
 
 // ---------- 初期化 ----------
-const _t=new Date().toISOString().slice(0,10);
+const _t=fmtDate(new Date());
 ["in-date","ph-date","ev-date","an-date"].forEach(id=>{const el=document.getElementById(id); if(el)el.value=_t;});
+{const by=document.getElementById("bulk-year"); if(by)by.value=new Date().getFullYear();}
 aiLoad();
 refreshAll();
 </script>
