@@ -122,7 +122,8 @@
       <div><label>開始台番号</label><input id="ph-start" type="number" value="1"></div>
     </div>
     <label>台データの写真を選ぶ（撮影 or 画像）</label>
-    <input id="ph-file" type="file" accept="image/*" capture="environment" onchange="runOcr(event)">
+    <input id="ph-file" type="file" accept="image/*" onchange="runOcr(event)">
+    <p class="muted">📷 撮影 / 🖼 アルバムから選択 どちらもOK</p>
     <div id="ph-status" class="muted" style="margin-top:6px;"></div>
     <label>読み取り結果（1行1台、確認・修正OK）<br>
       <span class="muted">並び: BB数 RB数 BB確率 合成確率 総スタート 持ちメダル（数字だけでOK／確率や持メダルは無視されます）</span></label>
@@ -206,7 +207,8 @@
     <p class="muted">告知の写真やツイートから、隠れた示唆（末尾・機種・台番号）を読み取ります。
       簡易解析はキー不要。<b>しっかりAIで判断</b>するには、ご自身のAnthropic APIキーが必要です（有料）。</p>
     <label>告知画像（任意）</label>
-    <input id="an-file" type="file" accept="image/*" capture="environment" onchange="anPickImage(event)">
+    <input id="an-file" type="file" accept="image/*" onchange="anPickImage(event)">
+    <p class="muted">📷 撮影 / 🖼 アルバムから選択 どちらもOK</p>
     <div id="an-imgstat" class="muted"></div>
     <label>店長ツイート・告知文</label>
     <textarea id="an-text" style="min-height:110px;white-space:pre-wrap;"
@@ -571,7 +573,7 @@ function anPickImage(e){
 const JUG_NAMES=["マイジャグラー","アイムジャグラー","ファンキージャグラー","ゴーゴージャグラー",
   "ハッピージャグラー","ジャグラーガールズ","ミスタージャグラー","ウルトラミラクルジャグラー","ジャグラー"];
 function heuristicHints(text){
-  const t=text||""; const out={tail:"",machine:"",numbers:[],summary:[]};
+  const t=toHalf(text||""); const out={tail:"",machine:"",numbers:[],summary:[]};
   let m=t.match(/末尾\s*([0-9])/)||t.match(/([0-9])\s*の\s*つく/)||t.match(/([0-9])\s*が\s*つく/);
   if(m) out.tail=m[1];
   for(const n of JUG_NAMES){ if(t.includes(n)){ out.machine=n; break; } }
@@ -667,11 +669,11 @@ function delEvent(i){ const ev=loadEvents(); ev.splice(i,1); saveEvents(ev); ren
 function bulkAddEvents(){
   const year=parseInt(val("bulk-year"),10)||new Date().getFullYear();
   const store=val("bulk-store").trim()||"全店";
-  const lines=val("bulk-text").split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+  const lines=toHalf(val("bulk-text")).split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
   const ev=loadEvents();
   const seenSingle=new Set(ev.filter(e=>e.type==="single").map(e=>e.date+"|"+e.store));
   const seenRule=new Set(ev.map(e=>e.type+"|"+(e.digit||e.weekday||e.day||"")+"|"+e.store));
-  let added=0, skip=0;
+  let added=0, skip=0; const addedList=[];
   const WDMAP={"日":0,"月":1,"火":2,"水":3,"木":4,"金":5,"土":6};
   for(const ln of lines){
     const hh=heuristicHints(ln);
@@ -680,25 +682,28 @@ function bulkAddEvents(){
     // 繰り返し: 「7のつく日」
     let mm=ln.match(/([0-9])\s*の\s*つく/);
     if(mm){ const sig="digit|"+mm[1]+"|"+store; if(!seenRule.has(sig)){ seenRule.add(sig);
-      ev.push({type:"digit",digit:mm[1],store,name:ln,detail:ln,hints}); added++; } hit=true; }
+      ev.push({type:"digit",digit:mm[1],store,name:ln,detail:ln,hints}); added++; addedList.push(mm[1]+"のつく日"); } hit=true; }
     // 繰り返し: 「毎週○曜」
     mm=ln.match(/毎週\s*([日月火水木金土])/);
     if(mm){ const wd=WDMAP[mm[1]]; const sig="weekly|"+wd+"|"+store; if(!seenRule.has(sig)){ seenRule.add(sig);
-      ev.push({type:"weekly",weekday:wd,store,name:ln,detail:ln,hints}); added++; } hit=true; }
+      ev.push({type:"weekly",weekday:wd,store,name:ln,detail:ln,hints}); added++; addedList.push("毎週"+mm[1]); } hit=true; }
     // 繰り返し: 「毎月○日」
     mm=ln.match(/毎月\s*(\d{1,2})\s*日/);
     if(mm){ const sig="monthly|"+ +mm[1]+"|"+store; if(!seenRule.has(sig)){ seenRule.add(sig);
-      ev.push({type:"monthly",day:+mm[1],store,name:ln,detail:ln,hints}); added++; } hit=true; }
-    // 単発: 行内の M/D を全部拾う（6/7・6月7日・6.7・2026/6/7）
-    const dm=[...ln.matchAll(/(\d{1,2})\s*[\/月.]\s*(\d{1,2})/g)];
+      ev.push({type:"monthly",day:+mm[1],store,name:ln,detail:ln,hints}); added++; addedList.push("毎月"+mm[1]+"日"); } hit=true; }
+    // 単発: 行内の M/D を全部拾う（6/7・6月7日・6.7・6-7・2026/6/7）
+    const dm=[...ln.matchAll(/(\d{1,2})\s*[\/月.\-]\s*(\d{1,2})/g)];
     for(const d of dm){ const mo=String(d[1]).padStart(2,"0"), da=String(d[2]).padStart(2,"0");
+      if(+d[1]<1||+d[1]>12||+d[2]<1||+d[2]>31) continue;
       const date=year+"-"+mo+"-"+da; if(seenSingle.has(date+"|"+store)){ continue; } seenSingle.add(date+"|"+store);
-      const name=ln.replace(/(\d{1,2})\s*[\/月.]\s*(\d{1,2})\s*(日)?/g,"").replace(/[（(][日月火水木金土][)）]/g,"").replace(/[,、]/g,"").trim();
-      ev.push({type:"single",date,store,name:name||"イベント",detail:ln,hints}); added++; hit=true; }
+      const name=ln.replace(/(\d{1,2})\s*[\/月.\-]\s*(\d{1,2})\s*(日)?/g,"").replace(/[（(][日月火水木金土][)）]/g,"").replace(/[,、]/g,"").trim();
+      ev.push({type:"single",date,store,name:name||"イベント",detail:ln,hints}); added++; addedList.push(mo+"/"+da); hit=true; }
     if(!hit) skip++;
   }
   saveEvents(ev); renderEvents(); render();
-  document.getElementById("bulk-msg").innerHTML='<div class="ok">登録: '+added+'件 / 日付を読めずスキップ '+skip+'行</div>';
+  document.getElementById("bulk-msg").innerHTML='<div class="ok">登録 '+added+'件: '+
+    (addedList.join("、")||"なし")+'<br>日付を読めずスキップ '+skip+'行</div>'+
+    (added===0?'<div class="warn">0件でした。貼り付けた文の例を確認してください（日付が画像だと読めません）。</div>':'');
   if(added) document.getElementById("bulk-text").value="";
 }
 function eventDesc(e){
@@ -736,6 +741,9 @@ function renderEvents(){
 // ---------- 集計ユーティリティ ----------
 const val=id=>document.getElementById(id).value;
 function fmtDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// 全角数字・記号を半角へ（日本語サイトのコピペ対策）
+function toHalf(s){ return (s||"").replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0))
+  .replace(/／/g,"/").replace(/．/g,".").replace(/　/g," "); }
 function dayDiff(a,b){ return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000); }
 function maxDate(rows){ return rows.reduce((a,r)=>r.date>a?r.date:a,""); }
 function recent(rows,days){ if(!rows.length)return[]; const md=maxDate(rows);
@@ -1006,7 +1014,14 @@ function renderRank(rows){
   }
   out.sort((a,b)=>b.score-a.score);
   if(!out.length){ el.innerHTML="<p class='muted'>判定できる台がありません。</p>"; return; }
-  let h="<p class='muted'>"+store+" ／ 予想日="+ndStr.slice(5)+"("+nextWd+"曜)"+
+  // 次の登録イベント日を探して案内（md以降45日以内）
+  let nextEvBanner="";
+  { let found=null; for(let i=0;i<=45;i++){ const dd=new Date(md+"T00:00:00"); dd.setDate(dd.getDate()+i);
+      const ds=fmtDate(dd); if(ds>=ndStr && eventsOn(ds,store).length){ found=ds; break; } }
+    if(found && found!==ndStr){ const nm=eventsOn(found,store).map(e=>e.name||eventDesc(e)).join("・");
+      nextEvBanner='<div class="note">📅 次の登録イベント: <b>'+found.slice(5)+'</b> '+nm+
+        ' <button class="ghost" style="padding:3px 8px" onclick="document.getElementById(\'r-date\').value=\''+found+'\';render();">この日で予想</button></div>'; } }
+  let h=nextEvBanner+"<p class='muted'>"+store+" ／ 予想日="+ndStr.slice(5)+"("+nextWd+"曜)"+
     (autoEv.length?" 🎉"+evLabelNext:(document.getElementById("r-event").checked?"・イベント想定":""))+
     (keepRate!=null?" ／ 店のクセ:"+(keepRate>=0.5?"据え置き寄り":"下げ寄り"):"")+"</p>"+
     "<div class='scroll'><table><tr><th>順位</th><th>判定</th><th>機種</th><th>台</th><th>末尾</th>"+
