@@ -78,19 +78,22 @@
 
   <!-- 貼り付け入力 -->
   <div class="panel active" id="p-input">
-    <h2>貼り付け取り込み（ペカセン等）</h2>
-    <p class="muted">サイトをご自身のブラウザで開き、台データの表をコピーして貼り付けてください。</p>
+    <h2>貼り付け取り込み（ペカセン）</h2>
+    <p class="muted">ペカセンのページを開き、台データを<b>機種の見出しごと全部まとめてコピー</b>して
+      貼り付けてください。複数機種が混ざっていても、機種名・台数を自動で振り分けます。</p>
     <div class="row">
       <div><label>店舗名</label><input id="in-store" value="ビッグディッパー新橋1号店"></div>
       <div><label>日付</label><input id="in-date" type="date"></div>
     </div>
-    <p class="muted">機種名は貼り付けたデータから自動で読み取ります（「○○ジャグラー」の行があればそれを使用）。</p>
-    <label>データの形式（列の並び）</label>
-    <select id="in-order">
-      <option value="machine_no,total,big,reg">ペカセン（台番 / G数 / BIG / REG / 合成 / 差枚 / ブドウ）</option>
-      <option value="machine_no,big,reg,total">汎用（台番 / BIG / REG / 総スタート）</option>
-      <option value="machine_no,total,big,reg,skip">汎用（台番 / 総スタート / BIG / REG）</option>
-    </select>
+    <p class="muted">機種名・台数は貼り付けデータから自動判別します（「○○ジャグラーN台」の見出しを認識）。</p>
+    <details>
+      <summary class="muted">ペカセン以外のサイト・手入力で列の並びを指定する場合</summary>
+      <label>データの形式（列の並び）</label>
+      <select id="in-order">
+        <option value="machine_no,big,reg,total">台番 / BIG / REG / 総スタート</option>
+        <option value="machine_no,total,big,reg">台番 / 総スタート / BIG / REG</option>
+      </select>
+    </details>
     <label>ここに貼り付け</label>
     <textarea id="in-text" placeholder="台番&#9;G数&#9;BIG&#9;REG&#9;合成&#9;差枚&#9;ブドウ&#10;1&#9;7200&#9;52&#9;31 ..."></textarea>
     <button class="primary" onclick="doImport()">🔍 取り込む</button>
@@ -290,6 +293,36 @@ function saveRecs(recs, store, machine, date){
   save(rows); refreshAll(); return {ins,skip};
 }
 
+// ペカセン専用パーサー：複数機種セクションをまとめて解析
+// 各セクション = 「○○ジャグラー + N台」見出し → 平均/勝率/ブドウ等 → 台番 G数 BIG REG ...
+function parsePekasen(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim());
+  const sections=[]; let cur=null;
+  for(const ln of lines){
+    if(!ln) continue;
+    // 機種見出し: 「ジャグラ」を含み、末尾が 数字+台
+    if(/ジャグラ/.test(ln) && /\d+台$/.test(ln)){ cur={nameLine:ln,count:null,recs:[]}; sections.push(cur); continue; }
+    if(!cur) continue;
+    // 勝率行（例 60%29/48）から正確な台数を取得
+    const m=ln.match(/(\d+)\s*%\s*\d+\s*\/\s*(\d+)/);
+    if(m && cur.count===null){ cur.count=parseInt(m[2],10); continue; }
+    // データ行: 先頭が純粋な整数（台番）で 4列以上
+    const c=splitLine(ln);
+    if(/^\d+$/.test(c[0]) && c.length>=4){
+      const mno=toInt(c[0]), total=toInt(c[1]), big=toInt(c[2]), reg=toInt(c[3]);
+      if(mno!==null&&big!==null&&reg!==null) cur.recs.push({machine_no:mno,big,reg,total:total||0});
+    }
+  }
+  // 機種名から台数だけを正しく除去（名前が数字で終わる機種に対応）
+  for(const s of sections){
+    let name=s.nameLine;
+    if(s.count!==null && name.endsWith(s.count+"台")) name=name.slice(0,-(String(s.count).length+1));
+    else name=name.replace(/\d+台$/,"");
+    s.machine=name.trim();
+  }
+  return sections.filter(s=>s.recs.length);
+}
+
 // 貼り付けテキストから機種名（○○ジャグラー）を拾い、その行は本文から除く
 function extractMachineName(text){
   const lines=text.split(/\r?\n/); let name=""; const kept=[];
@@ -304,11 +337,24 @@ function extractMachineName(text){
 // ---------- 貼り付け取り込み ----------
 function doImport(){
   const store=val("in-store").trim(), date=val("in-date");
-  const order=val("in-order").split(",");
   const msg=document.getElementById("import-msg");
   if(!store||!date){ msg.innerHTML='<div class="warn">店舗名と日付を入力してください。</div>'; return; }
-  const ex=extractMachineName(val("in-text"));
-  const machine = ex.name || "ジャグラー";
+  const text=val("in-text");
+
+  // まずペカセン形式（複数機種）を自動判別
+  const sections=parsePekasen(text);
+  if(sections.length){
+    let ins=0, skip=0; const parts=[];
+    for(const s of sections){ const r=saveRecs(s.recs,store,s.machine,date);
+      ins+=r.ins; skip+=r.skip; parts.push(s.machine+"("+s.recs.length+"台)"); }
+    msg.innerHTML='<div class="ok">取り込み完了: '+store+' '+date+'<br>'+sections.length+
+      '機種 → 新規'+ins+'件 / 重複'+skip+'件<br><span class="muted">'+parts.join(" ／ ")+'</span></div>';
+    document.getElementById("in-text").value=""; return;
+  }
+
+  // それ以外は列指定モード（他サイト・手入力用）
+  const order=val("in-order").split(",");
+  const ex=extractMachineName(text); const machine=ex.name||"ジャグラー";
   const {recs,warns}=parseRows(ex.text,order,1);
   let html=warns.map(w=>'<div class="warn">'+w+'</div>').join("");
   if(recs.length){ const {ins,skip}=saveRecs(recs,store,machine,date);
