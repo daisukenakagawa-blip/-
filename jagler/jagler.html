@@ -235,9 +235,11 @@
     <div class="row">
       <div><label>店舗</label><select id="f-store" onchange="render()"></select></div>
       <div><label>日付</label><select id="f-date" onchange="render()"></select></div>
+      <div><label>機種</label><select id="f-machine" onchange="render()"></select></div>
     </div>
+    <div id="t-bad"></div>
     <button class="ghost" style="color:#c00;border-color:#f3b;margin:6px 0;"
-            onclick="deleteFiltered()">🗑 表示中（この店・この日）をまとめて削除</button>
+            onclick="deleteFiltered()">🗑 表示中（店・日・機種）をまとめて削除</button>
     <h3 style="font-size:14px;margin:10px 0 0;">機種サマリー</h3>
     <p class="muted">台数・平均差枚・勝率・平均合算・平均ブドウ逆算（選択中の店・日）。</p>
     <div id="t-summary"></div>
@@ -415,6 +417,7 @@ function saveRecs(recs, store, machine, date){
   const rows=load(); const keys=new Set(rows.map(r=>r.date+"|"+r.store+"|"+r.machine_no));
   let ins=0,skip=0;
   for(const r of recs){ const k=date+"|"+store+"|"+r.machine_no;
+    if(r.machine_no==null||r.machine_no<=0){ skip++; continue; }   // 不正な台番は保存しない
     if(keys.has(k)){skip++;continue;} keys.add(k);
     rows.push(enrich({date,store,machine_name:machine,machine_no:r.machine_no,big:r.big,reg:r.reg,
       total:r.total,sabe:(r.sabe!=null?r.sabe:null),budou:(r.budou||"")})); ins++; }
@@ -430,7 +433,7 @@ function toSignedInt(t){ if(t==null)return null; const neg=/[-−]/.test(String(
 function parsePekasen(text){
   const raw=text.split(/\r?\n/).map(l=>l.trim());
   const isHeader=ln=>/台番/.test(ln)&&/BIG/i.test(ln)&&/REG/i.test(ln);
-  const isDataRow=ln=>{ const c=splitLine(ln); return /^\d+$/.test(c[0])&&c.length>=4; };
+  const isDataRow=ln=>{ const c=splitLine(ln); return /^\d+$/.test(c[0])&&c.length>=5&&toInt(c[1])>0; };
   const headerIdx=[]; raw.forEach((ln,i)=>{ if(isHeader(ln)) headerIdx.push(i); });
   if(!headerIdx.length) return [];
   const sections=[];
@@ -685,6 +688,7 @@ function refreshAll(){
   fillSelect("f-store",["（全店）",...stores]);
   fillSelect("r-store",stores.length?stores:["（データなし）"]);
   fillSelect("f-date",["（全期間）",...[...new Set(rows.map(r=>r.date))].sort().reverse()]);
+  fillSelect("f-machine",["（全機種）",...[...new Set(rows.map(r=>r.machine_name))].filter(x=>x).sort()]);
   renderEvents(); render();
 }
 function fillSelect(id,opts){ const el=document.getElementById(id); const cur=el.value;
@@ -705,10 +709,33 @@ function render(){
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
 
+// 機種名に台数がくっついた不正データ（例 マイジャグラーV48）を検出
+function suspiciousMachines(rows){
+  const names=new Set(rows.map(r=>r.machine_name)); const bad=[];
+  for(const n of names){ const m=(n||"").match(/^(.*[^0-9])([0-9]{1,3})$/);
+    if(m && names.has(m[1])) bad.push(n); }
+  return bad;
+}
+function deleteByMachine(enc){
+  const name=decodeURIComponent(enc);
+  if(!confirm("機種「"+name+"」のデータを全て削除します。よろしいですか？")) return;
+  save(load().filter(r=>r.machine_name!==name)); refreshAll();
+}
+function renderBad(rows){
+  const el=document.getElementById("t-bad"); if(!el) return;
+  const bad=suspiciousMachines(rows);
+  if(!bad.length){ el.innerHTML=""; return; }
+  el.innerHTML='<div class="note" style="background:#ffe0e0;border-color:#f3b;">'+
+    '⚠️ 機種名に台数がくっついた不正データが見つかりました（古いバージョンの残骸）。削除してください：<br>'+
+    bad.map(n=>'<button class="ghost" style="margin:3px;color:#c00" onclick="deleteByMachine(\''+
+      encodeURIComponent(n)+'\')">🗑 '+n+'</button>').join("")+'</div>';
+}
 function renderList(rows){
-  let v=rows.slice(); const s=val("f-store"),d=val("f-date");
+  renderBad(rows);
+  let v=rows.slice(); const s=val("f-store"),d=val("f-date"),mc=val("f-machine");
   if(s&&s!=="（全店）") v=v.filter(r=>r.store===s);
   if(d&&d!=="（全期間）") v=v.filter(r=>r.date===d);
+  if(mc&&mc!=="（全機種）") v=v.filter(r=>r.machine_name===mc);
   v.sort((a,b)=>b.date<a.date?-1:b.date>a.date?1:a.machine_no-b.machine_no);
   renderSummary(v);
   const evCache={};
@@ -951,11 +978,11 @@ function deleteOne(enc){
   save(rows); refreshAll();
 }
 function deleteFiltered(){
-  const rows=load(); const s=val("f-store"),d=val("f-date");
-  const match=r=> (s==="（全店）"||r.store===s) && (d==="（全期間）"||r.date===d);
+  const rows=load(); const s=val("f-store"),d=val("f-date"),mc=val("f-machine");
+  const match=r=> (s==="（全店）"||r.store===s) && (d==="（全期間）"||r.date===d) && (mc==="（全機種）"||!mc||r.machine_name===mc);
   const n=rows.filter(match).length;
   if(!n){ alert("削除対象がありません。"); return; }
-  const label=(s==="（全店）"?"全店":s)+" / "+(d==="（全期間）"?"全期間":d);
+  const label=(s==="（全店）"?"全店":s)+" / "+(d==="（全期間）"?"全期間":d)+" / "+(mc&&mc!=="（全機種）"?mc:"全機種");
   if(!confirm(label+" の "+n+"件を削除します。よろしいですか？")) return;
   save(rows.filter(r=>!match(r))); refreshAll();
 }
