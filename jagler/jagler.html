@@ -154,6 +154,10 @@
     </div>
     <button class="ghost" style="color:#c00;border-color:#f3b;margin:6px 0;"
             onclick="deleteFiltered()">🗑 表示中（この店・この日）をまとめて削除</button>
+    <h3 style="font-size:14px;margin:10px 0 0;">機種サマリー</h3>
+    <p class="muted">台数・平均差枚・勝率・平均合算・平均ブドウ逆算（選択中の店・日）。</p>
+    <div id="t-summary"></div>
+    <h3 style="font-size:14px;margin:14px 0 0;">台別データ</h3>
     <p class="muted">各行の「削除」で1台ずつ消せます。間違えて入れたデータの修正にどうぞ。</p>
     <div class="scroll"><table id="t-list"></table></div>
   </div>
@@ -289,36 +293,55 @@ function saveRecs(recs, store, machine, date){
   let ins=0,skip=0;
   for(const r of recs){ const k=date+"|"+store+"|"+r.machine_no;
     if(keys.has(k)){skip++;continue;} keys.add(k);
-    rows.push(enrich({date,store,machine_name:machine,machine_no:r.machine_no,big:r.big,reg:r.reg,total:r.total})); ins++; }
+    rows.push(enrich({date,store,machine_name:machine,machine_no:r.machine_no,big:r.big,reg:r.reg,
+      total:r.total,sabe:(r.sabe!=null?r.sabe:null),budou:(r.budou||"")})); ins++; }
   save(rows); refreshAll(); return {ins,skip};
 }
 
-// ペカセン専用パーサー：複数機種セクションをまとめて解析
-// 各セクション = 「○○ジャグラー + N台」見出し → 平均/勝率/ブドウ等 → 台番 G数 BIG REG ...
+// 符号付き整数（差枚 +2,212 / -1,800 / 0）
+function toSignedInt(t){ if(t==null)return null; const neg=/[-−]/.test(String(t));
+  const d=String(t).replace(/[^0-9]/g,""); if(!d)return null; return neg?-parseInt(d,10):parseInt(d,10); }
+
+// ペカセン専用パーサー（機種名と台数が別行でも対応）
+// 目印＝データ見出し「台番 G数 BIG REG …」。その直前の「ジャグラー」行＝機種名。
 function parsePekasen(text){
-  const lines=text.split(/\r?\n/).map(l=>l.trim());
-  const sections=[]; let cur=null;
-  for(const ln of lines){
-    if(!ln) continue;
-    // 機種見出し: 「ジャグラ」を含み、末尾が 数字+台
-    if(/ジャグラ/.test(ln) && /\d+台$/.test(ln)){ cur={nameLine:ln,count:null,recs:[]}; sections.push(cur); continue; }
-    if(!cur) continue;
-    // 勝率行（例 60%29/48）から正確な台数を取得
-    const m=ln.match(/(\d+)\s*%\s*\d+\s*\/\s*(\d+)/);
-    if(m && cur.count===null){ cur.count=parseInt(m[2],10); continue; }
-    // データ行: 先頭が純粋な整数（台番）で 4列以上
-    const c=splitLine(ln);
-    if(/^\d+$/.test(c[0]) && c.length>=4){
-      const mno=toInt(c[0]), total=toInt(c[1]), big=toInt(c[2]), reg=toInt(c[3]);
-      if(mno!==null&&big!==null&&reg!==null) cur.recs.push({machine_no:mno,big,reg,total:total||0});
+  const raw=text.split(/\r?\n/).map(l=>l.trim());
+  const isHeader=ln=>/台番/.test(ln)&&/BIG/i.test(ln)&&/REG/i.test(ln);
+  const isDataRow=ln=>{ const c=splitLine(ln); return /^\d+$/.test(c[0])&&c.length>=4; };
+  const headerIdx=[]; raw.forEach((ln,i)=>{ if(isHeader(ln)) headerIdx.push(i); });
+  if(!headerIdx.length) return [];
+  const sections=[];
+  for(const h of headerIdx){
+    // 機種名＝見出しの直前12行以内で「ジャグラ」を含む行
+    let nameLine="", nameIdx=-1;
+    for(let i=h-1;i>=0&&i>=h-12;i--){ if(/ジャグラ/.test(raw[i])){ nameLine=raw[i]; nameIdx=i; break; } }
+    // 台数＝勝率欄(例 60%29/48 の48)を優先、無ければ「N台」
+    let count=null;
+    for(let i=(nameIdx>=0?nameIdx:Math.max(0,h-12));i<h;i++){
+      const m=raw[i]&&raw[i].match(/(\d+)\s*[%％]\s*\d+\s*\/\s*(\d+)/);
+      if(m){ count=parseInt(m[2],10); break; }
+      const t=raw[i]&&raw[i].match(/^\s*(\d+)\s*台\s*$/);
+      if(t&&count===null) count=parseInt(t[1],10);
     }
-  }
-  // 機種名から台数だけを正しく除去（名前が数字で終わる機種に対応）
-  for(const s of sections){
-    let name=s.nameLine;
-    if(s.count!==null && name.endsWith(s.count+"台")) name=name.slice(0,-(String(s.count).length+1));
-    else name=name.replace(/\d+台$/,"");
-    s.machine=name.trim();
+    // データ行（見出しの次から、次の機種名/見出し/注記まで）
+    const recs=[];
+    for(let i=h+1;i<raw.length;i++){
+      const ln=raw[i]; if(!ln) continue;
+      if(isHeader(ln)||/ジャグラ/.test(ln)) break;
+      if(/^※/.test(ln)) { if(recs.length) break; else continue; }
+      if(!isDataRow(ln)) continue;
+      const c=splitLine(ln);
+      const rec={machine_no:toInt(c[0]),total:toInt(c[1])||0,big:toInt(c[2]),reg:toInt(c[3])};
+      if(c.length>=6) rec.sabe=toSignedInt(c[5]);
+      if(c.length>=7) rec.budou=c[6];
+      if(rec.machine_no!=null&&rec.big!=null&&rec.reg!=null) recs.push(rec);
+    }
+    // 機種名から台数だけを除去（名前末尾の数字を保持）
+    let name=nameLine;
+    if(count!=null){ name=name.replace(/台\s*$/,""); const cs=String(count); if(name.endsWith(cs)) name=name.slice(0,-cs.length); }
+    else name=name.replace(/\d+\s*台?\s*$/,"");
+    name=name.trim()||"ジャグラー";
+    sections.push({machine:name,count:(count!=null?count:recs.length),recs});
   }
   return sections.filter(s=>s.recs.length);
 }
@@ -446,18 +469,48 @@ function renderList(rows){
   if(s&&s!=="（全店）") v=v.filter(r=>r.store===s);
   if(d&&d!=="（全期間）") v=v.filter(r=>r.date===d);
   v.sort((a,b)=>b.date<a.date?-1:b.date>a.date?1:a.machine_no-b.machine_no);
+  renderSummary(v);
   let h="<tr><th>日付</th><th>曜</th><th>店舗</th><th>機種</th><th>台</th><th>BIG</th><th>REG</th>"+
-        "<th>総ｽﾀｰﾄ</th><th>合算</th><th>設定示唆</th><th>REG確率</th><th>末尾</th><th>操作</th></tr>";
+        "<th>総ｽﾀｰﾄ</th><th>合算</th><th>設定示唆</th><th>REG確率</th><th>差枚</th><th>ブドウ</th><th>末尾</th><th>操作</th></tr>";
   for(const r of v.slice(0,500)){ const ci=combinedInfo(r.combined);
     const key=encodeURIComponent(r.date+"|"+r.store+"|"+r.machine_no);
+    const sabe = r.sabe!=null ? (r.sabe>0?"+"+r.sabe:String(r.sabe)) : "-";
     h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.weekday+"</td><td>"+r.store+"</td><td>"+(r.machine_name||"")+
       "</td><td>"+r.machine_no+"</td><td>"+r.big+"</td><td>"+r.reg+"</td><td>"+r.total+
       "</td><td "+cellStyle(ci)+">"+(r.combined?"1/"+r.combined:"-")+
       "</td><td "+cellStyle(ci)+">"+ci.label+
       "</td><td style='background:"+regColor(r.reg_prob)+"'>"+(r.reg_prob?"1/"+r.reg_prob:"-")+
-      "</td><td>"+r.tail+"</td>"+
+      "</td><td style='color:"+(r.sabe>0?'#1a7f37':r.sabe<0?'#c00':'#555')+"'>"+sabe+
+      "</td><td>"+(r.budou||"-")+"</td><td>"+r.tail+"</td>"+
       "<td><button class='ghost' style='padding:3px 8px;color:#c00' onclick=\"deleteOne('"+key+"')\">削除</button></td></tr>"; }
   document.getElementById("t-list").innerHTML=h;
+}
+// 機種サマリー（台数・平均差枚・勝率・平均合算・平均REG・平均ブドウ）
+function budouDen(s){ const m=String(s||"").match(/1\s*\/\s*([\d.]+)/); return m?parseFloat(m[1]):null; }
+function renderSummary(view){
+  const el=document.getElementById("t-summary"); if(!el) return;
+  if(!view.length){ el.innerHTML="<p class='muted'>データがありません。</p>"; return; }
+  const g=groupBy(view,"machine_name");
+  let h="<div class='scroll'><table><tr><th>機種</th><th>台数</th><th>平均差枚</th><th>勝率</th>"+
+        "<th>平均合算</th><th>平均REG</th><th>平均ブドウ</th></tr>";
+  Object.keys(g).forEach(name=>{
+    const rows=g[name];
+    const sabes=rows.map(r=>r.sabe).filter(x=>x!=null);
+    const aSabe=avg(sabes);
+    const wins=sabes.filter(x=>x>0).length;
+    const wr=sabes.length?Math.round(wins/sabes.length*100):null;
+    const aComb=avg(rows.map(r=>r.combined)), aReg=avg(rows.map(r=>r.reg_prob));
+    const aBud=avg(rows.map(r=>budouDen(r.budou)));
+    const ci=combinedInfo(aComb?+aComb.toFixed(1):null);
+    h+="<tr><td style='text-align:left'>"+name+"</td><td>"+rows.length+"台</td>"+
+       "<td style='color:"+(aSabe>0?'#1a7f37':aSabe<0?'#c00':'#555')+"'>"+
+       (aSabe!=null?(aSabe>0?"+":"")+Math.round(aSabe):"-")+"</td>"+
+       "<td>"+(wr!=null?wr+"%（"+wins+"/"+sabes.length+"）":"-")+"</td>"+
+       "<td "+cellStyle(ci)+">"+(aComb?"1/"+aComb.toFixed(1):"-")+"</td>"+
+       "<td>"+(aReg?"1/"+aReg.toFixed(1):"-")+"</td>"+
+       "<td>"+(aBud?"1/"+aBud.toFixed(2):"-")+"</td></tr>";
+  });
+  el.innerHTML=h+"</table></div>";
 }
 function trendTable(groups,label,order){
   let h="<div class='scroll'><table><tr><th>"+label+"</th><th>件数</th><th>平均合算</th><th>平均REG</th></tr>";
@@ -543,8 +596,8 @@ function renderRank(rows){
 // ---------- CSV / 管理 ----------
 function downloadCsv(){
   const rows=load(); if(!rows.length){ alert("データがありません"); return; }
-  const cols=["date","weekday","store","machine_name","machine_no","big","reg","total","big_prob","reg_prob","combined","reg_ratio","tail"];
-  const head=["日付","曜日","店舗","機種","台番号","BIG","REG","総スタート","BIG確率","REG確率","合算確率","REG比率","末尾"];
+  const cols=["date","weekday","store","machine_name","machine_no","big","reg","total","big_prob","reg_prob","combined","reg_ratio","sabe","budou","tail"];
+  const head=["日付","曜日","店舗","機種","台番号","BIG","REG","総スタート","BIG確率","REG確率","合算確率","REG比率","差枚","ブドウ逆算","末尾"];
   let csv=head.join(",")+"\n"; rows.forEach(r=>{ csv+=cols.map(c=>r[c]??"").join(",")+"\n"; });
   dl("﻿"+csv,"jagler.csv","text/csv");
 }
