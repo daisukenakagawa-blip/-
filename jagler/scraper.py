@@ -82,19 +82,19 @@ def robots_allows(url: str) -> bool:
 # ------------------------------------------------------------------
 # 実サイト取得（要設定）
 # ------------------------------------------------------------------
-def _fetch_real(target_date: date) -> list[dict]:
+def _fetch_real(store: dict, target_date: date) -> list[dict]:
     import requests
     from bs4 import BeautifulSoup
 
-    if not config.TARGET_URL_TEMPLATE or not config.TABLE_SELECTOR:
+    url_template = store.get("url") or config.TARGET_URL_TEMPLATE
+    selector = store.get("table_selector") or config.TABLE_SELECTOR
+    if not url_template or not selector:
         raise FetchBlocked(
-            "実サイト接続が有効ですが、TARGET_URL_TEMPLATE / TABLE_SELECTOR が "
-            "未設定です。config.py を設定してください。"
+            f"店舗『{store.get('name')}』の url / table_selector が未設定です。"
+            "config.py の STORES を設定してください。"
         )
 
-    url = config.TARGET_URL_TEMPLATE.format(
-        date=target_date.strftime(config.URL_DATE_FORMAT)
-    )
+    url = url_template.format(date=target_date.strftime(config.URL_DATE_FORMAT))
 
     if not robots_allows(url):
         raise FetchBlocked(
@@ -109,10 +109,10 @@ def _fetch_real(target_date: date) -> list[dict]:
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    table = soup.select_one(config.TABLE_SELECTOR)
+    table = soup.select_one(selector)
     if table is None:
         raise FetchBlocked(
-            f"セレクタ '{config.TABLE_SELECTOR}' に一致する表が見つかりません。"
+            f"セレクタ '{selector}' に一致する表が見つかりません（{store.get('name')}）。"
         )
 
     return _parse_table(table)
@@ -162,34 +162,43 @@ def _parse_table(table) -> list[dict]:
 # ------------------------------------------------------------------
 # 公開API
 # ------------------------------------------------------------------
+def mark_run() -> None:
+    """この取得（巡回）を実施したことを記録（1日1回ゲート用）。"""
+    _write_last_fetch(time.time())
+
+
+def fetch_store(store: dict, target_date: date | None = None, *,
+                use_demo: bool | None = None) -> list[dict]:
+    """
+    1店舗ぶんのデータを取得する（レート制限ゲートはここでは行わない）。
+    多店舗巡回は呼び出し側（collect.py）でループし、間に待機を入れる。
+
+    戻り値: 生レコードのリスト [{machine_no, big, reg, total_games, ...}, ...]
+    """
+    target_date = target_date or date.today()
+    demo = (not config.SCRAPER_ENABLED) if use_demo is None else use_demo
+    if demo:
+        import sample_data as sd
+        demo_store = next(
+            (s for s in sd.DEMO_STORES if s["name"] == store.get("name")),
+            sd.DEMO_STORES[0],
+        )
+        return sd.generate_store_day(demo_store, target_date)
+    return _fetch_real(store, target_date)
+
+
 def fetch(target_date: date | None = None, *, force: bool = False,
           use_demo: bool | None = None) -> list[dict]:
     """
-    データを1回取得する。
-
-    引数:
-      target_date : 取得対象日（省略時は本日）
-      force       : True でレート制限を無視（テスト用・非推奨）
-      use_demo    : True を明示するとデモデータを返す。
-                    None の場合は config.SCRAPER_ENABLED に従う。
-
-    戻り値: 生レコードのリスト [{machine_no, big, reg, total_games}, ...]
+    後方互換：先頭店舗を1回取得し、1日1回ゲートも適用する単一店舗API。
     """
     target_date = target_date or date.today()
-
     if not force and not can_fetch_now():
-        remaining = seconds_until_allowed()
-        hrs = remaining / 3600
+        hrs = seconds_until_allowed() / 3600
         raise FetchBlocked(
             f"1日1回の取得制限により、あと約 {hrs:.1f} 時間は取得できません。"
         )
-
-    demo = (not config.SCRAPER_ENABLED) if use_demo is None else use_demo
-
-    if demo:
-        records = sample_data.generate_for_date(target_date)
-    else:
-        records = _fetch_real(target_date)
-
-    _write_last_fetch(time.time())
+    store = config.STORES[0] if config.STORES else {"name": config.STORE_NAME}
+    records = fetch_store(store, target_date, use_demo=use_demo)
+    mark_run()
     return records

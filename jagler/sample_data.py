@@ -1,11 +1,11 @@
 """
-サンプル（デモ）データ生成
+サンプル（デモ）データ生成（多店舗対応）
 ====================================================================
-実サイトに接続せずに、ツールの全機能を試せるよう、
-現実的なジャグラーの出方を模したダミーデータを生成します。
+実サイトに接続せずにツールの全機能を試せるよう、複数店舗ぶんの
+ジャグラーの出方を模したダミーデータを生成します。
 
-- 台ごとに「クセ（設定が入りやすい度合い）」を持たせ、
-  末尾・曜日にも緩やかな傾向を付与しています。
+- 店舗ごとに「設定の入りやすさ（クセ）」を変えてある
+- 末尾・曜日・角台にも緩やかな傾向を付与
 - あくまで動作確認・デモ用であり、実際の店舗データではありません。
 """
 
@@ -15,26 +15,32 @@ import random
 from datetime import date, timedelta
 
 # マイジャグラーの設定別 おおよその合算確率（分母）イメージ
-# 設定1:約1/146 設定2:約1/144 設定3:約1/138 設定4:約1/132 設定5:約1/126 設定6:約1/120
 SETTING_COMBINED = {1: 146, 2: 144, 3: 138, 4: 132, 5: 126, 6: 120}
-# REG確率（分母）。設定差が大きい。
 SETTING_REG = {1: 410, 2: 380, 3: 345, 4: 315, 5: 290, 6: 273}
 
 MACHINE_NUMBERS = list(range(1, 21))  # 1〜20番台を想定
 
+# デモ用の店舗と機種（東京都の複数店をイメージ）。
+# 末尾の "tightness" が大きいほど高設定が入りにくい店（デモ用のクセ）。
+DEMO_STORES = [
+    {"name": "ビッグディッパー新橋1号店", "machine": "マイジャグラーV", "tightness": 0.0},
+    {"name": "デモホール渋谷",           "machine": "アイムジャグラーEX", "tightness": 0.6},
+    {"name": "デモホール新宿東口",        "machine": "ファンキージャグラー2", "tightness": -0.4},
+]
 
-def _pick_setting(machine_no: int, d: date) -> int:
-    """台番号・末尾・曜日からそれっぽい設定を確率的に選ぶ（デモ用のクセ）。"""
-    rng = random.Random(f"{machine_no}-{d.isoformat()}")
+
+def _pick_setting(store: dict, machine_no: int, d: date) -> int:
+    """店舗・台番号・末尾・曜日からそれっぽい設定を確率的に選ぶ（デモ用のクセ）。"""
+    rng = random.Random(f"{store['name']}-{machine_no}-{d.isoformat()}")
     tail = machine_no % 10
 
     weights = {1: 40, 2: 22, 3: 14, 4: 10, 5: 8, 6: 6}
 
     # 末尾7・末尾3を強めにするクセ
-    if tail in (7,):
+    if tail == 7:
         weights[5] += 10
         weights[6] += 10
-    if tail in (3,):
+    if tail == 3:
         weights[4] += 6
         weights[5] += 4
 
@@ -48,23 +54,24 @@ def _pick_setting(machine_no: int, d: date) -> int:
         weights[5] += 6
         weights[6] += 6
 
+    # 店舗ごとの渋さ（tightness>0 で高設定を減らす）
+    t = store.get("tightness", 0.0)
+    weights[5] = max(1, weights[5] - int(10 * t))
+    weights[6] = max(1, weights[6] - int(10 * t))
+    weights[1] = max(1, weights[1] + int(10 * t))
+
     settings = list(weights.keys())
     w = list(weights.values())
     return rng.choices(settings, weights=w, k=1)[0]
 
 
-def _simulate_day(machine_no: int, d: date) -> dict:
-    rng = random.Random(f"sim-{machine_no}-{d.isoformat()}")
-    setting = _pick_setting(machine_no, d)
+def _simulate_day(store: dict, machine_no: int, d: date) -> dict:
+    rng = random.Random(f"sim-{store['name']}-{machine_no}-{d.isoformat()}")
+    setting = _pick_setting(store, machine_no, d)
 
-    # その日の総回転数（営業時間ぶん）。3000〜9000ゲーム程度。
     total = rng.randint(3000, 9000)
-
-    base_combined = SETTING_COMBINED[setting]
-    base_reg = SETTING_REG[setting]
-    # 1日の引きブレを ±15% 程度のせる
-    combined_div = base_combined * rng.uniform(0.85, 1.15)
-    reg_div = base_reg * rng.uniform(0.80, 1.20)
+    combined_div = SETTING_COMBINED[setting] * rng.uniform(0.85, 1.15)
+    reg_div = SETTING_REG[setting] * rng.uniform(0.80, 1.20)
 
     bb_reg_total = max(1, round(total / combined_div))
     reg = max(0, round(total / reg_div))
@@ -76,22 +83,34 @@ def _simulate_day(machine_no: int, d: date) -> dict:
         "big": big,
         "reg": reg,
         "total_games": total,
+        "machine_name": store["machine"],
     }
 
 
+def generate_store_day(store: dict, d: date) -> list[dict]:
+    """指定店舗・指定日の全台ぶんのサンプルデータを返す。"""
+    return [_simulate_day(store, m, d) for m in MACHINE_NUMBERS]
+
+
+# 後方互換：単一店舗（先頭のデモ店）の1日分
 def generate_for_date(d: date) -> list[dict]:
-    """指定日の全台ぶんのサンプルデータを返す。"""
-    return [_simulate_day(m, d) for m in MACHINE_NUMBERS]
+    return generate_store_day(DEMO_STORES[0], d)
 
 
-def generate_history(days: int = 120, end: date | None = None) -> dict[str, list[dict]]:
+def generate_history(days: int = 120, end: date | None = None) -> list[dict]:
     """
-    過去 days 日分の履歴をまとめて生成する。
-    戻り値: {"YYYY-MM-DD": [生レコード, ...], ...}
+    過去 days 日分 × 全デモ店舗の履歴を生成する。
+    戻り値: [{"date","store","machine","records":[...]}, ...]
     """
     end = end or date.today()
-    out: dict[str, list[dict]] = {}
+    out: list[dict] = []
     for i in range(days):
         d = end - timedelta(days=i)
-        out[d.isoformat()] = generate_for_date(d)
+        for store in DEMO_STORES:
+            out.append({
+                "date": d.isoformat(),
+                "store": store["name"],
+                "machine": store["machine"],
+                "records": generate_store_day(store, d),
+            })
     return out

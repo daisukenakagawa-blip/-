@@ -113,10 +113,12 @@ def _get_gsheet_store():
 # ------------------------------------------------------------------
 # 公開API（app.py / collect.py はこれだけ使う）
 # ------------------------------------------------------------------
-def save_records(raw_records: Iterable[dict], date_str: str) -> tuple[int, int]:
+def save_records(raw_records: Iterable[dict], date_str: str, store: str,
+                 machine_name: str | None = None) -> tuple[int, int]:
     if active_backend() == "gsheet":
-        return _get_gsheet_store().save_records(raw_records, date_str)
-    return database.save_records(raw_records, date_str)
+        return _get_gsheet_store().save_records(
+            raw_records, date_str, store, machine_name)
+    return database.save_records(raw_records, date_str, store, machine_name)
 
 
 def load_all() -> pd.DataFrame:
@@ -125,16 +127,22 @@ def load_all() -> pd.DataFrame:
     return database.load_all()
 
 
-def load_by_date(date_str: str) -> pd.DataFrame:
+def load_by_date(date_str: str, store: str | None = None) -> pd.DataFrame:
     if active_backend() == "gsheet":
-        return _get_gsheet_store().load_by_date(date_str)
-    return database.load_by_date(date_str)
+        return _get_gsheet_store().load_by_date(date_str, store)
+    return database.load_by_date(date_str, store)
 
 
 def available_dates() -> list[str]:
     if active_backend() == "gsheet":
         return _get_gsheet_store().available_dates()
     return database.available_dates()
+
+
+def available_stores() -> list[str]:
+    if active_backend() == "gsheet":
+        return _get_gsheet_store().available_stores()
+    return database.available_stores()
 
 
 def record_count() -> int:

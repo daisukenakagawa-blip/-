@@ -42,6 +42,25 @@ def _mean_div(series: pd.Series) -> float | None:
 
 
 # ------------------------------------------------------------------
+# 0. 店舗別傾向（多店舗比較：どの店が設定を入れているか）
+# ------------------------------------------------------------------
+def store_trend(df: pd.DataFrame, days: int = 30) -> pd.DataFrame:
+    """期間内の店舗別 平均合算・平均REG。分母が小さい店ほど優秀（出している）。"""
+    sub = _recent(df, days)
+    if sub.empty or "store" not in sub.columns:
+        return pd.DataFrame()
+    g = sub.groupby("store").agg(
+        サンプル数=("combined_prob", "count"),
+        平均合算=("combined_prob", "mean"),
+        平均REG=("reg_prob", "mean"),
+        平均総回転=("total_games", "mean"),
+    ).reset_index()
+    for c in ["平均合算", "平均REG", "平均総回転"]:
+        g[c] = g[c].round(1)
+    return g.rename(columns={"store": "店舗"}).sort_values("平均合算")
+
+
+# ------------------------------------------------------------------
 # 1. 曜日別傾向
 # ------------------------------------------------------------------
 def weekday_trend(df: pd.DataFrame) -> pd.DataFrame:

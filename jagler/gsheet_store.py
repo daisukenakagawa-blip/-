@@ -21,8 +21,8 @@ from database import enrich_record
 
 # スプレッドシートの列順（records テーブルの id を除いた並び）
 HEADERS = [
-    "date", "weekday", "machine_no", "big", "reg", "total_games",
-    "big_prob", "reg_prob", "combined_prob", "bb_reg_total",
+    "date", "weekday", "store", "machine_name", "machine_no", "big", "reg",
+    "total_games", "big_prob", "reg_prob", "combined_prob", "bb_reg_total",
     "reg_ratio", "tail", "created_at",
 ]
 
@@ -31,17 +31,18 @@ INT_COLS = ["machine_no", "big", "reg", "total_games", "bb_reg_total", "tail"]
 FLOAT_COLS = ["big_prob", "reg_prob", "combined_prob", "reg_ratio"]
 
 
-def _filter_new(existing_keys: set[tuple[str, int]],
-                raw_records: Iterable[dict], date_str: str) -> list[dict]:
+def _filter_new(existing_keys: set[tuple[str, str, int]],
+                raw_records: Iterable[dict], date_str: str, store: str,
+                machine_name: str | None = None) -> list[dict]:
     """
     既存キー集合とバッチ内重複を考慮し、新規登録すべき行（enrich済み）だけを返す。
-    ※ネットワークに依存しない純粋関数（テスト可能）。
+    キーは (date, store, machine_no)。ネットワークに依存しない純粋関数（テスト可能）。
     """
     new_rows: list[dict] = []
     seen = set(existing_keys)
     for raw in raw_records:
-        rec = enrich_record(raw, date_str)
-        key = (rec["date"], rec["machine_no"])
+        rec = enrich_record(raw, date_str, store, machine_name)
+        key = (rec["date"], rec["store"], rec["machine_no"])
         if key in seen:
             continue
         seen.add(key)
@@ -86,11 +87,11 @@ class GSheetStore:
         if first_row != HEADERS:
             self._ws.update([HEADERS], "A1")
 
-    def _existing_keys(self) -> set[tuple[str, int]]:
+    def _existing_keys(self) -> set[tuple[str, str, int]]:
         df = self.load_all()
         if df.empty:
             return set()
-        return {(str(r["date"]), int(r["machine_no"]))
+        return {(str(r["date"]), str(r["store"]), int(r["machine_no"]))
                 for _, r in df.iterrows()}
 
     # -- 公開インターフェース（SQLite版と同名・同戻り値） -----------
@@ -108,10 +109,12 @@ class GSheetStore:
             ["date", "machine_no"], ascending=[False, True]
         ).reset_index(drop=True)
 
-    def save_records(self, raw_records: Iterable[dict],
-                     date_str: str) -> tuple[int, int]:
+    def save_records(self, raw_records: Iterable[dict], date_str: str,
+                     store: str,
+                     machine_name: str | None = None) -> tuple[int, int]:
         raw_list = list(raw_records)
-        new_rows = _filter_new(self._existing_keys(), raw_list, date_str)
+        new_rows = _filter_new(self._existing_keys(), raw_list, date_str,
+                               store, machine_name)
         inserted = len(new_rows)
         skipped = len(raw_list) - inserted
         if new_rows:
@@ -119,17 +122,27 @@ class GSheetStore:
             self._ws.append_rows(values, value_input_option="USER_ENTERED")
         return inserted, skipped
 
-    def load_by_date(self, date_str: str) -> pd.DataFrame:
+    def load_by_date(self, date_str: str,
+                     store: str | None = None) -> pd.DataFrame:
         df = self.load_all()
         if df.empty:
             return df
-        return df[df["date"].astype(str) == date_str].sort_values("machine_no")
+        df = df[df["date"].astype(str) == date_str]
+        if store:
+            df = df[df["store"].astype(str) == store]
+        return df.sort_values(["store", "machine_no"])
 
     def available_dates(self) -> list[str]:
         df = self.load_all()
         if df.empty:
             return []
         return sorted(df["date"].astype(str).unique(), reverse=True)
+
+    def available_stores(self) -> list[str]:
+        df = self.load_all()
+        if df.empty:
+            return []
+        return sorted(df["store"].astype(str).unique())
 
     def record_count(self) -> int:
         return len(self.load_all())
