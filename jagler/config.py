@@ -13,7 +13,21 @@
   負荷をかけない設計になっていますが、最終的な順守責任は利用者にあります。
 """
 
+import os
 from pathlib import Path
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_str(name: str, default: str) -> str:
+    v = os.environ.get(name)
+    return v if v not in (None, "") else default
+
 
 # ------------------------------------------------------------------
 # 基本情報
@@ -43,11 +57,13 @@ LAST_FETCH_PATH = DATA_DIR / "last_fetch.json"
 # ------------------------------------------------------------------
 # 実サイト接続を有効にする場合は True にし、下の URL/セレクタを設定してください。
 # False の場合はデモ（サンプル）データを生成します。
-SCRAPER_ENABLED = False
+# 環境変数 JAG_SCRAPER_ENABLED でも上書き可能（GitHub Actions等で設定するため）。
+SCRAPER_ENABLED = _env_bool("JAG_SCRAPER_ENABLED", False)
 
 # 対象データページのURL（{date} に YYYYMMDD などが入る想定）
 # 例: "https://example.com/hall/shinbashi1/data?date={date}"
-TARGET_URL_TEMPLATE = ""
+# 環境変数 JAG_TARGET_URL_TEMPLATE で上書き可能。
+TARGET_URL_TEMPLATE = _env_str("JAG_TARGET_URL_TEMPLATE", "")
 
 # 取得対象の日付フォーマット（URL に埋め込む際の strftime）
 URL_DATE_FORMAT = "%Y%m%d"
@@ -55,7 +71,8 @@ URL_DATE_FORMAT = "%Y%m%d"
 # HTMLテーブルを特定するためのCSSセレクタ。
 # 対象サイトの構造に合わせて設定してください（BeautifulSoup で使用）。
 # 例: "table.data-table"
-TABLE_SELECTOR = ""
+# 環境変数 JAG_TABLE_SELECTOR で上書き可能。
+TABLE_SELECTOR = _env_str("JAG_TABLE_SELECTOR", "")
 
 # テーブルの各列が「取得したい項目」のどれに当たるかのマッピング。
 # キー: 内部カラム名 / 値: そのサイトの列見出し（テキスト）または列インデックス(int)
@@ -119,4 +136,5 @@ GSHEET_SPREADSHEET_NAME = "ジャグラーデータ"
 GSHEET_WORKSHEET_NAME = "data"
 # スプレッドシートをURL/キーで指定する場合（名前より確実。任意）
 # 例: シートURL https://docs.google.com/spreadsheets/d/<ここがキー>/edit
-GSHEET_SPREADSHEET_KEY = None
+# 環境変数 JAG_GSHEET_SPREADSHEET_KEY でも指定可能（GitHub Actions等）。
+GSHEET_SPREADSHEET_KEY = _env_str("JAG_GSHEET_SPREADSHEET_KEY", "") or None

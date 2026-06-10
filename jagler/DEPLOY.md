@@ -92,6 +92,47 @@ worksheet_name = "data"
 
 ---
 
+## 🤖 毎日「完全自動」で取得・書き込みする（GitHub Actions）
+
+Streamlit Cloud は画面を開いた時しか動かないため、**誰も操作しなくても毎日自動で
+取得→シートに書き込む**には定期実行（スケジューラ）が必要です。本リポジトリには
+GitHub Actions のワークフロー `.github/workflows/jagler-daily-collect.yml` を同梱
+しており、**無料・PC不要**で毎日1回 自動実行できます。
+
+> 補足：取得したデータの「シートへの書き込み」自体は元々自動です（手で貼り付け
+> 不要）。下の設定は「取得作業そのもの」を毎日自動で走らせるためのものです。
+
+### 設定（GitHubのリポジトリ画面で）
+**Settings → Secrets and variables → Actions** を開き、以下を登録します。
+
+**Secrets（秘密情報）**
+| 名前 | 値 |
+|------|-----|
+| `GCP_SERVICE_ACCOUNT_JSON` | サービスアカウントJSONの**中身そのまま**（1行でも可） |
+| `JAG_GSHEET_SPREADSHEET_KEY` | 蓄積先シートのキー（URLの `/d/<ここ>/edit`） |
+| `JAG_TARGET_URL_TEMPLATE` | 対象データページのURL（`{date}` を含む）※ToS確認後 |
+| `JAG_TABLE_SELECTOR` | データ表のCSSセレクタ ※ToS確認後 |
+
+**Variables（変数）**
+| 名前 | 値 |
+|------|-----|
+| `JAG_SCRAPER_ENABLED` | `true`（実サイト取得を有効化するとき）|
+
+### 動作
+- 毎日 **日本時間 1:00**（UTC 16:00）に自動実行（時刻は yml の `cron` で変更可）
+- `Actions` タブの **Run workflow** から手動実行も可能（動作確認用）
+- **`JAG_SCRAPER_ENABLED` が `true` でない間は、何も書き込まずスキップ**します
+  （デモデータで本番シートを汚さないための安全弁）
+
+### ⚠️ 自動取得とToSについて
+GitHub Actions による定期取得は「自動アクセス」にあたります。対象サイトの利用規約・
+`robots.txt` で許可されていることを必ず確認し、許可される場合のみ
+`JAG_SCRAPER_ENABLED=true` と URL/セレクタを設定してください。本ツールは1日1回に
+制限していますが、最終的な順守責任は利用者にあります。確認できるまでは未設定（スキップ）
+のままにしておけば、誤って取得が走ることはありません。
+
+---
+
 ## トラブル時のチェック
 
 - **ビルドが失敗する**：Main file path が `jagler/app.py` になっているか確認

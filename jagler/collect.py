@@ -41,6 +41,13 @@ def main(argv: list[str]) -> int:
         print(f"デモ履歴生成: 新規{ins}件 / 重複スキップ{skip}件")
         return 0
 
+    # --require-real: 実サイト接続が無効ならスキップ（自動実行でデモデータを
+    # 本番シートに書き込まないための安全弁）
+    if "--require-real" in argv and not config.SCRAPER_ENABLED:
+        print("[skip] 実サイト接続が無効のため自動収集をスキップしました。"
+              "（デモデータは書き込みません）")
+        return 0
+
     target = parse_date(args[0]) if args else date.today()
     print(f"対象: {config.STORE_NAME} / {config.MACHINE_NAME}")
     print(f"取得日: {target.isoformat()}  "

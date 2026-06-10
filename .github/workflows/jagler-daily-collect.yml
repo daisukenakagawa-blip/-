@@ -1,0 +1,44 @@
+name: ジャグラー 毎日データ収集
+
+# 毎日決まった時刻に自動でデータを取得し、Googleスプレッドシートに蓄積する。
+# 実サイト接続が未設定（JAG_SCRAPER_ENABLED が true でない）場合は、
+# collect.py の --require-real により何もせずスキップする（デモデータは書き込まない）。
+
+on:
+  schedule:
+    # UTC 16:00 = 日本時間 翌日 01:00（毎日1回）。時刻は必要に応じて変更可。
+    - cron: "0 16 * * *"
+  workflow_dispatch: {}   # 画面の「Run workflow」から手動実行も可能
+
+# 同時実行を防ぐ（多重書き込み防止）
+concurrency:
+  group: jagler-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 依存パッケージのインストール
+        run: pip install -r requirements.txt
+
+      - name: データ取得 & スプレッドシートへ書き込み
+        working-directory: jagler
+        env:
+          # Googleサービスアカウントの認証情報（JSON文字列）
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          # 蓄積先スプレッドシートのキー
+          JAG_GSHEET_SPREADSHEET_KEY: ${{ secrets.JAG_GSHEET_SPREADSHEET_KEY }}
+          # 実サイト接続の設定（ToS確認のうえ設定したときだけ実データを取得）
+          JAG_SCRAPER_ENABLED: ${{ vars.JAG_SCRAPER_ENABLED }}
+          JAG_TARGET_URL_TEMPLATE: ${{ secrets.JAG_TARGET_URL_TEMPLATE }}
+          JAG_TABLE_SELECTOR: ${{ secrets.JAG_TABLE_SELECTOR }}
+        run: python collect.py --require-real
