@@ -82,6 +82,9 @@ COLUMN_MAP = {
     "big": "BIG",
     "reg": "REG",
     "total_games": "総回転数",
+    # 任意：機種名の列。設定すると MACHINE_KEYWORDS で行を絞り込める
+    # （店ページに複数機種が混在する場合にジャグラー系だけを残す）。
+    # "machine_name": "機種",
 }
 
 # ------------------------------------------------------------------
@@ -105,6 +108,26 @@ MACHINE_KEYWORDS = ["ジャグラー"]
 
 # 多店舗を巡回するとき、1リクエストごとの待機秒数（サーバ負荷軽減・マナー）。
 REQUEST_DELAY_SEC = 6
+
+# ------------------------------------------------------------------
+# 巡回方式（Pattern A / B）
+# ------------------------------------------------------------------
+# "A" : 1ページに東京都の全店データが並ぶサイト（STORES を手動設定）
+# "B" : 店舗一覧ページ → 各店ページを巡回（東京都の公開店を自動で辿る）★今回これ
+CRAWL_MODE = _env_str("JAG_CRAWL_MODE", "B")
+
+# 【Pattern B】東京都の店舗一覧（インデックス）ページの設定
+# - {page} : ページ番号（複数ページに分かれている場合）
+# - {date} : 日付（必要な場合）
+AREA_INDEX_URL = _env_str("JAG_AREA_INDEX_URL", "")
+# 一覧が複数ページに分かれている場合の総ページ数
+INDEX_PAGES = int(_env_str("JAG_INDEX_PAGES", "1") or "1")
+# 一覧ページ内で「各店ページへのリンク <a>」を指すCSSセレクタ
+STORE_LINK_SELECTOR = _env_str("JAG_STORE_LINK_SELECTOR", "")
+# 相対リンクを絶対URLに変換する際の基準URL（空なら一覧ページのURLを基準にする）
+STORE_BASE_URL = _env_str("JAG_STORE_BASE_URL", "")
+# 各店ページのデータ表セレクタ（空なら TABLE_SELECTOR を使用）
+STORE_PAGE_TABLE_SELECTOR = _env_str("JAG_STORE_PAGE_TABLE_SELECTOR", "")
 
 # ------------------------------------------------------------------
 # アクセスマナー設定

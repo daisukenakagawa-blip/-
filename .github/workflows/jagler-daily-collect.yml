@@ -39,6 +39,11 @@ jobs:
           JAG_GSHEET_SPREADSHEET_KEY: ${{ secrets.JAG_GSHEET_SPREADSHEET_KEY }}
           # 実サイト接続の設定（ToS確認のうえ設定したときだけ実データを取得）
           JAG_SCRAPER_ENABLED: ${{ vars.JAG_SCRAPER_ENABLED }}
-          JAG_TARGET_URL_TEMPLATE: ${{ secrets.JAG_TARGET_URL_TEMPLATE }}
-          JAG_TABLE_SELECTOR: ${{ secrets.JAG_TABLE_SELECTOR }}
+          # Pattern B（店舗一覧→各店ページ巡回）の設定
+          JAG_CRAWL_MODE: ${{ vars.JAG_CRAWL_MODE }}
+          JAG_AREA_INDEX_URL: ${{ secrets.JAG_AREA_INDEX_URL }}
+          JAG_INDEX_PAGES: ${{ vars.JAG_INDEX_PAGES }}
+          JAG_STORE_LINK_SELECTOR: ${{ secrets.JAG_STORE_LINK_SELECTOR }}
+          JAG_STORE_BASE_URL: ${{ secrets.JAG_STORE_BASE_URL }}
+          JAG_STORE_PAGE_TABLE_SELECTOR: ${{ secrets.JAG_STORE_PAGE_TABLE_SELECTOR }}
         run: python collect.py --require-real

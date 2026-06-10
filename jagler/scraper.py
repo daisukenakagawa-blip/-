@@ -87,7 +87,9 @@ def _fetch_real(store: dict, target_date: date) -> list[dict]:
     from bs4 import BeautifulSoup
 
     url_template = store.get("url") or config.TARGET_URL_TEMPLATE
-    selector = store.get("table_selector") or config.TABLE_SELECTOR
+    selector = (store.get("table_selector")
+                or config.STORE_PAGE_TABLE_SELECTOR
+                or config.TABLE_SELECTOR)
     if not url_template or not selector:
         raise FetchBlocked(
             f"店舗『{store.get('name')}』の url / table_selector が未設定です。"
@@ -118,9 +120,17 @@ def _fetch_real(store: dict, target_date: date) -> list[dict]:
     return _parse_table(table)
 
 
+def _matches_machine(name: str) -> bool:
+    """機種名が対象キーワード（ジャグラー系）に該当するか。"""
+    if not config.MACHINE_KEYWORDS:
+        return True
+    return any(k in name for k in config.MACHINE_KEYWORDS)
+
+
 def _parse_table(table) -> list[dict]:
     """
     HTMLテーブルを config.COLUMN_MAP に従って解析する。
+    machine_name 列が設定されていれば MACHINE_KEYWORDS で行を絞り込む。
     サイト構造に依存するため、必要に応じてこの関数を調整してください。
     """
     rows = table.find_all("tr")
@@ -142,21 +152,96 @@ def _parse_table(table) -> list[dict]:
         digits = "".join(ch for ch in text if ch.isdigit())
         return int(digits) if digits else 0
 
+    name_idx = idx.get("machine_name")
+
     records = []
     for tr in rows[1:]:
         cells = [c.get_text(strip=True) for c in tr.find_all(["td", "th"])]
         if not cells or len(cells) < len(header_cells):
             continue
         try:
-            records.append({
+            # 機種名列があれば、対象機種（ジャグラー系）以外の行は除外
+            machine_name = None
+            if name_idx is not None and name_idx < len(cells):
+                machine_name = cells[name_idx]
+                if not _matches_machine(machine_name):
+                    continue
+            rec = {
                 "machine_no": to_int(cells[idx["machine_no"]]),
                 "big": to_int(cells[idx["big"]]),
                 "reg": to_int(cells[idx["reg"]]),
                 "total_games": to_int(cells[idx["total_games"]]),
-            })
+            }
+            if machine_name:
+                rec["machine_name"] = machine_name
+            records.append(rec)
         except (TypeError, IndexError):
             continue
     return records
+
+
+# ------------------------------------------------------------------
+# Pattern B：店舗一覧（インデックス）→ 各店ページの巡回
+# ------------------------------------------------------------------
+def discover_stores(target_date: date, *, use_demo: bool | None = None) -> list[dict]:
+    """
+    東京都の店舗一覧ページを辿り、巡回対象の店舗 [{name, url}] を返す。
+    デモ時はデモ店舗を返す。複数ページの一覧にも対応（INDEX_PAGES）。
+    """
+    demo = (not config.SCRAPER_ENABLED) if use_demo is None else use_demo
+    if demo:
+        import sample_data as sd
+        return [{"name": s["name"]} for s in sd.DEMO_STORES]
+
+    import requests
+    from bs4 import BeautifulSoup
+    from urllib.parse import urljoin
+
+    if not config.AREA_INDEX_URL or not config.STORE_LINK_SELECTOR:
+        raise FetchBlocked(
+            "Pattern B: AREA_INDEX_URL / STORE_LINK_SELECTOR が未設定です。"
+            "config.py（または環境変数）で店舗一覧ページとリンクのセレクタを設定してください。"
+        )
+
+    found: dict[str, dict] = {}  # url -> store（重複除去）
+    for page in range(1, config.INDEX_PAGES + 1):
+        url = config.AREA_INDEX_URL.format(
+            page=page, date=target_date.strftime(config.URL_DATE_FORMAT)
+        )
+        if not robots_allows(url):
+            raise FetchBlocked(f"robots.txt により {url} へのアクセスが不可です。")
+
+        resp = requests.get(
+            url, headers={"User-Agent": config.USER_AGENT},
+            timeout=config.REQUEST_TIMEOUT_SEC,
+        )
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        base = config.STORE_BASE_URL or url
+        for a in soup.select(config.STORE_LINK_SELECTOR):
+            href = a.get("href")
+            if not href:
+                continue
+            full = urljoin(base, href)
+            name = a.get_text(strip=True) or full
+            found.setdefault(full, {"name": name, "url": full})
+
+        # マナー：次ページ取得前に待機
+        if page < config.INDEX_PAGES:
+            time.sleep(config.REQUEST_DELAY_SEC)
+
+    return list(found.values())
+
+
+def target_stores(target_date: date, *, use_demo: bool | None = None) -> list[dict]:
+    """
+    巡回対象の店舗リストを返す。
+    Pattern B なら一覧から自動発見、それ以外は config.STORES を使う。
+    """
+    if config.CRAWL_MODE.upper() == "B":
+        return discover_stores(target_date, use_demo=use_demo)
+    return config.STORES or [{"name": config.STORE_NAME}]
 
 
 # ------------------------------------------------------------------

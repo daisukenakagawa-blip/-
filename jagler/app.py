@@ -20,6 +20,7 @@ Streamlit Web画面
 
 from __future__ import annotations
 
+import time
 from datetime import date
 
 import pandas as pd
@@ -82,7 +83,11 @@ fetch_date = st.sidebar.date_input("取得対象日", value=date.today())
 if st.sidebar.button("📥 全店データ取得", use_container_width=True, type="primary"):
     prog = st.sidebar.progress(0.0)
     total_ins = total_skip = total_err = 0
-    stores = config.STORES or [{"name": config.STORE_NAME}]
+    try:
+        stores = scraper.target_stores(fetch_date)
+    except scraper.FetchBlocked as e:
+        stores = []
+        st.sidebar.error(f"店舗一覧の取得に失敗: {e}")
     for n, store in enumerate(stores):
         try:
             recs = scraper.fetch_store(store, fetch_date)
@@ -95,9 +100,13 @@ if st.sidebar.button("📥 全店データ取得", use_container_width=True, typ
             total_err += 1
             st.sidebar.warning(f"{store.get('name')}: {e}")
         prog.progress((n + 1) / len(stores))
-    scraper.mark_run()
-    st.sidebar.success(
-        f"取得完了: 新規{total_ins}件 / 重複{total_skip}件 / 失敗{total_err}店")
+        # マナー：実サイト巡回時は1店ごとに待機
+        if config.SCRAPER_ENABLED and n < len(stores) - 1:
+            time.sleep(config.REQUEST_DELAY_SEC)
+    if stores:
+        scraper.mark_run()
+        st.sidebar.success(
+            f"取得完了: 新規{total_ins}件 / 重複{total_skip}件 / 失敗{total_err}店")
 
 st.sidebar.divider()
 st.sidebar.subheader("デモ用")

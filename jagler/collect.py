@@ -64,10 +64,14 @@ def main(argv: list[str]) -> int:
         print(f"[中止] 1日1回の取得制限により、あと約 {hrs:.1f} 時間は取得できません。")
         return 1
 
-    stores = config.STORES or [{"name": config.STORE_NAME}]
+    try:
+        stores = scraper.target_stores(target)
+    except scraper.FetchBlocked as e:
+        print(f"[中止] 店舗一覧の取得に失敗: {e}")
+        return 1
     print(f"取得日: {target.isoformat()}  "
           f"モード: {'実サイト' if config.SCRAPER_ENABLED else 'デモ'}  "
-          f"対象店舗: {len(stores)}店")
+          f"巡回方式: {config.CRAWL_MODE}  対象店舗: {len(stores)}店")
     print(f"保存先: {db.backend_label()}")
 
     total_ins = total_skip = total_err = 0

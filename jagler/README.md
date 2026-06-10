@@ -123,20 +123,38 @@ Streamlit Cloud で公開しても毎日の蓄積が消えません（設定は 
 
 ## 複数店舗（東京都の公開店）に対応する
 
-`config.py` の `STORES` に店舗を追加していくと、全店を巡回して取得します。
+巡回方式が2つあります（`config.CRAWL_MODE`）。
+
+### Pattern A：1ページに全店データが並ぶサイト
+`config.py` の `STORES` に店舗を手動で追加します。
 
 ```python
+CRAWL_MODE = "A"
 STORES = [
-    {"name": "ビッグディッパー新橋1号店", "url": "https://example.com/.../{date}",
-     "table_selector": "table.data", "area": "東京都"},
-    {"name": "○○店", "url": "...", "table_selector": "..."},
+    {"name": "ビッグディッパー新橋1号店", "url": ".../{date}", "table_selector": "table.data"},
     # ... 公開している店を追加
 ]
 ```
 
-巡回時は1リクエストごとに `REQUEST_DELAY_SEC` 秒の待機を入れ、全体で1日1回に
-制限します（サーバ負荷軽減）。**多くの店が1つの集計サイトに集約されている**場合、
-そのサイトへの連続アクセスになるため、必ず規約・robots.txt の範囲で利用してください。
+### Pattern B：店舗一覧 → 各店ページを巡回（東京都の公開店を自動で辿る）
+一覧ページから各店のリンクを自動で発見し、店ページを順に巡回します。
+店舗を手で登録する必要はありません。
+
+```python
+CRAWL_MODE = "B"
+AREA_INDEX_URL = "https://example.com/tokyo?page={page}"  # 東京都の店舗一覧
+INDEX_PAGES = 5                       # 一覧が複数ページなら総ページ数
+STORE_LINK_SELECTOR = "a.hall-link"   # 一覧内の各店リンク<a>のCSSセレクタ
+STORE_BASE_URL = "https://example.com"  # 相対リンクの基準（任意）
+STORE_PAGE_TABLE_SELECTOR = "table.data"  # 各店ページのデータ表
+# 店ページに複数機種が混在する場合、機種名列を指定するとジャグラー系だけ残せる:
+# COLUMN_MAP["machine_name"] = "機種"
+# MACHINE_KEYWORDS = ["ジャグラー"]
+```
+
+どちらの方式でも、1リクエストごとに `REQUEST_DELAY_SEC` 秒の待機を入れ、全体で
+1日1回に制限します（サーバ負荷軽減）。**多くの店が1つの集計サイトに集約されている**
+ため連続アクセスになります。必ず規約・robots.txt の範囲で利用してください。
 
 ## 実サイト接続を有効にする（任意・要規約確認）
 
