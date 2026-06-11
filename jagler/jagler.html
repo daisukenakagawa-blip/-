@@ -879,6 +879,25 @@ function regScoreCalc(aReg,gReg){ if(aReg==null||gReg==null||!gReg)return 0; con
 function combScoreCalc(aComb,gComb){ if(aComb==null||gComb==null||!gComb)return 0; const imp=(gComb-aComb)/gComb;
   return imp>=0 ? interp(imp,[[0,0],[0.03,2],[0.05,5],[0.10,10],[0.15,15]])
                : interp(-imp,[[0,0],[0.05,-4],[0.10,-8],[0.15,-12]]); }
+// 店のクセを学習（カテゴリ別に店平均より何%良いか。lower=better なので (g-cat)/g）
+function learnStoreTendency(sr,gReg,gComb){
+  const push=(o,k,r)=>{(o[k]=o[k]||[]).push(r);};
+  const T={},I={},B={},W={}; sr.forEach(r=>{push(T,r.machine_no%10,r);push(I,Math.floor(r.machine_no/10),r);push(B,Math.floor(r.machine_no/100),r);push(W,r.weekday,r);});
+  const pctReg=(arr)=>{const a=avg(arr.map(r=>r.reg_prob));return(a!=null&&gReg)?(gReg-a)/gReg:null;};
+  const pctComb=(arr)=>{const a=avg(arr.map(r=>r.combined));return(a!=null&&gComb)?(gComb-a)/gComb:null;};
+  const map=(src,fn,minN)=>{const o={};for(const k in src){if(src[k].length>=(minN||3)){const v=fn(src[k]);if(v!=null)o[k]=v;}}return o;};
+  const nos=[...new Set(sr.map(r=>r.machine_no))]; const minNo=Math.min(...nos),maxNo=Math.max(...nos);
+  const cornerSet=new Set([minNo,maxNo]), c2Set=new Set([minNo+1,maxNo-1]);
+  const cornerPct=pctComb(sr.filter(r=>cornerSet.has(r.machine_no))), c2Pct=pctComb(sr.filter(r=>c2Set.has(r.machine_no)));
+  const byM={}; sr.forEach(r=>push(byM,r.machine_no,r)); for(const k in byM)byM[k].sort((a,b)=>a.date<b.date?-1:1);
+  let up=0,upT=0,sUp=0,sUpT=0;
+  for(const k in byM){const a=byM[k]; for(let i=1;i<a.length;i++){ if(a[i-1].combined!=null&&a[i].combined!=null&&gComb){
+    if(a[i-1].combined>gComb){upT++; if(a[i].combined<a[i-1].combined-5)up++;}
+    if(i>=2&&a[i-2].combined!=null&&a[i-2].combined>gComb&&a[i-1].combined>gComb){sUpT++; if(a[i].combined<a[i-1].combined-5)sUp++;} } } }
+  return { tailRegPct:map(T,pctReg,3), islCombPct:map(I,pctComb,2), bandCombPct:map(B,pctComb,3), wdCombPct:map(W,pctComb,2),
+    cornerSet,c2Set,cornerPct:cornerPct||0,c2Pct:c2Pct||0,minNo,maxNo,
+    upRate:upT>=4?up/upT:null, streakUpRate:sUpT>=3?sUp/sUpT:null };
+}
 
 // ---------- 描画 ----------
 function refreshAll(){
@@ -1042,18 +1061,20 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
   if(sdMd!=null&&gComb!=null){ if(sdMd<=gComb-3){storeAdj=2;storeAdjR="直近は店全体が好調(+2)";}
     else if(sdMd>=gComb+5){storeAdj=-4;storeAdjR="直近は店全体が低調(-4)";} }
 
-  // 過去イベント実績の学習（targetDateより前のデータのみ＝未来不使用）
+  // 店のクセを学習（未来不使用）
+  const ST=learnStoreTendency(sr,gReg,gComb);
+  // 過去イベント実績の学習（同種イベントで強い末尾/機種/台番号帯を%で・未来不使用）
   const srDates=[...new Set(sr.map(r=>r.date))];
   const evLearn=autoEv.map(e=>{
     const pastDates=srDates.filter(d=>eventMatches(e,d,store));
     const recsE=sr.filter(r=>pastDates.includes(r.date));
-    const gc=avg(recsE.map(r=>r.combined));
-    const grp=(keyFn)=>{ const o={}; recsE.forEach(r=>{const k=keyFn(r);(o[k]=o[k]||[]).push(r.combined);}); return o; };
-    const strongFrom=(o,minN,margin)=>new Set(Object.entries(o).filter(([k,a])=>a.length>=minN&&avg(a)!=null&&gc!=null&&avg(a)<=gc-margin).map(([k])=>+k));
+    const gc=avg(recsE.map(r=>r.combined)), grg=avg(recsE.map(r=>r.reg_prob));
+    const pmap=(keyFn,base,useReg)=>{ const o={}; recsE.forEach(r=>{const k=keyFn(r);(o[k]=o[k]||[]).push(useReg?r.reg_prob:r.combined);});
+      const out={}; for(const k in o){ if(o[k].length>=2){ const a=avg(o[k]); if(a!=null&&base) out[k]=(base-a)/base; } } return out; };
     return { label:e.eventType||eventDesc(e), recs:recsE.length,
-      strongTails: recsE.length>=3?strongFrom(grp(r=>r.machine_no%10),1,4):new Set(),
-      strongNos: recsE.length>=3?strongFrom(grp(r=>r.machine_no),2,6):new Set(),
-      strongIslands: recsE.length>=3?strongFrom(grp(r=>Math.floor(r.machine_no/10)),1,4):new Set() };
+      tailPct: recsE.length>=4?pmap(r=>r.machine_no%10,grg,true):{},
+      bandPct: recsE.length>=4?pmap(r=>Math.floor(r.machine_no/100),gc,false):{},
+      machPct: recsE.length>=4?pmap(r=>r.machine_name,gc,false):{} };
   });
 
   const out=[];
@@ -1062,8 +1083,10 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     const arr=byM[mno]||g;
     const aReg=avg(g.map(r=>r.reg_prob)), aComb=avg(g.map(r=>r.combined)), aTot=avg(g.map(r=>r.total));
     const mname=g[g.length-1].machine_name||""; const t=mno%10;
-    let s=30; const reasons=[]; const C={};
+    let s=30; const reasons=[]; const C={}; const kuse=[];
     const add=(key,p)=>{ const w=(weights&&weights[key]!=null)?weights[key]:1; const pv=p*w; s+=pv; C[key]=(C[key]||0)+pv; };
+    const grad=(pct,maxB)=>pct>0?Math.min(maxB,(pct/0.08)*maxB):0;   // 8%良いで満点
+    const kAdd=(key,p,text)=>{ if(p>0.3){ add(key,p); kuse.push(text+"(+"+p.toFixed(1)+")"); } };
 
     const ests=g.map(r=>estimateSetting(r)).filter(Boolean);
     const pHigh=ests.length?avg(ests.map(e=>e.high)):null;
@@ -1083,25 +1106,37 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     const a7=gM7[mno]?avg(gM7[mno].map(r=>r.combined)):null;
     if(a7!=null&&aComb!=null&&aComb>0){ const imp=(aComb-a7)/aComb; if(imp>0){ const p=interp(imp,[[0,0],[0.05,2],[0.10,4],[0.15,6]]);
       if(p>0.3){ add("直近7日上昇",p); reasons.push("直近7日(1/"+a7.toFixed(0)+")が30日平均より改善(+"+p.toFixed(1)+")"); } } }
-    if(tailAvg[t]!=null&&gComb!=null&&tailAvg[t]<gComb){ const p=Math.min(8,(gComb-tailAvg[t])*0.4); add("末尾傾向",p);
-      if(tailAvg[t]<=gComb-4) reasons.push("末尾"+t+"が好調傾向(+"+p.toFixed(0)+")"); }
-    if(wAvg[nextWd]!=null&&gComb!=null&&wAvg[nextWd]<gComb){ const p=Math.min(6,(gComb-wAvg[nextWd])*0.3); add("曜日傾向",p);
-      if(wAvg[nextWd]<=gComb-3) reasons.push("予想日("+nextWd+"曜)が好調傾向(+"+p.toFixed(0)+")"); }
     const ld=lastDay[mno];
     if(ld&&ld.combined!=null){ const c=ld.combined; let dp=c>210?5:c>190?4:c>170?2:0;
       if(aReg!=null&&aReg>=430) dp*=0.5;   // REGが極端に悪い台は過剰加点しない
       if(dp>0){ add("前日凹み上げ",dp); reasons.push("前日は1/"+c.toFixed(0)+"と凹み→上げ狙い(+"+dp.toFixed(1)+")"); } }
     let streak=0; for(let i=arr.length-1;i>=0;i--){ if(arr[i].combined!=null&&gComb!=null&&arr[i].combined>gComb)streak++; else break; }
     if(streak>=2&&eventTomorrow){ add("連続不発+イベント",8); reasons.push(streak+"日連続不発＋イベント→上げ狙い(+8)"); }
+    // ===== 店のクセ一致（過去実績の強さに応じて段階加点）=====
+    if(ST.tailRegPct[t]!=null) kAdd("クセ:末尾",grad(ST.tailRegPct[t],8),"末尾"+t+"は過去REGが店平均より"+(ST.tailRegPct[t]*100).toFixed(1)+"%良い");
+    const islk=Math.floor(+mno/10);
+    if(ST.islCombPct[islk]!=null) kAdd("クセ:島",grad(ST.islCombPct[islk],6),"島"+islk+"は合算が店平均より"+(ST.islCombPct[islk]*100).toFixed(1)+"%良い");
+    const bandk=Math.floor(+mno/100);
+    if(ST.bandCombPct[bandk]!=null) kAdd("クセ:台番帯",grad(ST.bandCombPct[bandk],6),bandk+"00番台は合算が店平均より"+(ST.bandCombPct[bandk]*100).toFixed(1)+"%良い");
+    if(ST.wdCombPct[nextWd]!=null) kAdd("クセ:曜日",grad(ST.wdCombPct[nextWd],6),nextWd+"曜は合算が店平均より"+(ST.wdCombPct[nextWd]*100).toFixed(1)+"%良い");
+    if(ST.cornerSet.has(+mno)) kAdd("クセ:角台",grad(ST.cornerPct,4),"この店は角台が店平均より"+(ST.cornerPct*100).toFixed(1)+"%良い");
+    if(ST.c2Set.has(+mno)) kAdd("クセ:角2",grad(ST.c2Pct,4),"この店は角2が店平均より"+(ST.c2Pct*100).toFixed(1)+"%良い");
+    const eldK=ld?estimateSetting(ld):null;
+    if(eldK&&eldK.setting>=5&&keepRate!=null&&keepRate>0.5) kAdd("クセ:据え置き",Math.min(6,(keepRate-0.5)*12),"前日高設定×据え置き傾向"+Math.round(keepRate*100)+"%");
+    if(ld&&ld.combined!=null&&gComb!=null&&ld.combined>gComb&&ST.upRate!=null&&ST.upRate>0.5) kAdd("クセ:上げ",Math.min(6,(ST.upRate-0.5)*12),"前日不発×この店の上げ傾向"+Math.round(ST.upRate*100)+"%");
+    if(streak>=2&&ST.streakUpRate!=null&&ST.streakUpRate>0.5) kAdd("クセ:連続不発後上げ",Math.min(6,(ST.streakUpRate-0.5)*12),streak+"日連続不発×上げ傾向"+Math.round(ST.streakUpRate*100)+"%");
+    // 同種イベントで過去に強い末尾/機種/台番号帯（段階）
+    for(const lv of evLearn){ if(lv.recs<4) continue;
+      if(lv.tailPct[t]!=null) kAdd("イベ実績:末尾",grad(lv.tailPct[t],8),"過去の"+lv.label+"で末尾"+t+"がREG店平均より"+(lv.tailPct[t]*100).toFixed(1)+"%良い");
+      if(lv.bandPct[bandk]!=null) kAdd("イベ実績:台番帯",grad(lv.bandPct[bandk],8),"過去の"+lv.label+"で"+bandk+"00番台が"+(lv.bandPct[bandk]*100).toFixed(1)+"%良い");
+      if(lv.machPct[mname]!=null) kAdd("イベ実績:機種",grad(lv.machPct[mname],8),"過去の"+lv.label+"で"+mname+"が"+(lv.machPct[mname]*100).toFixed(1)+"%良い");
+    }
     const goodDates=arr.filter(r=>isGood(r.combined)).map(r=>r.date).sort();
     if(goodDates.length>=2){ const gaps=[]; for(let i=1;i<goodDates.length;i++) gaps.push(dayDiff(goodDates[i-1],goodDates[i]));
       const cad=avg(gaps), since=dayDiff(goodDates[goodDates.length-1],md);
       if(cad&&since>=cad*0.8){ add("高設定周期",6); reasons.push("高設定周期(約"+Math.round(cad)+"日)的にそろそろ(+6)"); } }
     const nb=[+mno-1,+mno+1].map(n=>gM[n]?avg(gM[n].map(r=>r.combined)):null).filter(x=>x!=null);
     if(nb.length){ const nbAvg=avg(nb); if(gComb!=null&&nbAvg<=gComb-4){ add("隣接台",6); reasons.push("隣接台が好調(並び示唆)(+6)"); } }
-    if(+mno===minNo||+mno===maxNo){ add("角台",3); reasons.push("角台(+3)"); }
-    const isl=Math.floor(+mno/10);
-    if(islandAvg[isl]!=null&&gComb!=null&&islandAvg[isl]<=gComb-4){ add("島傾向",5); reasons.push("同じ島が全体好調(+5)"); }
     if(autoEv.length){ for(const e of autoEv){
       const pm=arr.filter(r=>r.date!==md&&eventMatches(e,r.date,store));
       if(pm.length>=1){ const ae=avg(pm.map(r=>r.combined));
@@ -1109,9 +1144,7 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     } else { const evRows=g.filter(r=>evDates.has(r.date));
       if(evRows.length>=1){ const ae=avg(evRows.map(r=>r.combined));
         if(ae!=null&&aComb!=null&&ae<aComb-3){ add("イベント種別相性",6); reasons.push("過去イベント日に強い台(平均1/"+ae.toFixed(0)+")(+6)"); } } }
-    if(ld&&isGood(ld.combined)&&keepRate!=null){
-      if(keepRate>=0.5){ add("据え置き",4); reasons.push("前日高設定＋据え置き傾向("+Math.round(keepRate*100)+"%)(+4)"); }
-      else { add("据え置き",-5); reasons.push("前日高設定だが下げ傾向("+Math.round((1-keepRate)*100)+"%)(-5)"); } }
+    if(ld&&isGood(ld.combined)&&keepRate!=null&&keepRate<0.5){ add("下げ傾向",-5); reasons.push("前日高設定だがこの店は下げ傾向("+Math.round((1-keepRate)*100)+"%)(-5)"); }
     if(eventTomorrow){ add("イベント",15); reasons.push("予想日はイベント"+(evLabelNext?"("+evLabelNext+")":"")+"→高設定投入に期待(+15)"); }
     // 登録イベントルール（特徴欄）の属性で加点
     for(const e of autoEv){
@@ -1123,12 +1156,6 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
       if(e.targetMachine && mname && mname.includes(e.targetMachine)){ add("対象機種一致",12); reasons.push("対象機種"+e.targetMachine+"一致(+12)"); }
       if(e.targetTail!=null && e.targetTail!=="" && String(e.targetTail)===String(t)){ add("末尾示唆一致",12); reasons.push("末尾"+e.targetTail+"示唆一致(+12)"); }
       if(e.targetMachineNumber!=null && +e.targetMachineNumber===+mno){ add("台番号名指し",22); reasons.push("イベントで台番"+mno+"を名指し(+22)"); }
-    }
-    // 過去イベント実績の学習を反映（targetDateより前のデータのみ）
-    for(const lv of evLearn){ if(lv.recs<3) continue;
-      if(lv.strongNos.has(+mno)){ add("実績:この台",10); reasons.push("過去の"+lv.label+"でこの台が強い(+10)"); }
-      if(lv.strongTails.has(t)){ add("実績:末尾",8); reasons.push("過去の"+lv.label+"で末尾"+t+"が強い(+8)"); }
-      if(lv.strongIslands.has(Math.floor(+mno/10))){ add("実績:島",6); reasons.push("過去の"+lv.label+"でこの島が強い(+6)"); }
     }
     for(const hr of evHints){
       if(hr.machine&&mname&&mname.includes(hr.machine)){ add("告知示唆",12); reasons.push("告知の示唆機種("+hr.machine+")に合致(+12)"); }
@@ -1158,33 +1185,32 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     let evMatch="";
     if(eventTomorrow){ const hits=[]; for(const e of autoEv){ if(e.targetMachine&&mname.includes(e.targetMachine))hits.push(e.targetMachine); if(e.targetTail!=null&&String(e.targetTail)===String(t))hits.push("末尾"+e.targetTail); }
       evMatch = hits.length?("✓ "+[...new Set(hits)].join("・")):"イベント日"; }
-    out.push({mno:+mno,mname,tail:t,score:s,contrib:C,evMatch,
+    out.push({mno:+mno,mname,tail:t,score:s,contrib:C,evMatch,kuse:kuse.slice(),
       aComb:aComb?+aComb.toFixed(1):null,aReg:aReg?+aReg.toFixed(1):null,
       gReg:gReg?Math.round(gReg):null,gComb:gComb?Math.round(gComb):null,
       pros:reasons.slice(),cons:cons.slice(),reasons:reasons.join(" / ")});
   }
   out.sort((a,b)=>b.score-a.score);
   const n=out.length;
-  // 全台平均が高すぎる(70以上)場合は順位ベースで正規化して点差を出す
-  const meanRaw = n? out.reduce((s,o)=>s+o.score,0)/n : 0;
-  const normalize = meanRaw>=70;
   out.forEach((o,i)=>{
-    o.raw=+o.score.toFixed(1);                 // 素点
-    o.percTop = n>1? i/n : 0;                   // 順位パーセンタイル(0=最上位)
-    let norm=o.score;
-    if(normalize) norm=interp(o.percTop,[[0,90],[0.05,78],[0.15,67],[0.30,52],[0.45,44],[0.60,38],[1,22]]);
-    o.score=+norm.toFixed(1); o.normScore=o.score;
-    const p=o.percTop;
-    // 判定: 相対順位＋正規化スコア下限
-    o.mark = (p<0.05&&o.score>=75)?"◎ 本命":(p<0.15&&o.score>=60)?"○ 対抗":(p<0.30&&o.score>=45)?"△ 注意":(o.score>=35?"低期待":"見送り");
+    o.raw=+o.score.toFixed(1);
+    o.score=+o.score.toFixed(1);
+    o.percTop = n>1? i/n : 0;                   // 順位パーセンタイル（表示用・判定には使わない）
+    const s=o.score;
+    // 絶対点で判定（順位で本命数を制限しない）
+    let mark = s>=85?"◎ 本命": s>=70?"○ 対抗": s>=55?"△ 注意": s>=40?"低期待":"見送り";
+    // イベントなしの日は、85点でも根拠(設定推定+過去REG)が弱ければ○へ降格
+    const core=(o.contrib["設定推定"]||0)+(o.contrib["過去REG"]||0);
+    if(!eventTomorrow && mark.indexOf("本命")>=0 && core<20){ mark="○ 対抗"; o.cons.unshift("イベントなしで根拠が弱く本命→対抗に降格"); }
+    o.mark=mark;
     const ents=Object.entries(o.contrib||{});
     o.plusTop=ents.filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]+" +"+e[1].toFixed(1));
     o.minusTop=ents.filter(e=>e[1]<0).sort((a,b)=>a[1]-b[1]).slice(0,3).map(e=>e[0]+" "+e[1].toFixed(1));
-    o.comment = o.mark.indexOf("本命")>=0?("本命級(上位"+Math.round(p*100)+"%)。"+(o.pros[0]||"")):
-      o.mark.indexOf("対抗")>=0?"対抗。狙う価値あり":o.mark.indexOf("注意")>=0?"注意。様子見つつ":
-      o.mark.indexOf("低期待")>=0?("低期待。"+(o.cons[0]||"")):("見送り。"+(o.cons.slice(0,2).join("、")||""));
+    o.comment = mark.indexOf("本命")>=0?("本命級。"+(o.pros[0]||"")):
+      mark.indexOf("対抗")>=0?"対抗。狙う価値あり":mark.indexOf("注意")>=0?"注意。様子見つつ":
+      mark.indexOf("低期待")>=0?("低期待。"+(o.cons[0]||"")):("見送り。"+(o.cons.slice(0,2).join("、")||""));
   });
-  return {md,ndStr,nextWd,autoEv,evLabelNext,keepRate,eventDay:autoEv.length>0,out,tailAvg,wAvg,gReg,gComb,normalized:normalize,meanRaw};
+  return {md,ndStr,nextWd,autoEv,evLabelNext,keepRate,eventDay:autoEv.length>0,out,tailAvg,wAvg,gReg,gComb};
 }
 
 function renderRank(rows){
@@ -1229,21 +1255,21 @@ function renderRank(rows){
      "<option value='score'"+(sortMode==='score'?' selected':'')+">点数順</option>"+
      "<option value='mno'"+(sortMode==='mno'?' selected':'')+">台番号順</option></select></div>"+
      "<div style='display:flex;align-items:flex-end'><button class='ghost' style='width:100%' onclick='copyAllAiPrompt()'>📋 全台AI分析用プロンプトをコピー</button></div></div>";
-  if(R.normalized) h+="<p class='muted'>※全台平均が高いため順位ベースで正規化（点差を明確化）。素点も併記。</p>";
-  h+="<div class='scroll'><table><tr><th>順位</th><th>台</th><th>機種</th><th>末尾</th><th>スコア</th><th>素点</th><th>上位%</th><th>判定</th>"+
-    "<th>加点TOP3</th><th>減点TOP3</th><th>REG傾向</th><th>合算傾向</th><th>イベント</th><th>BT根拠</th></tr>";
+  h+="<div class='scroll'><table><tr><th>順位</th><th>台</th><th>機種</th><th>末尾</th><th>スコア</th><th>上位%</th><th>判定</th>"+
+    "<th>加点TOP3</th><th>減点TOP3</th><th>店のクセ一致</th><th>REG傾向</th><th>合算傾向</th><th>イベント</th><th>BT根拠</th></tr>";
   disp.forEach(r=>{ const ci=combinedInfo(r.aComb);
     const regTr = r.aReg!=null ? "1/"+r.aReg+(r.gReg!=null?(r.aReg<r.gReg?" <span style='color:#1a7f37'>↑良</span>":" <span style='color:#c00'>↓悪</span>"):"") : "-";
-    const scStyle = r.score>=75?"#7CFC00":r.score>=60?"#b6f5a0":r.score>=45?"#ffe066":r.score>=35?"#ffd0d0":"#eee";
+    const scStyle = r.score>=85?"#7CFC00":r.score>=70?"#b6f5a0":r.score>=55?"#ffe066":r.score>=40?"#ffd0d0":"#eee";
     const btP=[]; const bm=D&&D.byM[r.mno]; const bTl=D&&D.byT[r.tail];
     if(bm&&bm.n>=2) btP.push("過去予想"+bm.n+"回中"+bm.hi+"回高設定");
     if(bTl&&bTl.n>=3) btP.push("末尾"+r.tail+"の高設定率"+Math.round(bTl.hi/bTl.n*100)+"%");
     if(autoEv.length&&byTE[r.tail]&&byTE[r.tail].length>=2) btP.push("イベント時末尾"+r.tail+"の平均REG"+btDen(btMean(byTE[r.tail])));
     h+="<tr><td>"+r.rank+"</td><td>"+r.mno+"</td><td>"+r.mname+"</td><td>"+r.tail+
       "</td><td class='score' style='background:"+scStyle+"'>"+r.score.toFixed(1)+"</td>"+
-      "<td>"+(r.raw!=null?r.raw.toFixed(1):"-")+"</td><td>"+Math.round(r.percTop*100)+"%</td><td>"+r.mark+"</td>"+
+      "<td>"+Math.round(r.percTop*100)+"%</td><td>"+r.mark+"</td>"+
       "<td class='reason' style='text-align:left;color:#1a7f37'>"+(r.plusTop.length?r.plusTop.join("<br>"):"—")+"</td>"+
       "<td class='reason' style='text-align:left;color:#b35900'>"+(r.minusTop.length?r.minusTop.join("<br>"):"—")+"</td>"+
+      "<td class='reason' style='text-align:left;color:#7a4ab5'>"+(r.kuse&&r.kuse.length?r.kuse.join("<br>"):"—")+"</td>"+
       "<td>"+regTr+"</td><td "+cellStyle(ci)+">"+(r.aComb?"1/"+r.aComb:"-")+"</td>"+
       "<td>"+(r.evMatch||"—")+"</td>"+
       "<td class='reason' style='text-align:left;color:#1565c0'>"+(btP.join("<br>")||"—")+"</td></tr>"; });
