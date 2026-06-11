@@ -72,6 +72,7 @@
     <button data-t="list">📋 データ一覧</button>
     <button data-t="store">🏆 店舗比較</button>
     <button data-t="report">🏬 店舗総括</button>
+    <button data-t="evan">📊 イベント分析</button>
     <button data-t="tail">🔢 末尾分析</button>
     <button data-t="week">📅 曜日分析</button>
     <button data-t="rank">🎯 狙い台予想</button>
@@ -299,6 +300,15 @@
     <button class="primary" onclick="aiReport()">🤖 AIに総括させる（要APIキー）</button>
     <div id="t-report-ai"></div>
     <div id="t-report"></div>
+  </div>
+
+  <!-- イベント分析 -->
+  <div class="panel" id="p-evan">
+    <h2>📊 イベント分析（過去実績の学習結果）</h2>
+    <p class="muted">登録イベントを過去データと照合し、店舗ごとに「どの末尾・台番号・機種が強かったか」を集計します。
+      結果は狙い台予想に自動反映されます。</p>
+    <div class="row"><div><label>店舗</label><select id="ea-store" onchange="render()"></select></div></div>
+    <div id="t-evan"></div>
   </div>
 
   <!-- 末尾分析 -->
@@ -788,9 +798,9 @@ function parseConditions(cond){
   // 毎週○曜
   const wkRe=/毎週\s*([日月火水木金土])/g;
   while(m=wkRe.exec(c)) rules.push({type:"weekly",weekday:WDIDX[m[1]],nat:"毎週"+m[1]});
-  // Xのつく日（付く/つく 両対応）
+  // Xのつく日（付く/つく 両対応）※末尾示唆は付けない（明示時のみ）
   const digRe=/([0-9])\s*の?\s*[付つ]く/g;
-  while(m=digRe.exec(c)) rules.push({type:"digit",digit:m[1],tail:m[1],nat:m[1]+"のつく日"});
+  while(m=digRe.exec(c)) rules.push({type:"digit",digit:m[1],nat:m[1]+"のつく日"});
   // ゾロ目・月ゾロ → 11,22日
   if(/ゾロ/.test(c)) rules.push({type:"monthlyDays",days:[11,22],nat:"ゾロ目"});
   // 複数日 11・22 / 11,22
@@ -804,14 +814,23 @@ function parseConditions(cond){
   // 重複除去
   const seen=new Set(); return rules.filter(r=>{const k=r.type+JSON.stringify(r.days||r.day||r.digit||(r.nth+"-"+r.weekday)); if(seen.has(k))return false; seen.add(k); return true;});
 }
-function parseDesc(d){
-  const t=d||""; let eventType=null,strength=4,targetMachine=null;
-  if(/周年/.test(t)){ eventType="周年"; strength=5; }
-  else if(/旧イベ/.test(t)){ eventType="旧イベント"; }
-  else if(/取材/.test(t)){ eventType="取材"; }
-  else if(/強化/.test(t)){ eventType="強化日"; }
-  if(/ジャグラー/.test(t)) targetMachine="ジャグラー";
-  return {eventType,strength,targetMachine};
+// 既知ジャグラー機種名を文中から検出
+const JUG_NAME_LIST=["マイジャグラー","ネオアイムジャグラー","アイムジャグラー","ファンキージャグラー",
+  "ゴーゴージャグラー","ハッピージャグラー","ジャグラーガールズ","ミスタージャグラー","ウルトラミラクルジャグラー","ジャグラー"];
+function matchMachineName(t){ for(const n of JUG_NAME_LIST){ if(t.includes(n)) return n; } return null; }
+// 示唆内容を数値化（targetTail/targetMachine/targetMachineNumber/hintScore/eventTypeOverride）
+function extractHints(t){
+  let targetTail=null,targetMachine=null,targetMachineNumber=null,hintScore=0,eventTypeOverride=null;
+  let m=t.match(/末尾\s*([0-9])/)||t.match(/([0-9])\s*末尾/);
+  if(m){ targetTail=m[1]; hintScore=Math.max(hintScore,5); }
+  m=t.match(/台\s*番?\s*号?\s*([0-9]{3,4})/)||t.match(/([0-9]{3,4})\s*番/);
+  if(m){ targetMachineNumber=+m[1]; hintScore=Math.max(hintScore,22); }
+  if(/全台/.test(t)){ eventTypeOverride="全台系"; hintScore=Math.max(hintScore,20); }
+  const mc=matchMachineName(t);
+  if(mc){ if(/全力/.test(t)){ targetMachine=mc; hintScore=Math.max(hintScore, mc==="ジャグラー"?10:15); }
+    else if(/強化/.test(t)){ targetMachine=mc; hintScore=Math.max(hintScore,10); }
+    else { targetMachine=mc; hintScore=Math.max(hintScore,8); } }
+  return {targetTail,targetMachine,targetMachineNumber,hintScore,eventTypeOverride};
 }
 function parseFeatureText(text,store){
   const out=[]; const lines=toHalf(text).split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>1);
@@ -820,12 +839,14 @@ function parseFeatureText(text,store){
     const a=ln.split(/→|⇒|:|：|＝|=/); if(a.length>=2){ cond=a[0]; desc=a.slice(1).join(" "); }
     const rules=parseConditions(cond); if(!rules.length) continue;
     const descAll=toHalf(desc+" "+cond);
-    const strength=/周年/.test(descAll)?5:4;
-    const targetMachine=/ジャグラー/.test(descAll)?"ジャグラー":null;
+    const H=extractHints(descAll);
+    // 強さ: 周年=10別格 / 旧イベ・強化・取材=4 / 通常=3
+    const strength=/周年/.test(descAll)?10:(/旧イベ|強化|取材/.test(descAll)?4:3);
     for(const ru of rules){
-      // 種別の優先順位: 周年>旧イベ>取材> (Xのつく/第N曜/ゾロ等の日付ルール名) >強化日
+      // 種別の優先順位: 全台系>周年>旧イベ>取材> (日付ルール名) >強化日
       let evType;
-      if(/周年/.test(descAll)) evType="周年";
+      if(H.eventTypeOverride) evType=H.eventTypeOverride;
+      else if(/周年/.test(descAll)) evType="周年";
       else if(/旧イベ/.test(descAll)) evType="旧イベント";
       else if(/取材/.test(descAll)) evType="取材";
       else if(ru.type==="digit"||ru.type==="nthWeekday"||(ru.type==="monthlyDays"&&ru.nat==="ゾロ目")) evType=ru.nat;
@@ -834,7 +855,7 @@ function parseFeatureText(text,store){
       const e={ id:"ev"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
         type:ru.type, store, storeName:store,
         eventName:(desc||evType).trim()||evType, eventType:evType, strength,
-        targetMachine, targetTail: (ru.tail!=null?ru.tail:null),
+        targetMachine:H.targetMachine, targetTail:H.targetTail, targetMachineNumber:H.targetMachineNumber, hintScore:H.hintScore,
         isRecurring:true, recurringType:ru.type, memo:ln, detail:ln, createdAt:new Date().toISOString(),
         targetDateRule: ru.nat };
       if(ru.type==="digit") e.digit=ru.digit;
@@ -911,6 +932,7 @@ function refreshAll(){
   fillSelect("s-store",stores.length?stores:["（データなし）"]);
   fillSelect("s-date",dates.length?dates:["（データなし）"]);
   fillSelect("bt-store",stores.length?stores:["（データなし）"]);
+  fillSelect("ea-store",stores.length?stores:["（データなし）"]);
   renderEvents(); render();
 }
 function fillSelect(id,opts){ const el=document.getElementById(id); if(!el)return; const cur=el.value;
@@ -926,7 +948,7 @@ function render(){
     "<span style='background:#ffae42'>1/129-120 設定5示唆</span>"+
     "<span style='background:#ff5b5b'>1/119-100 設定6示唆</span>"+
     "<span class='rainbow'>1/99-70 設定6確定級</span>";
-  renderList(rows); renderStore(rows); renderTail(rows); renderWeek(rows); renderRank(rows); renderStoreReport(rows);
+  renderList(rows); renderStore(rows); renderTail(rows); renderWeek(rows); renderRank(rows); renderStoreReport(rows); renderEventAnalysis();
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -1062,6 +1084,20 @@ function computeRanking(srAll, store, targetDate, forceEvent){
   if(sdMd!=null&&gComb!=null){ if(sdMd<=gComb-3){storeAdj=4;storeAdjR="直近は店全体が好調(+4)";}
     else if(sdMd>=gComb+5){storeAdj=-4;storeAdjR="直近は店全体が低調(-4)";} }
 
+  // 過去イベント実績の学習（targetDateより前のデータのみ＝未来不使用）
+  const srDates=[...new Set(sr.map(r=>r.date))];
+  const evLearn=autoEv.map(e=>{
+    const pastDates=srDates.filter(d=>eventMatches(e,d,store));
+    const recsE=sr.filter(r=>pastDates.includes(r.date));
+    const gc=avg(recsE.map(r=>r.combined));
+    const grp=(keyFn)=>{ const o={}; recsE.forEach(r=>{const k=keyFn(r);(o[k]=o[k]||[]).push(r.combined);}); return o; };
+    const strongFrom=(o,minN,margin)=>new Set(Object.entries(o).filter(([k,a])=>a.length>=minN&&avg(a)!=null&&gc!=null&&avg(a)<=gc-margin).map(([k])=>+k));
+    return { label:e.eventType||eventDesc(e), recs:recsE.length,
+      strongTails: recsE.length>=3?strongFrom(grp(r=>r.machine_no%10),1,4):new Set(),
+      strongNos: recsE.length>=3?strongFrom(grp(r=>r.machine_no),2,6):new Set(),
+      strongIslands: recsE.length>=3?strongFrom(grp(r=>Math.floor(r.machine_no/10)),1,4):new Set() };
+  });
+
   const out=[];
   for(const mno in gM){
     const g=gM[mno]; if(g.length<2) continue;
@@ -1117,12 +1153,20 @@ function computeRanking(srAll, store, targetDate, forceEvent){
     if(eventTomorrow){ add("イベント",15); reasons.push("予想日はイベント"+(evLabelNext?"("+evLabelNext+")":"")+"→高設定投入に期待(+15)"); }
     // 登録イベントルール（特徴欄）の属性で加点
     for(const e of autoEv){
-      if(/周年/.test(e.eventType||"")){ add("周年日",15); reasons.push("周年日(+15)"); }
+      if(/周年/.test(e.eventType||"")){ add("周年",20); reasons.push("周年(+20)"); }
       else if(/旧イベ/.test(e.eventType||"")){ add("旧イベント",8); reasons.push("旧イベント(+8)"); }
-      if(e.strength>=5){ add("強さLv5",10); reasons.push("強さLv5(+10)"); }
-      else if(e.strength>=4){ add("強さLv4",6); reasons.push("強さLv4(+6)"); }
+      else if(/強化/.test(e.eventType||"")){ add("強化日",8); reasons.push("強化日(+8)"); }
+      else if(/取材/.test(e.eventType||"")){ add("取材",8); reasons.push("取材(+8)"); }
+      if(/全台/.test(e.eventType||"")){ add("全台系",12); reasons.push("全台系イベント(+12)"); }
       if(e.targetMachine && mname && mname.includes(e.targetMachine)){ add("対象機種一致",12); reasons.push("対象機種"+e.targetMachine+"一致(+12)"); }
       if(e.targetTail!=null && e.targetTail!=="" && String(e.targetTail)===String(t)){ add("末尾示唆一致",12); reasons.push("末尾"+e.targetTail+"示唆一致(+12)"); }
+      if(e.targetMachineNumber!=null && +e.targetMachineNumber===+mno){ add("台番号名指し",22); reasons.push("イベントで台番"+mno+"を名指し(+22)"); }
+    }
+    // 過去イベント実績の学習を反映（targetDateより前のデータのみ）
+    for(const lv of evLearn){ if(lv.recs<3) continue;
+      if(lv.strongNos.has(+mno)){ add("実績:この台",10); reasons.push("過去の"+lv.label+"でこの台が強い(+10)"); }
+      if(lv.strongTails.has(t)){ add("実績:末尾",8); reasons.push("過去の"+lv.label+"で末尾"+t+"が強い(+8)"); }
+      if(lv.strongIslands.has(Math.floor(+mno/10))){ add("実績:島",6); reasons.push("過去の"+lv.label+"でこの島が強い(+6)"); }
     }
     for(const hr of evHints){
       if(hr.machine&&mname&&mname.includes(hr.machine)){ add("告知示唆",12); reasons.push("告知の示唆機種("+hr.machine+")に合致(+12)"); }
@@ -1356,6 +1400,62 @@ function runBacktest(){
     h+="<tr><td style='text-align:left'>"+k+"</td><td>"+v.n+"</td><td>"+pct(v.hi,v.n)+"</td></tr>"; });
   h+="</table></div><p class='muted'>「その台の高設定率」が全体より高い項目ほど、予想に効いています。</p>";
 
+  el.innerHTML=h;
+}
+
+// ---------- イベント実績の学習（分析画面用・全データ使用）----------
+function learnEventStats(store){
+  const all=load().filter(r=>r.store===store); if(!all.length) return [];
+  const dates=[...new Set(all.map(r=>r.date))];
+  const events=loadEvents().filter(e=>e.store===store||e.store==="全店");
+  if(!events.length) return [];
+  const isAnyEvent=d=>events.some(e=>eventMatches(e,d,store));
+  const normal=all.filter(r=>!isAnyEvent(r.date));
+  const normReg=avg(normal.map(r=>r.reg_prob)), normComb=avg(normal.map(r=>r.combined));
+  const byType={}; events.forEach(e=>{ const k=e.eventType||eventDesc(e); (byType[k]=byType[k]||[]).push(e); });
+  const out=[];
+  for(const key in byType){
+    const rules=byType[key];
+    const evDates=dates.filter(d=>rules.some(e=>eventMatches(e,d,store)));
+    if(!evDates.length) continue;
+    const recs=all.filter(r=>evDates.includes(r.date)); if(!recs.length) continue;
+    const aReg=avg(recs.map(r=>r.reg_prob)), aComb=avg(recs.map(r=>r.combined));
+    const rank=(keyFn,minN)=>{ const o={}; recs.forEach(r=>{const k=keyFn(r);(o[k]=o[k]||[]).push(r.combined);});
+      return Object.entries(o).map(([k,a])=>({k,avg:avg(a),n:a.length})).filter(x=>x.avg!=null&&x.n>=minN).sort((a,b)=>a.avg-b.avg); };
+    // 上げ傾向（前日比で改善した割合）
+    let up=0,upT=0; evDates.forEach(d=>{ const prev=[...new Set(all.map(r=>r.date))].filter(x=>x<d).sort().pop(); if(!prev)return;
+      recs.filter(r=>r.date===d).forEach(r=>{ const pr=all.find(x=>x.date===prev&&x.machine_no===r.machine_no);
+        if(pr&&pr.combined!=null&&r.combined!=null){ upT++; if(r.combined<pr.combined-5) up++; } }); });
+    out.push({store, eventType:key, eventName:rules[0].eventName||key, count:evDates.length,
+      aReg, aComb, diffReg:(normReg!=null&&aReg!=null)?+(normReg-aReg).toFixed(1):null,
+      diffComb:(normComb!=null&&aComb!=null)?+(normComb-aComb).toFixed(1):null,
+      tailRank:rank(r=>r.machine_no%10,1), noRank:rank(r=>r.machine_no,2), mcRank:rank(r=>r.machine_name,2),
+      upRate: upT?Math.round(up/upT*100):null, normReg, normComb });
+  }
+  return out.sort((a,b)=>(b.diffComb||-999)-(a.diffComb||-999));
+}
+function renderEventAnalysis(){
+  const el=document.getElementById("t-evan"); if(!el) return;
+  const store=val("ea-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const stats=learnEventStats(store);
+  if(!stats.length){ el.innerHTML="<p class='muted'>この店舗のイベント登録＋該当日のデータがありません。</p>"; return; }
+  let h="";
+  for(const s of stats){
+    const tails=s.tailRank.slice(0,3).map(x=>"末尾"+x.k+"(1/"+x.avg.toFixed(0)+")").join(" ");
+    const nos=s.noRank.slice(0,3).map(x=>x.k+"番(1/"+x.avg.toFixed(0)+")").join(" ");
+    const mcs=s.mcRank.slice(0,2).map(x=>x.k+"(1/"+x.avg.toFixed(0)+")").join(" ");
+    const note=[]; if(s.tailRank[0])note.push("末尾"+s.tailRank[0].k+"が強い");
+      if(s.noRank[0])note.push(s.noRank[0].k+"番が好調"); if(s.mcRank[0])note.push(s.mcRank[0].k+"中心");
+      if(s.upRate!=null&&s.upRate>=50)note.push("上げ傾向("+s.upRate+"%)");
+    h+="<div class='note'><b>"+s.eventType+"</b>（"+store+"）　開催"+s.count+"回<br>"+
+      "平均REG 1/"+(s.aReg?s.aReg.toFixed(0):"-")+"（通常1/"+(s.normReg?s.normReg.toFixed(0):"-")+"）　"+
+      "平均合算 1/"+(s.aComb?s.aComb.toFixed(0):"-")+"（通常1/"+(s.normComb?s.normComb.toFixed(0):"-")+"）<br>"+
+      "<span class='muted'>通常比 合算"+(s.diffComb!=null?(s.diffComb>0?"+":"")+s.diffComb+"良":"-")+
+      " / REG"+(s.diffReg!=null?(s.diffReg>0?"+":"")+s.diffReg+"良":"-")+"</span><br>"+
+      "強い末尾: "+(tails||"-")+"<br>強い台番号: "+(nos||"-")+"<br>強い機種: "+(mcs||"-")+"<br>"+
+      "🎯 次回の注目: <b>"+(note.join(" / ")||"データ不足")+"</b></div>";
+  }
   el.innerHTML=h;
 }
 
