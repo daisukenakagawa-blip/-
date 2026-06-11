@@ -124,10 +124,15 @@
       <div><label>開始台番号</label><input id="ph-start" type="number" value="1"></div>
     </div>
     <label>台データの写真を選ぶ（撮影 or 画像・<b>複数選択OK</b>）</label>
-    <input id="ph-file" type="file" accept="image/*" multiple onchange="runOcr(event)">
+    <input id="ph-file" type="file" accept="image/*" multiple onchange="pickPhotos(event)">
     <p class="muted">📷 撮影 / 🖼 アルバムから複数選択OK。<b>続けて選ぶと下に追記</b>されます（クリアで全消去）。</p>
     <div class="row" style="margin-top:4px">
-      <div style="flex:0 0 auto"><button class="ghost" onclick="clearOcrText()">🗑 読み取り結果をクリア</button></div>
+      <div style="flex:1"><button class="primary" style="width:100%;background:#6b46c1" onclick="photoAI()">🤖 AIで読み取る（高精度・推奨／要APIキー）</button></div>
+      <div style="flex:1"><button class="ghost" style="width:100%" onclick="photoOcr()">🔤 無料OCRで読み取る</button></div>
+    </div>
+    <p class="muted">PIAMO（ぴあも）は文字が細かく無料OCRでは読みにくいです。<b>「AIで読み取る」</b>を推奨（AI設定タブでAPIキーを登録）。</p>
+    <div class="row" style="margin-top:2px">
+      <div style="flex:0 0 auto"><button class="ghost" onclick="clearOcrText()">🗑 写真と結果をクリア</button></div>
     </div>
     <div id="ph-status" class="muted" style="margin-top:6px;"></div>
     <div id="ph-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
@@ -573,50 +578,95 @@ function preprocessImage(file){
     const rd=new FileReader(); rd.onload=()=>img.src=rd.result; rd.onerror=reject; rd.readAsDataURL(file);
   });
 }
-function clearOcrText(){ document.getElementById("ph-text").value=""; document.getElementById("ph-thumbs").innerHTML="";
-  document.getElementById("ph-status").innerHTML=""; }
-async function runOcr(e){
-  const files=[...(e.target.files||[])]; if(!files.length)return;
-  const st=document.getElementById("ph-status"), ta=document.getElementById("ph-text"), th=document.getElementById("ph-thumbs");
-  if(typeof Tesseract==="undefined"){ st.innerHTML='<span class="warn">OCRライブラリを読み込めませんでした（電波の良い所で再読み込みを）。手入力でも取り込めます。</span>'; return; }
+let _phImgs=[];   // 選んだ写真のdataURL（OCR/AI両方で使う・複数枚）
+function readDataURL(file){ return new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(rd.result); rd.onerror=rej; rd.readAsDataURL(file); }); }
+function clearOcrText(){ const ta=document.getElementById("ph-text"); ta.value=""; ta.dataset.hasNo="";
+  document.getElementById("ph-thumbs").innerHTML=""; document.getElementById("ph-status").innerHTML=""; _phImgs=[]; }
+// 写真を選んだら dataURL を貯めてサムネイル表示（読み取りはボタンで実行）
+async function pickPhotos(e){
+  const files=[...(e.target.files||[])]; e.target.value="";   // 同じ写真を選び直せるように
+  if(!files.length)return;
+  const st=document.getElementById("ph-status"), th=document.getElementById("ph-thumbs");
+  for(const f of files){ try{ const u=await readDataURL(f); _phImgs.push(u);
+    const im=document.createElement("img"); im.src=u;
+    im.style.cssText="width:64px;height:64px;object-fit:cover;border:1px solid #ccc;border-radius:4px"; th.appendChild(im); }catch(_){} }
+  st.innerHTML='<span class="ok">写真'+_phImgs.length+'枚を読み込みました。上の「🤖 AIで読み取る」または「🔤 無料OCRで読み取る」を押してください。</span>';
+}
+// 無料OCR（Tesseract）：前処理してから読み取り、結果を追記
+async function photoOcr(){
+  const st=document.getElementById("ph-status"), ta=document.getElementById("ph-text");
+  if(!_phImgs.length){ st.innerHTML='<span class="warn">先に写真を選んでください。</span>'; return; }
+  if(typeof Tesseract==="undefined"){ st.innerHTML='<span class="warn">OCRライブラリを読み込めませんでした（電波の良い所で再読み込みを）。</span>'; return; }
   let worker=null;
   try{
     st.innerHTML='OCRエンジンを準備中…';
     try{ worker=await Tesseract.createWorker("eng");
          await worker.setParameters({ tessedit_char_whitelist:"0123456789/.- ", tessedit_pageseg_mode:"6" }); }
-    catch(_){ worker=null; }   // 失敗時は recognize 直呼びにフォールバック
+    catch(_){ worker=null; }
     let added=0;
-    for(let i=0;i<files.length;i++){
-      const f=files[i];
-      st.innerHTML='読み取り中… ('+(i+1)+'/'+files.length+') 数十秒かかることがあります';
-      let src=f; try{ src=await preprocessImage(f); }catch(_){ src=f; }
-      // サムネイル表示
-      try{ const im=document.createElement("img"); im.src=(typeof src==="string"?src:URL.createObjectURL(f));
-           im.style.cssText="width:64px;height:64px;object-fit:cover;border:1px solid #ccc;border-radius:4px"; th.appendChild(im); }catch(_){}
+    for(let i=0;i<_phImgs.length;i++){
+      st.innerHTML='読み取り中… ('+(i+1)+'/'+_phImgs.length+') 数十秒かかることがあります';
+      let src=_phImgs[i]; try{ src=await preprocessImage(_phImgs[i]); }catch(_){}
       let text="";
       try{ const r = worker ? await worker.recognize(src)
                             : await Tesseract.recognize(src,"eng",{ tessedit_char_whitelist:"0123456789/.- " });
-           text=(r.data&&r.data.text||"").trim(); }
-      catch(_){ text=""; }
+           text=(r.data&&r.data.text||"").trim(); }catch(_){ text=""; }
       if(text){ ta.value=(ta.value?ta.value.replace(/\s*$/,"")+"\n":"")+text; added++; }
     }
+    ta.dataset.hasNo="";   // OCRテキストは台番号なし形式（papimo 6列）
     st.innerHTML = added
       ? '<span class="ok">'+added+'枚 読み取り完了。数字を確認・修正して「取り込む」を押してください。</span>'
-      : '<span class="warn">数字を読み取れませんでした。明るく正面から撮り直すか、手入力してください。</span>';
-  }catch(x){ st.innerHTML='<span class="warn">読み取りに失敗しました。明るく正面から撮り直すか、手入力してください。</span>'; }
-  finally{ if(worker){ try{ await worker.terminate(); }catch(_){} } e.target.value=""; }   // 同じ写真を選び直せるようにリセット
+      : '<span class="warn">数字を読み取れませんでした。「🤖 AIで読み取る」をお試しください。</span>';
+  }catch(x){ st.innerHTML='<span class="warn">読み取りに失敗しました。「🤖 AIで読み取る」をお試しください。</span>'; }
+  finally{ if(worker){ try{ await worker.terminate(); }catch(_){} } }
+}
+// 高精度：Claude(AI)で写真から台データを読み取り、ph-text を埋める
+async function photoAI(){
+  const st=document.getElementById("ph-status"), ta=document.getElementById("ph-text");
+  if(!_phImgs.length){ st.innerHTML='<span class="warn">先に写真を選んでください。</span>'; return; }
+  const key=val("ai-key").trim(), model=val("ai-model").trim();
+  if(!key||!model){ st.innerHTML='<span class="warn">「AI設定」タブでAnthropic APIキーとモデルIDを登録してください（写真の高精度読み取りに使用）。</span>'; return; }
+  const content=[];
+  for(const u of _phImgs){ const mm=(u||"").match(/^data:(.*?);base64,(.*)$/); if(mm) content.push({type:"image",source:{type:"base64",media_type:mm[1],data:mm[2]}}); }
+  content.push({type:"text",text:
+    "これはパチスロ（ジャグラー）の台データ表（papimo/PIAMO等）の写真です。各台について以下の数値を上から順に読み取ってください。\n"+
+    "・BB数（BIG回数）\n・RB数（REG回数）\n・総スタート（総回転数。『総スタート』『総G』等の列。BB確率/合成確率/持ちメダルは無視）\n"+
+    "台番号が写っていれば machine_no に入れてください（無ければ null）。\n"+
+    "必ず次のJSONのみで返答（前後に文章を付けない）: {\"rows\":[{\"machine_no\":数値またはnull,\"big\":数値,\"reg\":数値,\"total\":数値}, ...]}\n"+
+    "数値が読めない台は飛ばしてください。複数枚ある場合は写真の順に全台を1つの配列にまとめてください。"});
+  st.innerHTML='<span class="muted">🤖 AIが写真を読み取り中…（数十秒）</span>';
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
+      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model,max_tokens:4096,messages:[{role:"user",content}]}) });
+    if(!r.ok){ const e=await r.text(); st.innerHTML='<span class="warn">AIエラー('+r.status+'): '+e.slice(0,200)+'</span>'; return; }
+    const data=await r.json();
+    const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+    let obj; try{ obj=JSON.parse(txt.match(/\{[\s\S]*\}/)[0]); }catch(e){ st.innerHTML='<span class="warn">AIの回答を解析できませんでした。もう一度お試しください。</span>'; return; }
+    const rows=(obj.rows||[]).filter(x=>x&&x.big!=null&&x.reg!=null&&x.total!=null);
+    if(!rows.length){ st.innerHTML='<span class="warn">AIが台データを読み取れませんでした。写真を撮り直すか、無料OCRをお試しください。</span>'; return; }
+    const hasNo=rows.every(x=>x.machine_no!=null);   // 全台に番号があるときだけ番号列を使う（桁ズレ防止）
+    // 既存パーサーに合わせて出力（台番号 BB RB - - 総スタート）。台番号が無ければ BB から。
+    const lines=rows.map(x=> (hasNo?((x.machine_no!=null?x.machine_no:"")+" "):"")+x.big+" "+x.reg+" - - "+x.total);
+    ta.value=(ta.value?ta.value.replace(/\s*$/,"")+"\n":"")+lines.join("\n");
+    if(hasNo) document.getElementById("ph-text").dataset.hasNo="1";
+    st.innerHTML='<span class="ok">🤖 AIが'+rows.length+'台を読み取りました'+(hasNo?'（台番号も認識）':'')+'。内容を確認して「取り込む」を押してください。</span>';
+  }catch(x){ st.innerHTML='<span class="warn">通信に失敗しました: '+x+'</span>'; }
 }
 function doPhotoImport(){
   const store=val("ph-store").trim(),machine=val("ph-machine").trim(),date=val("ph-date");
   const start=parseInt(val("ph-start"),10)||1;
   const msg=document.getElementById("ph-msg");
   if(!store||!date){ msg.innerHTML='<div class="warn">店舗名と日付を入力してください。</div>'; return; }
+  // AIが台番号付きで出力した場合は machine_no を先頭列にする
+  const hasNo = document.getElementById("ph-text").dataset.hasNo==="1";
   // papimo: BB数 RB数 BB確率 合成確率 総スタート 持ちメダル → big,reg,skip,skip,total,(skip)
-  const order=["big","reg","skip","skip","total","skip"];
+  const order = hasNo ? ["machine_no","big","reg","skip","skip","total"]
+                      : ["big","reg","skip","skip","total","skip"];
   const {recs,warns}=parseRows(val("ph-text"),order,start);
   let html=warns.map(w=>'<div class="warn">'+w+'</div>').join("");
   if(recs.length){ const {ins,skip}=saveRecs(recs,store,machine,date);
-    html+='<div class="ok">取り込み完了: '+store+' '+date+' → 新規'+ins+'件 / 重複'+skip+'件（台番'+start+'から連番）</div>'; }
+    html+='<div class="ok">取り込み完了: '+store+' '+date+' → 新規'+ins+'件 / 重複'+skip+'件'+(hasNo?'（台番号は写真から）':'（台番'+start+'から連番）')+'</div>'; }
   msg.innerHTML=html;
 }
 
