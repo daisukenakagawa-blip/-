@@ -1070,14 +1070,14 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     if(aTot!=null){ if(aTot>=6000){ add("回転信頼度",3); reasons.push("平均"+Math.round(aTot)+"Gで信頼度高(+3)"); }
       else if(aTot<3000){ add("回転信頼度",-6); reasons.push("平均"+Math.round(aTot)+"Gと少なく信頼度低(-6)"); } }
     const a7=gM7[mno]?avg(gM7[mno].map(r=>r.combined)):null;
-    if(a7!=null&&aComb!=null&&a7<=aComb-5){ add("直近7日上昇",10); reasons.push("直近7日(1/"+a7.toFixed(0)+")が30日平均より急上昇(+10)"); }
+    if(a7!=null&&aComb!=null&&a7<=aComb-5){ add("直近7日上昇",6); reasons.push("直近7日(1/"+a7.toFixed(0)+")が30日平均より急上昇(+6)"); }
     if(tailAvg[t]!=null&&gComb!=null&&tailAvg[t]<gComb){ const p=Math.min(8,(gComb-tailAvg[t])*0.4); add("末尾傾向",p);
       if(tailAvg[t]<=gComb-4) reasons.push("末尾"+t+"が好調傾向(+"+p.toFixed(0)+")"); }
     if(wAvg[nextWd]!=null&&gComb!=null&&wAvg[nextWd]<gComb){ const p=Math.min(6,(gComb-wAvg[nextWd])*0.3); add("曜日傾向",p);
       if(wAvg[nextWd]<=gComb-3) reasons.push("予想日("+nextWd+"曜)が好調傾向(+"+p.toFixed(0)+")"); }
     const ld=lastDay[mno];
-    if(ld&&ld.combined!=null&&gComb!=null&&ld.combined>gComb+8){ add("前日凹み上げ",10);
-      reasons.push("前日は1/"+ld.combined.toFixed(0)+"と凹み→翌日の上げ狙い(+10)"); }
+    if(ld&&ld.combined!=null&&gComb!=null&&ld.combined>gComb+8){ add("前日凹み上げ",5);
+      reasons.push("前日は1/"+ld.combined.toFixed(0)+"と凹み→翌日の上げ狙い(+5)"); }
     let streak=0; for(let i=arr.length-1;i>=0;i--){ if(arr[i].combined!=null&&gComb!=null&&arr[i].combined>gComb)streak++; else break; }
     if(streak>=2&&eventTomorrow){ add("連続不発+イベント",8); reasons.push(streak+"日連続不発＋イベント→上げ狙い(+8)"); }
     const goodDates=arr.filter(r=>isGood(r.combined)).map(r=>r.date).sort();
@@ -1281,7 +1281,17 @@ function btDerive(bt){
   const dh=bt.days.filter(d=>d.hasHigh);
   const baseHigh=bt.records.length?bt.records.filter(r=>r.high).length/bt.records.length:0;
   const factors={}; bt.records.forEach(r=>{for(const k in (r.contrib||{})){if(r.contrib[k]>0){(factors[k]=factors[k]||{n:0,hi:0});factors[k].n++;if(r.high)factors[k].hi++;}}});
-  const weights={}; for(const k in factors){ if(factors[k].n>=8&&baseHigh>0){ weights[k]=Math.max(0.5,Math.min(1.5,(factors[k].hi/factors[k].n)/baseHigh)); } }
+  // 重み付け（サンプル数で制限・一律加点は除外）
+  const uniformKeys=new Set(["イベント","周年","旧イベント","強化日","取材","全台系","店全体補正"]);
+  const weights={};
+  for(const k in factors){ const n=factors[k].n;
+    if(n<30||baseHigh<=0) continue;          // 30件未満は変更しない（重み=1）
+    if(uniformKeys.has(k)) continue;          // 全台一律加点はランキング差に影響させないため重み付けしない
+    let w=(factors[k].hi/factors[k].n)/baseHigh;
+    if(n<100) w=Math.max(0.8,Math.min(1.2,w)); // 100件未満は0.8〜1.2倍
+    else      w=Math.max(0.5,Math.min(1.5,w)); // 100件以上のみ0.5〜1.5倍
+    weights[k]=w;
+  }
   const byM={},byT={}; bt.records.forEach(r=>{ (byM[r.mno]=byM[r.mno]||{n:0,hi:0}); byM[r.mno].n++; if(r.high)byM[r.mno].hi++;
     (byT[r.tail]=byT[r.tail]||{n:0,hi:0}); byT[r.tail].n++; if(r.high)byT[r.tail].hi++; });
   const miss=bt.records.filter(r=>r.mark.includes("見送り"));
