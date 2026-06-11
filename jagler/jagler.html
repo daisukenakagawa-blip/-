@@ -75,6 +75,7 @@
     <button data-t="tail">🔢 末尾分析</button>
     <button data-t="week">📅 曜日分析</button>
     <button data-t="rank">🎯 狙い台予想</button>
+    <button data-t="bt">🧪 バックテスト</button>
     <button data-t="csv">💾 CSV/管理</button>
   </div>
 
@@ -296,6 +297,18 @@
   <div class="panel" id="p-week">
     <h2>曜日別 傾向（選択店舗）</h2>
     <div id="t-week"></div>
+  </div>
+
+  <!-- バックテスト -->
+  <div class="panel" id="p-bt">
+    <h2>🧪 バックテスト（予想精度の検証）</h2>
+    <p class="muted">過去の各日について「その日より前のデータだけ」で狙い台ランキングを作り、実際の翌日結果と照合します。
+      未来データは一切使いません。データが多いほど信頼できます。</p>
+    <div class="row">
+      <div><label>店舗</label><select id="bt-store"></select></div>
+      <div style="display:flex;align-items:flex-end;"><button class="primary" style="margin-top:0" onclick="runBacktest()">▶ 検証する</button></div>
+    </div>
+    <div id="t-bt"><p class="muted">「検証する」を押してください。</p></div>
   </div>
 
   <!-- 狙い台予想 -->
@@ -781,6 +794,7 @@ function refreshAll(){
   const dates=[...new Set(rows.map(r=>r.date))].sort().reverse();
   fillSelect("s-store",stores.length?stores:["（データなし）"]);
   fillSelect("s-date",dates.length?dates:["（データなし）"]);
+  fillSelect("bt-store",stores.length?stores:["（データなし）"]);
   renderEvents(); render();
 }
 function fillSelect(id,opts){ const el=document.getElementById(id); if(!el)return; const cur=el.value;
@@ -900,40 +914,34 @@ function renderWeek(rows){ document.getElementById("t-week").innerHTML=
   trendTable(groupBy(selStoreRows(rows),"weekday"),"曜日",ks=>WD_ORDER.filter(w=>ks.includes(w))); }
 
 // ---------- 狙い台予想（100点満点）----------
-function renderRank(rows){
-  const store=val("r-store"); const el=document.getElementById("t-rank");
-  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
-  const sr=rows.filter(r=>r.store===store);
-  if(sr.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+// 予想スコア計算（純粋関数）：targetDate より前のデータのみ使用（未来データ不使用）
+function computeRanking(srAll, store, targetDate, forceEvent){
+  const sr=srAll.filter(r=>r.date<targetDate);   // ★その日より前のデータだけ
+  if(sr.length<2) return null;
   const rec=recent(sr,30), rec7=recent(sr,7);
   const gM=groupBy(rec,"machine_no"), gM7=groupBy(rec7,"machine_no");
   const gComb=avg(rec.map(r=>r.combined)), gReg=avg(rec.map(r=>r.reg_prob));
   const tailAvg={},gT=groupBy(rec,"tail"); for(const t in gT) tailAvg[t]=avg(gT[t].map(r=>r.combined));
   const wAvg={},gW=groupBy(rec,"weekday"); for(const w in gW) wAvg[w]=avg(gW[w].map(r=>r.combined));
-  const md=maxDate(sr); const ndDef=new Date(md+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
-  const ndStr = val("r-date") || fmtDate(ndDef);            // 予想対象日（選択可・既定は翌日）
+  const md=maxDate(sr); const ndStr=targetDate;
   const nd=new Date(ndStr+"T00:00:00"); const nextWd=WD[nd.getDay()];
   const lastDay={}; sr.filter(r=>r.date===md).forEach(r=>lastDay[r.machine_no]=r);
   const autoEv=eventsOn(ndStr,store);
   const evLabelNext=autoEv.map(e=>e.name||eventDesc(e)).join("・");
   const evHints=autoEv.map(e=>e.hints).filter(Boolean);
   const evDates=new Set(sr.map(r=>r.date).filter(d=>isEventDate(d,store)));
-  const eventTomorrow=document.getElementById("r-event").checked || autoEv.length>0;
+  const eventTomorrow=forceEvent || autoEv.length>0;
 
-  // 店レベルの事前計算
-  const goodThresh = gComb!=null ? gComb-8 : 120;          // これ以下を「高設定っぽい日」とみなす
+  const goodThresh = gComb!=null ? gComb-8 : 120;
   const isGood = c => c!=null && c<=goodThresh;
   const byM={}; sr.forEach(r=>{(byM[r.machine_no]=byM[r.machine_no]||[]).push(r);});
   for(const k in byM) byM[k].sort((a,b)=>a.date<b.date?-1:1);
   const allNos=[...new Set(sr.map(r=>r.machine_no))]; const minNo=Math.min(...allNos), maxNo=Math.max(...allNos);
-  // 島(台番÷10)別の平均合算
   const islandAvg={},islG={}; rec.forEach(r=>{const i=Math.floor(r.machine_no/10);(islG[i]=islG[i]||[]).push(r.combined);});
   for(const i in islG) islandAvg[i]=avg(islG[i]);
-  // 据え置き/下げ傾向（高設定っぽい日→翌レコードも高いか）
   let gNext=0,gTot=0; for(const k in byM){const a=byM[k]; for(let i=0;i<a.length-1;i++){ if(isGood(a[i].combined)){gTot++; if(isGood(a[i+1].combined))gNext++;}}}
   const keepRate = gTot>=4 ? gNext/gTot : null;
-  // 店全体の直近日の強さ
-  const dayRows=sr.filter(r=>r.date===md); const sdMd=avg(dayRows.map(r=>r.combined));
+  const sdMd=avg(sr.filter(r=>r.date===md).map(r=>r.combined));
   let storeAdj=0,storeAdjR="";
   if(sdMd!=null&&gComb!=null){ if(sdMd<=gComb-3){storeAdj=4;storeAdjR="直近は店全体が好調(+4)";}
     else if(sdMd>=gComb+5){storeAdj=-4;storeAdjR="直近は店全体が低調(-4)";} }
@@ -944,99 +952,82 @@ function renderRank(rows){
     const arr=byM[mno]||g;
     const aReg=avg(g.map(r=>r.reg_prob)), aComb=avg(g.map(r=>r.combined)), aTot=avg(g.map(r=>r.total));
     const mname=g[g.length-1].machine_name||""; const t=mno%10;
-    let s=30; const reasons=[];
+    let s=30; const reasons=[]; const C={};
+    const add=(key,p)=>{ s+=p; C[key]=(C[key]||0)+p; };
 
-    // (0) 設定推定（公式スペック表ベース・最重要）：高設定の出現確率を加点
     const ests=g.map(r=>estimateSetting(r)).filter(Boolean);
-    if(ests.length){
-      const pHigh=avg(ests.map(e=>e.high));            // 平均 P(設定4以上)
-      if(pHigh!=null){ const p=Math.min(22,pHigh*32); s+=p;
+    if(ests.length){ const pHigh=avg(ests.map(e=>e.high));
+      if(pHigh!=null){ const p=Math.min(22,pHigh*32); add("設定推定",p);
         if(pHigh>=0.35) reasons.push("設定推定で高設定率"+Math.round(pHigh*100)+"%(+"+p.toFixed(0)+")"); }
       const eld=lastDay[mno]?estimateSetting(lastDay[mno]):null;
-      if(eld&&eld.setting>=5){ s+=6; reasons.push("前日は設定"+eld.setting+"推定("+Math.round(eld.prob*100)+"%)(+6)"); }
+      if(eld&&eld.setting>=5){ add("前日高設定推定",6); reasons.push("前日は設定"+eld.setting+"推定("+Math.round(eld.prob*100)+"%)(+6)"); }
     }
-
-    // (1) 総回転数の信頼度補正：少ないとREG/合算の加点を割引、極端に少なければ減点
     const rel = aTot!=null ? Math.max(0.5,Math.min(1.1,aTot/6000)) : 0.8;
-    if(aReg!=null&&gReg!=null&&aReg<gReg){ const p=Math.min(25,(gReg-aReg)*0.5)*rel; s+=p;
+    if(aReg!=null&&gReg!=null&&aReg<gReg){ const p=Math.min(25,(gReg-aReg)*0.5)*rel; add("過去REG",p);
       if(aReg<=gReg-10) reasons.push("過去30日REGが1/"+aReg.toFixed(0)+"と優秀(+"+p.toFixed(0)+")"); }
-    if(aComb!=null&&gComb!=null&&aComb<gComb){ const p=Math.min(15,(gComb-aComb)*0.4)*rel; s+=p;
+    if(aComb!=null&&gComb!=null&&aComb<gComb){ const p=Math.min(15,(gComb-aComb)*0.4)*rel; add("過去合算",p);
       if(aComb<=gComb-5) reasons.push("過去30日合算が1/"+aComb.toFixed(0)+"と好調(+"+p.toFixed(0)+")"); }
-    if(aTot!=null){ if(aTot>=6000){ s+=3; reasons.push("平均"+Math.round(aTot)+"Gで信頼度高(+3)"); }
-      else if(aTot<3000){ s-=6; reasons.push("平均"+Math.round(aTot)+"Gと少なく信頼度低(-6)"); } }
-
-    // (2) 直近7日 vs 30日：急上昇を加点
+    if(aTot!=null){ if(aTot>=6000){ add("回転信頼度",3); reasons.push("平均"+Math.round(aTot)+"Gで信頼度高(+3)"); }
+      else if(aTot<3000){ add("回転信頼度",-6); reasons.push("平均"+Math.round(aTot)+"Gと少なく信頼度低(-6)"); } }
     const a7=gM7[mno]?avg(gM7[mno].map(r=>r.combined)):null;
-    if(a7!=null&&aComb!=null&&a7<=aComb-5){ s+=10; reasons.push("直近7日(1/"+a7.toFixed(0)+")が30日平均より急上昇(+10)"); }
-
-    // 末尾・曜日
-    if(tailAvg[t]!=null&&gComb!=null&&tailAvg[t]<gComb){ const p=Math.min(8,(gComb-tailAvg[t])*0.4); s+=p;
+    if(a7!=null&&aComb!=null&&a7<=aComb-5){ add("直近7日上昇",10); reasons.push("直近7日(1/"+a7.toFixed(0)+")が30日平均より急上昇(+10)"); }
+    if(tailAvg[t]!=null&&gComb!=null&&tailAvg[t]<gComb){ const p=Math.min(8,(gComb-tailAvg[t])*0.4); add("末尾傾向",p);
       if(tailAvg[t]<=gComb-4) reasons.push("末尾"+t+"が好調傾向(+"+p.toFixed(0)+")"); }
-    if(wAvg[nextWd]!=null&&gComb!=null&&wAvg[nextWd]<gComb){ const p=Math.min(6,(gComb-wAvg[nextWd])*0.3); s+=p;
-      if(wAvg[nextWd]<=gComb-3) reasons.push("翌日("+nextWd+"曜)が好調傾向(+"+p.toFixed(0)+")"); }
-
-    // 前日凹み（翌日の上げ狙い）：前日に大きく凹んだ台は翌日に設定を上げてくる期待
+    if(wAvg[nextWd]!=null&&gComb!=null&&wAvg[nextWd]<gComb){ const p=Math.min(6,(gComb-wAvg[nextWd])*0.3); add("曜日傾向",p);
+      if(wAvg[nextWd]<=gComb-3) reasons.push("予想日("+nextWd+"曜)が好調傾向(+"+p.toFixed(0)+")"); }
     const ld=lastDay[mno];
-    if(ld&&ld.combined!=null&&gComb!=null&&ld.combined>gComb+8){ s+=10;
+    if(ld&&ld.combined!=null&&gComb!=null&&ld.combined>gComb+8){ add("前日凹み上げ",10);
       reasons.push("前日は1/"+ld.combined.toFixed(0)+"と凹み→翌日の上げ狙い(+10)"); }
-
-    // (3) 連続不発日数＋イベント＝上げ狙い
     let streak=0; for(let i=arr.length-1;i>=0;i--){ if(arr[i].combined!=null&&gComb!=null&&arr[i].combined>gComb)streak++; else break; }
-    if(streak>=2&&eventTomorrow){ s+=8; reasons.push(streak+"日連続不発＋翌日イベント→上げ狙い(+8)"); }
-
-    // (4) 前回高設定からの日数 vs 店の使用周期
+    if(streak>=2&&eventTomorrow){ add("連続不発+イベント",8); reasons.push(streak+"日連続不発＋イベント→上げ狙い(+8)"); }
     const goodDates=arr.filter(r=>isGood(r.combined)).map(r=>r.date).sort();
     if(goodDates.length>=2){ const gaps=[]; for(let i=1;i<goodDates.length;i++) gaps.push(dayDiff(goodDates[i-1],goodDates[i]));
       const cad=avg(gaps), since=dayDiff(goodDates[goodDates.length-1],md);
-      if(cad&&since>=cad*0.8){ s+=6; reasons.push("高設定周期(約"+Math.round(cad)+"日)的にそろそろ(+6)"); } }
-
-    // (5) 隣接台の強さ・角台
+      if(cad&&since>=cad*0.8){ add("高設定周期",6); reasons.push("高設定周期(約"+Math.round(cad)+"日)的にそろそろ(+6)"); } }
     const nb=[+mno-1,+mno+1].map(n=>gM[n]?avg(gM[n].map(r=>r.combined)):null).filter(x=>x!=null);
-    if(nb.length){ const nbAvg=avg(nb); if(gComb!=null&&nbAvg<=gComb-4){ s+=6; reasons.push("隣接台が好調(並び示唆)(+6)"); } }
-    if(+mno===minNo||+mno===maxNo){ s+=3; reasons.push("角台(+3)"); }
-
-    // (6) 島・列単位の傾向
+    if(nb.length){ const nbAvg=avg(nb); if(gComb!=null&&nbAvg<=gComb-4){ add("隣接台",6); reasons.push("隣接台が好調(並び示唆)(+6)"); } }
+    if(+mno===minNo||+mno===maxNo){ add("角台",3); reasons.push("角台(+3)"); }
     const isl=Math.floor(+mno/10);
-    if(islandAvg[isl]!=null&&gComb!=null&&islandAvg[isl]<=gComb-4){ s+=5; reasons.push("同じ島が全体好調(+5)"); }
-
-    // (7) イベント種類別の相性（翌日のイベントと同種の過去日でこの台が強かったか）
+    if(islandAvg[isl]!=null&&gComb!=null&&islandAvg[isl]<=gComb-4){ add("島傾向",5); reasons.push("同じ島が全体好調(+5)"); }
     if(autoEv.length){ for(const e of autoEv){
       const pm=arr.filter(r=>r.date!==md&&eventMatches(e,r.date,store));
       if(pm.length>=1){ const ae=avg(pm.map(r=>r.combined));
-        if(ae!=null&&aComb!=null&&ae<=aComb-3){ s+=8; reasons.push("過去の『"+(e.name||eventDesc(e))+"』で強い(平均1/"+ae.toFixed(0)+")(+8)"); } } }
+        if(ae!=null&&aComb!=null&&ae<=aComb-3){ add("イベント種別相性",8); reasons.push("過去の『"+(e.name||eventDesc(e))+"』で強い(平均1/"+ae.toFixed(0)+")(+8)"); } } }
     } else { const evRows=g.filter(r=>evDates.has(r.date));
       if(evRows.length>=1){ const ae=avg(evRows.map(r=>r.combined));
-        if(ae!=null&&aComb!=null&&ae<aComb-3){ s+=6; reasons.push("過去イベント日に強い台(平均1/"+ae.toFixed(0)+")(+6)"); } } }
-
-    // (8) 据え置き/上げ/下げ判定（前日が高設定っぽい台×店のクセ）
+        if(ae!=null&&aComb!=null&&ae<aComb-3){ add("イベント種別相性",6); reasons.push("過去イベント日に強い台(平均1/"+ae.toFixed(0)+")(+6)"); } } }
     if(ld&&isGood(ld.combined)&&keepRate!=null){
-      if(keepRate>=0.5){ s+=8; reasons.push("前日高設定＋この店は据え置き傾向("+Math.round(keepRate*100)+"%)(+8)"); }
-      else { s-=5; reasons.push("前日高設定だがこの店は翌日下げ傾向("+Math.round((1-keepRate)*100)+"%)(-5)"); } }
-
-    // 翌日イベント・告知示唆
-    if(eventTomorrow){ s+=15; reasons.push("翌日はイベント"+(evLabelNext?"("+evLabelNext+")":"")+"→高設定投入に期待(+15)"); }
+      if(keepRate>=0.5){ add("据え置き",8); reasons.push("前日高設定＋据え置き傾向("+Math.round(keepRate*100)+"%)(+8)"); }
+      else { add("据え置き",-5); reasons.push("前日高設定だが下げ傾向("+Math.round((1-keepRate)*100)+"%)(-5)"); } }
+    if(eventTomorrow){ add("イベント",15); reasons.push("予想日はイベント"+(evLabelNext?"("+evLabelNext+")":"")+"→高設定投入に期待(+15)"); }
     for(const hr of evHints){
-      if(hr.machine&&mname&&mname.includes(hr.machine)){ s+=12; reasons.push("告知の示唆機種("+hr.machine+")に合致(+12)"); }
-      if(hr.tail!==""&&hr.tail!=null&&String(hr.tail)===String(t)){ s+=12; reasons.push("告知の示唆末尾"+hr.tail+"に合致(+12)"); }
-      if(Array.isArray(hr.numbers)&&hr.numbers.map(Number).includes(+mno)){ s+=22; reasons.push("告知で台番"+mno+"を名指し示唆(+22)"); }
+      if(hr.machine&&mname&&mname.includes(hr.machine)){ add("告知示唆",12); reasons.push("告知の示唆機種("+hr.machine+")に合致(+12)"); }
+      if(hr.tail!==""&&hr.tail!=null&&String(hr.tail)===String(t)){ add("告知示唆",12); reasons.push("告知の示唆末尾"+hr.tail+"に合致(+12)"); }
+      if(Array.isArray(hr.numbers)&&hr.numbers.map(Number).includes(+mno)){ add("告知示唆",22); reasons.push("告知で台番"+mno+"を名指し示唆(+22)"); }
     }
-
-    // (10) 店全体の強さ補正
-    if(storeAdj){ s+=storeAdj; reasons.push(storeAdjR); }
-
-    // (9) データ不足ペナルティ（上限を下げる）
+    if(storeAdj){ add("店全体補正",storeAdj); reasons.push(storeAdjR); }
     const days=arr.length; const cap = days>=30?100: days>=14?90: days>=7?80:75;
     if(Math.round(s)>cap&&days<30) reasons.push("データ"+days+"日と少なめのため上限"+cap+"点");
-
     if(!reasons.length) reasons.push("過去データは平均的。様子見");
     s=Math.max(0,Math.min(cap,Math.round(s)));
-    let mark = s>=80?"◎ 本命": s>=65?"○ 対抗": s>=50?"△ 注意": "… 見送り";
-    out.push({mno:+mno,mname,tail:t,score:s,mark,aComb:aComb?+aComb.toFixed(1):null,
-      aReg:aReg?+aReg.toFixed(1):null,reasons:reasons.join(" / ")});
+    const mark = s>=80?"◎ 本命": s>=65?"○ 対抗": s>=50?"△ 注意": "… 見送り";
+    out.push({mno:+mno,mname,tail:t,score:s,mark,contrib:C,
+      aComb:aComb?+aComb.toFixed(1):null,aReg:aReg?+aReg.toFixed(1):null,reasons:reasons.join(" / ")});
   }
   out.sort((a,b)=>b.score-a.score);
-  if(!out.length){ el.innerHTML="<p class='muted'>判定できる台がありません。</p>"; return; }
-  // 次の登録イベント日を探して案内（md以降45日以内）
+  return {md,ndStr,nextWd,autoEv,evLabelNext,keepRate,eventDay:autoEv.length>0,out};
+}
+
+function renderRank(rows){
+  const store=val("r-store"); const el=document.getElementById("t-rank");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=rows.filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("r-date")||fmtDate(ndDef);
+  const R=computeRanking(srAll,store,targetDate,document.getElementById("r-event").checked);
+  if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータが不足）。</p>"; return; }
+  const {md,ndStr,nextWd,autoEv,evLabelNext,keepRate,out}=R;
   let nextEvBanner="";
   { let found=null; for(let i=0;i<=45;i++){ const dd=new Date(md+"T00:00:00"); dd.setDate(dd.getDate()+i);
       const ds=fmtDate(dd); if(ds>=ndStr && eventsOn(ds,store).length){ found=ds; break; } }
@@ -1099,6 +1090,89 @@ async function aiPredict(){
       "<td style='text-align:left' class='reason'>"+(x.理由||"")+"</td></tr>"; });
     el.innerHTML=html+"</table></div>";
   }catch(x){ el.innerHTML='<div class="warn">通信に失敗しました: '+x+'</div>'; }
+}
+
+// ---------- バックテスト ----------
+function runBacktest(){
+  const store=val("bt-store"); const el=document.getElementById("t-bt");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データがありません。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  const dates=[...new Set(srAll.map(r=>r.date))].sort();
+  if(dates.length<3){ el.innerHTML="<p class='warn'>検証には最低3日分のデータが必要です（現在"+dates.length+"日）。</p>"; return; }
+  const isHigh=r=>{ const e=estimateSetting(r); return e&&e.setting>=5; };           // 実際の高設定（推定5以上）
+  const isLow =r=>{ const e=estimateSetting(r); return e&&e.setting<=2; };
+  const recs=[];   // 予想×実結果のペア
+  const days=[];   // 日ごとの集計
+  for(let i=1;i<dates.length;i++){
+    const D=dates[i];
+    const R=computeRanking(srAll,store,D,false);   // ★Dより前のデータだけ
+    if(!R||!R.out.length) continue;
+    const actByNo={}; srAll.filter(r=>r.date===D).forEach(r=>actByNo[r.machine_no]=r);
+    const ranked=R.out;                            // 既にスコア降順
+    const predHighInTop=N=>ranked.slice(0,N).some(o=>actByNo[o.mno]&&isHigh(actByNo[o.mno]));
+    const actualHighs=Object.values(actByNo).filter(isHigh);
+    days.push({D,eventDay:R.eventDay,
+      hasHigh:actualHighs.length>0,
+      top1:actByNo[ranked[0].mno]?isHigh(actByNo[ranked[0].mno]):false,
+      top3:predHighInTop(3),top5:predHighInTop(5),top10:predHighInTop(10),
+      // recall: 実際の高設定が予想上位5/10に入った割合
+      highTotal:actualHighs.length,
+      highInTop5:actualHighs.filter(r=>ranked.slice(0,5).some(o=>o.mno===r.machine_no)).length,
+      highInTop10:actualHighs.filter(r=>ranked.slice(0,10).some(o=>o.mno===r.machine_no)).length });
+    ranked.forEach((o,idx)=>{ const act=actByNo[o.mno]; if(!act) return;
+      recs.push({score:o.score,mark:o.mark,rank:idx+1,contrib:o.contrib,eventDay:R.eventDay,
+        actReg:act.reg_prob,actComb:act.combined,high:isHigh(act),low:isLow(act)}); });
+  }
+  if(!recs.length){ el.innerHTML="<p class='warn'>検証できる日がありませんでした。</p>"; return; }
+  const pct=(a,b)=>b?Math.round(a/b*100)+"%":"-";
+  const mean=a=>{const x=a.filter(v=>v!=null);return x.length?x.reduce((s,v)=>s+v,0)/x.length:null;};
+
+  // ① 的中率（高設定が予想上位に入った日の割合）
+  const dh=days.filter(d=>d.hasHigh);
+  let h="<div class='note'>検証日数 "+days.length+"日（うち高設定あり"+dh.length+"日）／予想×実結果 "+recs.length+"件<br>"+
+    "<span class='muted'>「的中」＝予想上位Nに実際の高設定(推定設定5以上)が入っていた日の割合</span></div>";
+  const hitTable=(arr,label)=>{ const a=arr.filter(d=>d.hasHigh); if(!a.length) return "";
+    return "<tr><td style='text-align:left'>"+label+"("+a.length+"日)</td>"+
+      "<td>"+pct(a.filter(d=>d.top1).length,a.length)+"</td><td>"+pct(a.filter(d=>d.top3).length,a.length)+
+      "</td><td>"+pct(a.filter(d=>d.top5).length,a.length)+"</td><td>"+pct(a.filter(d=>d.top10).length,a.length)+"</td></tr>"; };
+  h+="<h3 style='font-size:14px'>① 的中率（1位/3位内/5位内/10位内）</h3><div class='scroll'><table>"+
+    "<tr><th>区分</th><th>1位</th><th>3位内</th><th>5位内</th><th>10位内</th></tr>"+
+    hitTable(days,"全体")+hitTable(days.filter(d=>d.eventDay),"イベント日")+hitTable(days.filter(d=>!d.eventDay),"通常日")+"</table></div>";
+
+  // ②③ スコア別の実際の平均REG/合算
+  const buckets=[["80-100",80,101],["65-79",65,80],["50-64",50,65],["0-49",0,50]];
+  h+="<h3 style='font-size:14px'>②③ 予想スコア別の実際の平均REG/合算・高設定率</h3><div class='scroll'><table>"+
+    "<tr><th>スコア帯</th><th>件数</th><th>実平均REG</th><th>実平均合算</th><th>高設定率</th></tr>";
+  buckets.forEach(([lb,lo,hi])=>{ const a=recs.filter(r=>r.score>=lo&&r.score<hi); if(!a.length){return;}
+    const mr=mean(a.map(r=>r.actReg)),mc=mean(a.map(r=>r.actComb));
+    h+="<tr><td>"+lb+"</td><td>"+a.length+"</td><td>"+(mr?"1/"+mr.toFixed(0):"-")+"</td><td>"+(mc?"1/"+mc.toFixed(0):"-")+
+      "</td><td>"+pct(a.filter(r=>r.high).length,a.length)+"</td></tr>"; });
+  h+="</table></div><p class='muted'>スコアが高い帯ほどREG/合算が良く高設定率が高ければ、予想は機能しています。</p>";
+
+  // ④ 高設定を何%拾えているか（recall）
+  const totHigh=days.reduce((s,d)=>s+d.highTotal,0);
+  const in5=days.reduce((s,d)=>s+d.highInTop5,0), in10=days.reduce((s,d)=>s+d.highInTop10,0);
+  h+="<h3 style='font-size:14px'>④ 高設定の拾い率（recall）</h3><div class='note'>"+
+    "実際の高設定 "+totHigh+"台中、予想上位5位に "+pct(in5,totHigh)+"／上位10位に "+pct(in10,totHigh)+" を捕捉</div>";
+
+  // ⑤ 見送り判定が実際に弱かったか
+  const miss=recs.filter(r=>r.mark.indexOf("見送り")>=0);
+  if(miss.length){ const mr=mean(miss.map(r=>r.actReg)),mc=mean(miss.map(r=>r.actComb));
+    h+="<h3 style='font-size:14px'>⑤ 見送り判定の実際</h3><div class='note'>見送り"+miss.length+"件 → 実平均REG 1/"+(mr?mr.toFixed(0):"-")+
+      "・実平均合算 1/"+(mc?mc.toFixed(0):"-")+"・高設定だった割合 "+pct(miss.filter(r=>r.high).length,miss.length)+
+      "・低設定(推定2以下)だった割合 "+pct(miss.filter(r=>r.low).length,miss.length)+
+      "<br><span class='muted'>見送りの高設定率が低く、低設定率が高ければ判定は妥当です。</span></div>"; }
+
+  // ⑥ 項目ごとの貢献度（その項目が加点された台の実際の高設定率）
+  const base=pct(recs.filter(r=>r.high).length,recs.length);
+  const factors={}; recs.forEach(r=>{ for(const k in r.contrib){ if(r.contrib[k]>0){ (factors[k]=factors[k]||{n:0,hi:0}); factors[k].n++; if(r.high)factors[k].hi++; } } });
+  h+="<h3 style='font-size:14px'>⑥ 項目ごとの貢献度（全体高設定率 "+base+"）</h3><div class='scroll'><table>"+
+    "<tr><th>項目</th><th>加点された件数</th><th>その台の高設定率</th></tr>";
+  Object.entries(factors).sort((a,b)=>(b[1].hi/b[1].n)-(a[1].hi/a[1].n)).forEach(([k,v])=>{
+    h+="<tr><td style='text-align:left'>"+k+"</td><td>"+v.n+"</td><td>"+pct(v.hi,v.n)+"</td></tr>"; });
+  h+="</table></div><p class='muted'>「その台の高設定率」が全体より高い項目ほど、予想に効いています。</p>";
+
+  el.innerHTML=h;
 }
 
 // ---------- 店舗総括（今日の設定状況・店長の思惑）----------
