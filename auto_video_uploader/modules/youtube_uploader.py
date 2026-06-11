@@ -47,6 +47,12 @@ class YouTubeUploader(BaseUploader):
         if not creds or not creds.valid:
             secret_file = Path(config.YOUTUBE_CLIENT_SECRET_FILE)
             if not secret_file.exists():
+                # Google からダウンロードした client_secret_xxx.json をリネームせず
+                # そのまま置いても動くようにする
+                candidates = sorted(config.BASE_DIR.glob("client_secret*.json"))
+                if candidates:
+                    secret_file = candidates[0]
+            if not secret_file.exists():
                 raise FileNotFoundError(
                     f"client_secret.json が見つかりません: {secret_file}\n"
                     "README の「YouTube API 認証の手順」に従って配置してください。"

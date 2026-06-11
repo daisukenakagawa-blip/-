@@ -4,7 +4,7 @@ title ③YouTube認証(最初に1回だけ)
 cd /d "%~dp0"
 set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts;%LOCALAPPDATA%\Microsoft\WinGet\Links;%PATH%"
 
-if not exist client_secret.json (
+if not exist client_secret*.json (
     echo ============================================================
     echo  まだ「client_secret.json」がありません。
     echo.
