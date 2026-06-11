@@ -874,14 +874,20 @@ function groupBy(rows,key){ const m={}; rows.forEach(r=>{(m[r[key]]=m[r[key]]||[
 // 区分線形補間（点数の段階化用）
 function interp(x,pts){ if(x<=pts[0][0])return pts[0][1]; const L=pts[pts.length-1]; if(x>=L[0])return L[1];
   for(let i=1;i<pts.length;i++){ if(x<=pts[i][0]){ const[x0,y0]=pts[i-1],[x1,y1]=pts[i]; return y0+(y1-y0)*(x-x0)/(x1-x0); } } return L[1]; }
-// REG段階評価（店平均比%。良いほどプラス・悪いほどマイナス）
+// REG段階評価（店平均比%。良いほどプラス・悪いほどマイナス。ジャグラーの主軸）
+// 例(店平均1/400): 1/390→+1 1/380→+3 1/370→+5 1/360→+7 1/350→+9 1/340→+12 1/330→+15 1/320→+18 1/310→+22
+//          悪い側: 1/420→-2 1/440→-5 1/460→-10 1/500→-18
 function regScoreCalc(aReg,gReg){ if(aReg==null||gReg==null||!gReg)return 0; const imp=(gReg-aReg)/gReg;
-  return imp>=0 ? interp(imp,[[0,0],[0.05,3],[0.10,7],[0.15,12],[0.20,18],[0.25,25]])
-               : interp(-imp,[[0,0],[0.05,-3],[0.10,-7],[0.15,-12],[0.20,-20]]); }
-// 合算段階評価
+  return imp>=0 ? interp(imp,[[0,0],[0.025,1],[0.05,3],[0.075,5],[0.10,7],[0.125,9],[0.15,12],[0.175,15],[0.20,18],[0.225,22]])
+               : interp(-imp,[[0,0],[0.05,2],[0.10,5],[0.15,10],[0.25,18]])*-1; }
+// 合算段階評価（店平均比%。例(1/170): 1/165→+2 1/160→+4 1/155→+6 1/150→+8 1/145→+10 1/140→+15）
 function combScoreCalc(aComb,gComb){ if(aComb==null||gComb==null||!gComb)return 0; const imp=(gComb-aComb)/gComb;
-  return imp>=0 ? interp(imp,[[0,0],[0.03,2],[0.05,5],[0.10,10],[0.15,15]])
-               : interp(-imp,[[0,0],[0.05,-4],[0.10,-8],[0.15,-12]]); }
+  return imp>=0 ? interp(imp,[[0,0],[0.03,2],[0.06,4],[0.09,6],[0.12,8],[0.147,10],[0.176,15]])
+               : interp(-imp,[[0,0],[0.05,4],[0.10,8],[0.15,12]])*-1; }
+// BIG段階評価（補助評価・5000G以上のみ対象・REGの約1/3の重み・最大+8）
+// bigProb=合算BIG確率(分母)。5000G未満は null を渡す＝0点。
+function bigScoreCalc(bigProb){ if(bigProb==null||!isFinite(bigProb))return 0;
+  return interp(bigProb,[[180,8],[190,6],[200,5],[210,4],[220,3],[230,2],[240,1],[260,0]]); }
 // 店のクセを学習（カテゴリ別に店平均より何%良いか。lower=better なので (g-cat)/g）
 function learnStoreTendency(sr,gReg,gComb){
   const push=(o,k,r)=>{(o[k]=o[k]||[]).push(r);};
@@ -1187,8 +1193,8 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     const arr=byM[mno]||g;
     const aReg=avg(g.map(r=>r.reg_prob)), aComb=avg(g.map(r=>r.combined)), aTot=avg(g.map(r=>r.total));
     const mname=g[g.length-1].machine_name||""; const t=mno%10;
-    let s=30; const reasons=[]; const C={}; const kuse=[];
-    const add=(key,p)=>{ const w=(weights&&weights[key]!=null)?weights[key]:1; const pv=p*w; s+=pv; C[key]=(C[key]||0)+pv; };
+    let s=0; const reasons=[]; const C={}; const kuse=[];   // ★全台0点スタート・純粋加点合計（補正/上限なし）
+    const add=(key,p)=>{ s+=p; C[key]=(C[key]||0)+p; };     // 重み補正は使わず素点をそのまま合計
     const grad=(pct,maxB)=>pct>0?Math.min(maxB,(pct/0.08)*maxB):0;   // 8%良いで満点
     const kAdd=(key,p,text)=>{ if(p>0.3){ add(key,p); kuse.push(text+"(+"+p.toFixed(1)+")"); } };
 
@@ -1198,13 +1204,26 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
       if(pHigh>=0.30) reasons.push("設定推定で高設定率"+Math.round(pHigh*100)+"%(+"+p.toFixed(1)+")"); }
     { const eld=lastDay[mno]?estimateSetting(lastDay[mno]):null;
       if(eld&&eld.setting>=5){ add("前日高設定推定",6); reasons.push("前日は設定"+eld.setting+"推定("+Math.round(eld.prob*100)+"%)(+6)"); } }
-    const rel = aTot!=null ? Math.max(0.5,Math.min(1.1,aTot/6000)) : 0.8;
-    { let p=regScoreCalc(aReg,gReg); if(p>0)p*=rel;
-      if(p!==0){ add(p>0?"過去REG":"REG悪化",p);
-        if(p>=7) reasons.push("過去30日REGが1/"+aReg.toFixed(0)+"と店平均より良い(+"+p.toFixed(1)+")"); } }
-    { let p=combScoreCalc(aComb,gComb); if(p>0)p*=rel;
-      if(p!==0){ add(p>0?"過去合算":"合算悪化",p);
-        if(p>=5) reasons.push("過去30日合算が1/"+aComb.toFixed(0)+"と店平均より良い(+"+p.toFixed(1)+")"); } }
+    // REG（主軸・段階式・店平均比）
+    { const p=regScoreCalc(aReg,gReg);
+      if(p!==0){ add(p>0?"REG":"REG減点",p);
+        reasons.push("REG 1/"+(aReg!=null?aReg.toFixed(0):"-")+"(店平均1/"+(gReg!=null?gReg.toFixed(0):"-")+")→"+(p>0?"+":"")+p.toFixed(1)); } }
+    // 合算（段階式・店平均比）
+    { const p=combScoreCalc(aComb,gComb);
+      if(p!==0){ add(p>0?"合算":"合算減点",p);
+        reasons.push("合算 1/"+(aComb!=null?aComb.toFixed(0):"-")+"(店平均1/"+(gComb!=null?gComb.toFixed(0):"-")+")→"+(p>0?"+":"")+p.toFixed(1)); } }
+    // BIG（補助評価・5000G以上のデータのみ・最大+8。REGが悪い台は減衰/無効＝引き強台を高評価しない）
+    { const big5=g.filter(r=>r.total>=5000&&r.big>0);
+      const sumT=big5.reduce((a,r)=>a+r.total,0), sumB=big5.reduce((a,r)=>a+r.big,0);
+      const bigProb=(big5.length&&sumB>0)?sumT/sumB:null;
+      let p=bigScoreCalc(bigProb);
+      if(p>0){ let note="";
+        if(aReg!=null&&gReg!=null){
+          if(aReg>gReg*1.10){ p=0; note="（REGが店平均比10%以上悪く無効）"; }
+          else if(aReg>gReg){ p*=0.5; note="（REGが店平均より悪く50%減衰）"; } }
+        if(p>0){ add("BIG補助",p); reasons.push("BIG 1/"+Math.round(bigProb)+"(5000G以上)→+"+p.toFixed(1)+note); }
+        else if(note) reasons.push("BIG良好だが"+note+"加点せず"); }
+      else if(bigProb==null && aTot!=null && aTot<5000) { /* 5000G未満はBIG評価なし */ } }
     if(aTot!=null){ if(aTot>=6000){ add("回転信頼度",3); reasons.push("平均"+Math.round(aTot)+"Gで信頼度高(+3)"); }
       else if(aTot<3000){ add("回転信頼度",-6); reasons.push("平均"+Math.round(aTot)+"Gと少なく信頼度低(-6)"); } }
     const a7=gM7[mno]?avg(gM7[mno].map(r=>r.combined)):null;
@@ -1300,28 +1319,24 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     }
     if(storeAdj){ add("店全体補正",storeAdj); reasons.push(storeAdjR); }
     const days=arr.length;
-    const dataCap = days>=30?100: days>=14?90: days>=7?80:75;
-    const regCap = (aReg!=null&&aReg>=450)?60:(aReg!=null&&aReg>=430)?70:100;   // REGが悪い台は上限を下げる
-    const eventCap = eventTomorrow?100:90;                                       // イベントなしの日は最大90点
-    const cap = Math.min(dataCap,regCap,eventCap);
+    // 信頼度（データ量から算出・表示専用。スコアは補正しない）：30日以上＆平均6000Gで100%
+    const conf = Math.round(Math.min(100, (Math.min(days,30)/30)*60 + (aTot!=null?Math.min(aTot,6000)/6000*40:0)));
     // 減点理由（なぜ低いか・低スコア台にも必ず理由）
     const cons=[];
     if(pHigh!=null&&pHigh<0.2) cons.push("設定推定の高設定率が低い("+Math.round(pHigh*100)+"%)");
     if(aReg!=null&&gReg!=null&&aReg>gReg+5) cons.push("過去30日REGが店平均(1/"+gReg.toFixed(0)+")より悪い(1/"+aReg.toFixed(0)+")");
-    if(aReg!=null&&aReg>=430) cons.push("REG1/"+Math.round(aReg)+"と低くスコア上限"+(aReg>=450?60:70)+"点");
     if(aComb!=null&&gComb!=null&&aComb>gComb+5) cons.push("過去30日合算が店平均より悪い(1/"+aComb.toFixed(0)+")");
     if(a7!=null&&aComb!=null&&a7>=aComb) cons.push("直近7日も改善なし");
     if(!(tailAvg[t]!=null&&gComb!=null&&tailAvg[t]<gComb-1)) cons.push("末尾"+t+"に好調傾向なし");
     if(!(wAvg[nextWd]!=null&&gComb!=null&&wAvg[nextWd]<gComb-1)) cons.push("予想日("+nextWd+"曜)の傾向と合わない");
-    if(!eventTomorrow) cons.push("イベントなし(上限90点)");
-    else if(autoEv.some(e=>e.targetTail!=null)&&!autoEv.some(e=>String(e.targetTail)===String(t))) cons.push("イベントの末尾示唆と不一致");
-    if(aTot!=null&&aTot<3000) cons.push("平均回転が少なくデータ不安定");
+    if(autoEv.some(e=>e.targetTail!=null)&&!autoEv.some(e=>String(e.targetTail)===String(t))) cons.push("イベントの末尾示唆と不一致");
+    if(conf<50) cons.push("データ量が少なく信頼度"+conf+"%");
     if(!reasons.length) reasons.push("特筆すべき加点材料なし");
-    s=Math.max(0,Math.min(cap,s));   // 小数のまま保持
+    s=+s.toFixed(1);   // 補正/上限なし・純粋な加点減点合計（小数1桁）
     let evMatch="";
     if(eventTomorrow){ const hits=[]; for(const e of autoEv){ if(e.targetMachine&&mname.includes(e.targetMachine))hits.push(e.targetMachine); if(e.targetTail!=null&&String(e.targetTail)===String(t))hits.push("末尾"+e.targetTail); }
       evMatch = hits.length?("✓ "+[...new Set(hits)].join("・")):"イベント日"; }
-    out.push({mno:+mno,mname,tail:t,score:s,contrib:C,evMatch,kuse:kuse.slice(),
+    out.push({mno:+mno,mname,tail:t,score:s,contrib:C,evMatch,kuse:kuse.slice(),conf,
       aComb:aComb?+aComb.toFixed(1):null,aReg:aReg?+aReg.toFixed(1):null,
       gReg:gReg?Math.round(gReg):null,gComb:gComb?Math.round(gComb):null,
       pros:reasons.slice(),cons:cons.slice(),reasons:reasons.join(" / ")});
@@ -1333,17 +1348,14 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     o.score=+o.score.toFixed(1);
     o.percTop = n>1? i/n : 0;                   // 順位パーセンタイル（表示用・判定には使わない）
     const s=o.score;
-    // 絶対点で判定（順位で本命数を制限しない）
-    let mark = s>=85?"◎ 本命": s>=70?"○ 対抗": s>=55?"△ 注意": s>=40?"低期待":"見送り";
-    // イベントなしの日は、85点でも根拠(設定推定+過去REG)が弱ければ○へ降格
-    const core=(o.contrib["設定推定"]||0)+(o.contrib["過去REG"]||0);
-    if(!eventTomorrow && mark.indexOf("本命")>=0 && core<20){ mark="○ 対抗"; o.cons.unshift("イベントなしで根拠が弱く本命→対抗に降格"); }
+    // 純粋な点数のみで判定（スコア補正・本命数制限なし）
+    let mark = s>=95?"SS 本命": s>=90?"S 本命": s>=85?"A 対抗": s>=75?"B 狙い目": s>=65?"C 注意": s>=50?"D 低期待":"見送り";
     o.mark=mark;
     const ents=Object.entries(o.contrib||{});
     o.plusTop=ents.filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]+" +"+e[1].toFixed(1));
     o.minusTop=ents.filter(e=>e[1]<0).sort((a,b)=>a[1]-b[1]).slice(0,3).map(e=>e[0]+" "+e[1].toFixed(1));
     o.comment = mark.indexOf("本命")>=0?("本命級。"+(o.pros[0]||"")):
-      mark.indexOf("対抗")>=0?"対抗。狙う価値あり":mark.indexOf("注意")>=0?"注意。様子見つつ":
+      mark.indexOf("対抗")>=0?"対抗。狙う価値あり":mark.indexOf("狙い目")>=0?"狙い目。積極的に":mark.indexOf("注意")>=0?"注意。様子見つつ":
       mark.indexOf("低期待")>=0?("低期待。"+(o.cons[0]||"")):("見送り。"+(o.cons.slice(0,2).join("、")||""));
   });
   return {md,ndStr,nextWd,autoEv,evLabelNext,keepRate,eventDay:autoEv.length>0,out,tailAvg,wAvg,gReg,gComb};
@@ -1372,7 +1384,7 @@ function renderRank(rows){
     btBanner="<div class='note' style='background:#eef7ff;border-color:#9cc8ff'>🧪 <b>バックテスト要約</b>（過去"+bt.days.length+"日検証・高設定あり"+n+"日）<br>"+
       "的中率 1位"+pc(D.hit.top1)+" / 3位内"+pc(D.hit.top3)+" / 5位内"+pc(D.hit.top5)+" / 10位内"+pc(D.hit.top10)+"<br>"+
       "見送り判定の妥当性: 見送り台の高設定率 "+(D.miss.highRate!=null?Math.round(D.miss.highRate*100)+"%":"-")+"（低いほど妥当）<br>"+
-      "<b>このロジックの信頼度: "+D.reliability+"%</b>　<span class='muted'>※有効だった項目の加点を自動で強調済み</span></div>";
+      "<b>このロジックの信頼度: "+D.reliability+"%</b>　<span class='muted'>※スコアは純粋な加点減点合計（補正なし）。バックテストは精度検証の参考値です</span></div>";
   } else btBanner="<div class='note'>🧪 バックテスト要約: 検証データ不足（3日以上で表示・予想は基本ロジック）</div>";
   let nextEvBanner="";
   { let found=null; for(let i=0;i<=45;i++){ const dd=new Date(md+"T00:00:00"); dd.setDate(dd.getDate()+i);
@@ -1397,18 +1409,21 @@ function renderRank(rows){
      "<option value='score'"+(sortMode==='score'?' selected':'')+">点数順</option>"+
      "<option value='mno'"+(sortMode==='mno'?' selected':'')+">台番号順</option></select></div>"+
      "<div style='display:flex;align-items:flex-end'><button class='ghost' style='width:100%' onclick='copyAllAiPrompt()'>📋 全台AI分析用プロンプトをコピー</button></div></div>";
-  h+="<div class='scroll'><table><tr><th>順位</th><th>台</th><th>機種</th><th>末尾</th><th>スコア</th><th>上位%</th><th>判定</th>"+
-    "<th>加点TOP3</th><th>減点TOP3</th><th>店のクセ一致</th><th>REG傾向</th><th>合算傾向</th><th>イベント</th><th>BT根拠</th></tr>";
+  h+="<div class='note' style='background:#f6f8fa'>判定: <b>SS</b>本命(95+) / <b>S</b>本命(90+) / <b>A</b>対抗(85+) / <b>B</b>狙い目(75+) / <b>C</b>注意(65+) / <b>D</b>低期待(50+) / 見送り(49.9-)　※スコアは純粋な加点減点合計（上限・補正なし）</div>";
+  h+="<div class='scroll'><table><tr><th>順位</th><th>台</th><th>機種</th><th>末尾</th><th>スコア</th><th>判定</th><th>信頼度</th>"+
+    "<th>加点内訳TOP3</th><th>減点内訳TOP3</th><th>店のクセ一致</th><th>REG傾向</th><th>合算傾向</th><th>イベント</th><th>BT根拠</th></tr>";
   disp.forEach(r=>{ const ci=combinedInfo(r.aComb);
     const regTr = r.aReg!=null ? "1/"+r.aReg+(r.gReg!=null?(r.aReg<r.gReg?" <span style='color:#1a7f37'>↑良</span>":" <span style='color:#c00'>↓悪</span>"):"") : "-";
-    const scStyle = r.score>=85?"#7CFC00":r.score>=70?"#b6f5a0":r.score>=55?"#ffe066":r.score>=40?"#ffd0d0":"#eee";
+    const scStyle = r.score>=95?"#7CFC00":r.score>=90?"#9af07a":r.score>=85?"#b6f5a0":r.score>=75?"#d8f5c0":r.score>=65?"#ffe066":r.score>=50?"#ffd0d0":"#eee";
+    const cf=r.conf!=null?r.conf:0; const cfStyle=cf>=70?"#1a7f37":cf>=50?"#b35900":"#c00";
     const btP=[]; const bm=D&&D.byM[r.mno]; const bTl=D&&D.byT[r.tail];
     if(bm&&bm.n>=2) btP.push("過去予想"+bm.n+"回中"+bm.hi+"回高設定");
     if(bTl&&bTl.n>=3) btP.push("末尾"+r.tail+"の高設定率"+Math.round(bTl.hi/bTl.n*100)+"%");
     if(autoEv.length&&byTE[r.tail]&&byTE[r.tail].length>=2) btP.push("イベント時末尾"+r.tail+"の平均REG"+btDen(btMean(byTE[r.tail])));
     h+="<tr><td>"+r.rank+"</td><td>"+r.mno+"</td><td>"+r.mname+"</td><td>"+r.tail+
       "</td><td class='score' style='background:"+scStyle+"'>"+r.score.toFixed(1)+"</td>"+
-      "<td>"+Math.round(r.percTop*100)+"%</td><td>"+r.mark+"</td>"+
+      "<td>"+r.mark+"</td>"+
+      "<td style='color:"+cfStyle+";font-weight:bold'>"+cf+"%</td>"+
       "<td class='reason' style='text-align:left;color:#1a7f37'>"+(r.plusTop.length?r.plusTop.join("<br>"):"—")+"</td>"+
       "<td class='reason' style='text-align:left;color:#b35900'>"+(r.minusTop.length?r.minusTop.join("<br>"):"—")+"</td>"+
       "<td class='reason' style='text-align:left;color:#7a4ab5'>"+(r.kuse&&r.kuse.length?r.kuse.join("<br>"):"—")+"</td>"+
