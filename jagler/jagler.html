@@ -71,6 +71,7 @@
     <button data-t="hint">🔮 示唆分析</button>
     <button data-t="list">📋 データ一覧</button>
     <button data-t="store">🏆 店舗比較</button>
+    <button data-t="report">🏬 店舗総括</button>
     <button data-t="tail">🔢 末尾分析</button>
     <button data-t="week">📅 曜日分析</button>
     <button data-t="rank">🎯 狙い台予想</button>
@@ -270,6 +271,19 @@
     <h2>店舗比較ランキング（過去30日）</h2>
     <p class="muted">平均合算が良い（分母が小さい）店ほど上位＝設定を入れている傾向。</p>
     <div id="t-store"></div>
+  </div>
+
+  <!-- 店舗総括 -->
+  <div class="panel" id="p-report">
+    <h2>🏬 店舗総括（今日の設定状況・店長の思惑）</h2>
+    <p class="muted">選んだ店舗の指定日について、推定設定・高設定台・店長の思惑・総括を表示します。</p>
+    <div class="row">
+      <div><label>店舗</label><select id="s-store" onchange="render()"></select></div>
+      <div><label>日付</label><select id="s-date" onchange="render()"></select></div>
+    </div>
+    <button class="primary" onclick="aiReport()">🤖 AIに総括させる（要APIキー）</button>
+    <div id="t-report-ai"></div>
+    <div id="t-report"></div>
   </div>
 
   <!-- 末尾分析 -->
@@ -764,9 +778,12 @@ function refreshAll(){
   fillSelect("r-store",stores.length?stores:["（データなし）"]);
   fillSelect("f-date",["（全期間）",...[...new Set(rows.map(r=>r.date))].sort().reverse()]);
   fillSelect("f-machine",["（全機種）",...[...new Set(rows.map(r=>r.machine_name))].filter(x=>x).sort()]);
+  const dates=[...new Set(rows.map(r=>r.date))].sort().reverse();
+  fillSelect("s-store",stores.length?stores:["（データなし）"]);
+  fillSelect("s-date",dates.length?dates:["（データなし）"]);
   renderEvents(); render();
 }
-function fillSelect(id,opts){ const el=document.getElementById(id); const cur=el.value;
+function fillSelect(id,opts){ const el=document.getElementById(id); if(!el)return; const cur=el.value;
   el.innerHTML=opts.map(o=>'<option>'+o+'</option>').join(""); if(opts.includes(cur))el.value=cur; }
 function render(){
   const rows=load();
@@ -779,7 +796,7 @@ function render(){
     "<span style='background:#ffae42'>1/129-120 設定5示唆</span>"+
     "<span style='background:#ff5b5b'>1/119-100 設定6示唆</span>"+
     "<span class='rainbow'>1/99-70 設定6確定級</span>";
-  renderList(rows); renderStore(rows); renderTail(rows); renderWeek(rows); renderRank(rows);
+  renderList(rows); renderStore(rows); renderTail(rows); renderWeek(rows); renderRank(rows); renderStoreReport(rows);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -1081,6 +1098,114 @@ async function aiPredict(){
       "</td><td class='score' "+cellStyle(combinedInfo(x.点数>=80?75:x.点数>=65?115:140))+">"+(x.点数||"")+"点</td>"+
       "<td style='text-align:left' class='reason'>"+(x.理由||"")+"</td></tr>"; });
     el.innerHTML=html+"</table></div>";
+  }catch(x){ el.innerHTML='<div class="warn">通信に失敗しました: '+x+'</div>'; }
+}
+
+// ---------- 店舗総括（今日の設定状況・店長の思惑）----------
+function analyzeStoreDay(store,date){
+  const all=load().filter(r=>r.store===store);
+  const day=all.filter(r=>r.date===date);
+  if(!day.length) return null;
+  // 推定設定を各台に付与
+  const est=day.map(r=>{ const e=estimateSetting(r); return {r, set:e?e.setting:null, high:e?e.high:null}; });
+  const setCount=[0,0,0,0,0,0]; est.forEach(x=>{ if(x.set) setCount[x.set-1]++; });
+  const highs=est.filter(x=>x.set&&x.set>=4).sort((a,b)=>b.set-a.set||(b.high-a.high));
+  const sabes=day.map(r=>r.sabe).filter(x=>x!=null);
+  const wins=sabes.filter(x=>x>0).length;
+  // 店全体の甘辛（当日平均合算 vs 過去30日平均）
+  const dayComb=avg(day.map(r=>r.combined));
+  const recAll=recent(all,30); const gComb=avg(recAll.map(r=>r.combined));
+  // 末尾傾向（高設定台の末尾分布）
+  const tailH={}; highs.forEach(x=>{ const t=x.r.machine_no%10; tailH[t]=(tailH[t]||0)+1; });
+  const topTail=Object.entries(tailH).sort((a,b)=>b[1]-a[1])[0];
+  // 機種傾向（高設定台の機種分布）
+  const macH={}; highs.forEach(x=>{ const m=x.r.machine_name||""; macH[m]=(macH[m]||0)+1; });
+  const topMac=Object.entries(macH).sort((a,b)=>b[1]-a[1])[0];
+  // 角台
+  const nos=day.map(r=>r.machine_no); const minNo=Math.min(...nos),maxNo=Math.max(...nos);
+  const cornerHigh=highs.filter(x=>x.r.machine_no===minNo||x.r.machine_no===maxNo).length;
+  // 前日との比較（据え置き）：今日の高設定台が前日も高設定推定だったか
+  const prevDate=[...new Set(all.map(r=>r.date))].filter(d=>d<date).sort().pop();
+  let keep=0; if(prevDate){
+    highs.forEach(x=>{ const pr=all.find(r=>r.date===prevDate&&r.machine_no===x.r.machine_no);
+      if(pr){ const pe=estimateSetting(pr); if(pe&&pe.setting>=4) keep++; } }); }
+  return {store,date,total:day.length,setCount,highs,sabeAvg:avg(sabes),winRate:sabes.length?Math.round(wins/sabes.length*100):null,
+    dayComb,gComb,topTail,topMac,cornerHigh,minNo,maxNo,keep,prevDate,event:eventsOn(date,store)};
+}
+function buildMotives(a){
+  const m=[];
+  const h=a.highs.length;
+  if(a.event.length) m.push("📅 この日はイベント（"+a.event.map(e=>e.name||eventDesc(e)).join("・")+"）。投入の動機あり");
+  if(h===0) m.push("高設定（推定4以上）は見当たらず、回収（渋い）日の可能性");
+  if(a.topTail&&a.topTail[1]>=2&&a.topTail[1]>=h*0.4) m.push("末尾"+a.topTail[0]+"に高設定が集中（"+a.topTail[1]+"台）→ 末尾"+a.topTail[0]+"狙いの癖");
+  if(a.topMac&&a.topMac[1]>=2) m.push("「"+a.topMac[0]+"」に高設定が多い（"+a.topMac[1]+"台）→ この機種を強く使う");
+  if(a.cornerHigh>=1) m.push("角台に高設定（"+a.cornerHigh+"台）→ 角アピールの傾向");
+  if(a.keep>=2) m.push("前日高設定の据え置きが"+a.keep+"台 → 据え置き型の店の可能性");
+  if(a.dayComb!=null&&a.gComb!=null){ if(a.dayComb<=a.gComb-4) m.push("店全体が普段より甘い（平均1/"+Math.round(a.dayComb)+" vs 30日1/"+Math.round(a.gComb)+"）→ 全体的に投入した日");
+    else if(a.dayComb>=a.gComb+4) m.push("店全体が普段より渋い → 絞った/回収日の可能性"); }
+  if(!m.length) m.push("特筆すべき偏りは少なく、平常運転の範囲");
+  return m;
+}
+function renderStoreReport(){
+  const el=document.getElementById("t-report"); if(!el) return;
+  const store=val("s-store"), date=val("s-date");
+  if(!store||store==="（データなし）"||!date||date==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const a=analyzeStoreDay(store,date);
+  if(!a){ el.innerHTML="<p class='muted'>この日のデータがありません。</p>"; return; }
+  const labels=["設定1","設定2","設定3","設定4","設定5","設定6"];
+  let h="<div class='metrics'>"+metric(a.total,"設置台数")+metric(a.highs.length,"高設定推定(4+)")+
+    metric(a.sabeAvg!=null?(a.sabeAvg>0?"+":"")+Math.round(a.sabeAvg):"-","平均差枚")+
+    metric(a.winRate!=null?a.winRate+"%":"-","勝率")+
+    metric(a.dayComb?"1/"+Math.round(a.dayComb):"-","当日平均合算")+"</div>";
+  // 設定状況（分布）
+  h+="<h3 style='font-size:14px'>今日の推定設定 分布</h3><div class='scroll'><table><tr>";
+  labels.forEach((l,i)=>h+="<th "+cellStyle(combinedInfo(i>=3?(i>=5?75:i>=4?115:140):160))+">"+l+"</th>");
+  h+="</tr><tr>"; a.setCount.forEach((c,i)=>h+="<td style='"+settingStyle(i+1)+"'>"+c+"台</td>"); h+="</tr></table></div>";
+  // 高設定台リスト
+  h+="<h3 style='font-size:14px'>高設定っぽい台（推定設定4以上）</h3>";
+  if(!a.highs.length) h+="<p class='muted'>なし</p>";
+  else { h+="<div class='scroll'><table><tr><th>台</th><th>機種</th><th>推定設定</th><th>高設定率</th><th>合算</th><th>差枚</th></tr>";
+    a.highs.forEach(x=>{ const r=x.r; h+="<tr><td>"+r.machine_no+"</td><td>"+(r.machine_name||"")+"</td>"+
+      "<td style='"+settingStyle(x.set)+"'>設定"+x.set+"</td><td>"+(x.high!=null?Math.round(x.high*100)+"%":"-")+"</td>"+
+      "<td "+cellStyle(combinedInfo(r.combined))+">1/"+r.combined+"</td>"+
+      "<td style='color:"+(r.sabe>0?'#1a7f37':r.sabe<0?'#c00':'#555')+"'>"+(r.sabe!=null?(r.sabe>0?"+":"")+r.sabe:"-")+"</td></tr>"; });
+    h+="</table></div>"; }
+  // 店長の思惑
+  h+="<h3 style='font-size:14px'>🧠 店長の思惑（データからの推測）</h3>";
+  h+="<ul style='font-size:13px;line-height:1.7;padding-left:20px;'>"+buildMotives(a).map(x=>"<li>"+x+"</li>").join("")+"</ul>";
+  // 総括
+  const hi=a.highs.length;
+  const tone = hi>=4?"高設定が多めの“出す日”":hi>=1?"部分的に高設定を置いた日":"高設定が乏しい“回収寄り”の日";
+  let sum=date.slice(5)+"の"+store+"は、設置"+a.total+"台中 推定高設定(4以上)が"+hi+"台で、"+tone+"。";
+  if(a.topTail&&a.topTail[1]>=2) sum+="高設定は末尾"+a.topTail[0]+"に偏り、";
+  if(a.topMac&&a.topMac[1]>=2) sum+="機種は「"+a.topMac[0]+"」中心。";
+  sum+="平均差枚"+(a.sabeAvg!=null?(a.sabeAvg>0?"+":"")+Math.round(a.sabeAvg):"-")+"・勝率"+(a.winRate!=null?a.winRate+"%":"-")+"。";
+  if(a.event.length) sum+="イベント該当日のため、翌日も連動した投入に注意。";
+  h+="<h3 style='font-size:14px'>📝 総括</h3><div class='note'>"+sum+"</div>";
+  el.innerHTML=h;
+}
+async function aiReport(){
+  const store=val("s-store"), date=val("s-date"); const el=document.getElementById("t-report-ai");
+  let cfg={}; try{cfg=JSON.parse(localStorage.getItem("jagler_ai")||"{}");}catch(e){}
+  if(!cfg.key||!cfg.model){ el.innerHTML='<div class="warn">「🔮 示唆分析」タブのAI設定でAPIキーとモデルIDを保存してください。</div>'; return; }
+  const a=analyzeStoreDay(store,date); if(!a){ el.innerHTML='<div class="warn">この日のデータがありません。</div>'; return; }
+  const day=load().filter(r=>r.store===store&&r.date===date).map(r=>{const e=estimateSetting(r);
+    return {台:r.machine_no,機種:r.machine_name,合算:r.combined,REG:r.reg_prob,差枚:r.sabe,推定設定:e?e.setting:null,高設定率:e?Math.round(e.high*100):null};});
+  const payload={店:store,日付:date,イベント:a.event.map(e=>e.name||eventDesc(e)),台データ:day};
+  const prompt="あなたはパチスロ店の設定配分を読むプロです。次はある店の指定日のジャグラー全台データ（合算/REGは1/N、推定設定は公式スペック推定）。"+
+    "(1)今日の設定状況の要約 (2)店長の思惑(どんな狙いで配分したか) (3)翌日への総括 を日本語で。"+
+    "必ずJSONのみ: {\"設定状況\":\"...\",\"店長の思惑\":\"...\",\"総括\":\"...\"}\n\nデータ:\n"+JSON.stringify(payload);
+  el.innerHTML='<div class="muted">🤖 AIが分析中…</div>';
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+      headers:{"content-type":"application/json","x-api-key":cfg.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:cfg.model,max_tokens:2000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})});
+    if(!r.ok){ el.innerHTML='<div class="warn">AIエラー('+r.status+'): '+(await r.text()).slice(0,200)+'</div>'; return; }
+    const data=await r.json(); const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+    let j; try{ j=JSON.parse(txt.match(/\{[\s\S]*\}/)[0]); }catch(e){ el.innerHTML='<div class="note">AI回答:<br>'+txt.replace(/</g,"&lt;")+'</div>'; return; }
+    el.innerHTML='<div class="note">🤖 <b>AI設定状況</b><br>'+(j.設定状況||"")+'</div>'+
+      '<div class="note">🧠 <b>AI店長の思惑</b><br>'+(j.店長の思惑||"")+'</div>'+
+      '<div class="note">📝 <b>AI総括</b><br>'+(j.総括||"")+'</div>';
   }catch(x){ el.innerHTML='<div class="warn">通信に失敗しました: '+x+'</div>'; }
 }
 
