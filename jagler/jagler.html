@@ -149,71 +149,7 @@
       <div id="feat-msg"></div>
     </div>
 
-    <details style="margin-top:10px;"><summary class="muted">手動で1件ずつ登録する</summary>
-    <p class="muted">「7のつく日」などを個別に。毎週・毎月・単発を選べます。</p>
-    <div class="row">
-      <div><label>種別</label>
-        <select id="ev-type" onchange="evTypeChange()">
-          <option value="digit">○のつく日（毎月／例 7→7・17・27日）</option>
-          <option value="weekly">毎週（曜日）</option>
-          <option value="monthly">毎月（日にち）</option>
-          <option value="single">単発（特定の日）</option>
-        </select>
-      </div>
-      <div id="ev-f-digit">
-        <label>数字</label>
-        <select id="ev-digit">
-          <option>0</option><option>1</option><option>2</option><option>3</option><option>4</option>
-          <option selected>7</option><option>5</option><option>6</option><option>8</option><option>9</option>
-        </select>
-      </div>
-      <div id="ev-f-weekly" style="display:none">
-        <label>曜日</label>
-        <select id="ev-weekday">
-          <option value="0">日</option><option value="1">月</option><option value="2">火</option>
-          <option value="3">水</option><option value="4">木</option><option value="5">金</option><option value="6">土</option>
-        </select>
-      </div>
-      <div id="ev-f-monthly" style="display:none">
-        <label>日にち</label><input id="ev-day" type="number" min="1" max="31" value="1">
-      </div>
-      <div id="ev-f-single" style="display:none">
-        <label>日付</label><input id="ev-date" type="date">
-      </div>
-    </div>
-    <div class="row">
-      <div><label>店舗</label><input id="ev-store" placeholder="全店 でもOK" value="全店"></div>
-      <div><label>内容（任意）</label><input id="ev-name" placeholder="取材/旧イベント など"></div>
-    </div>
-    <label>詳細（店長ツイート・告知文など。示唆のメモにも）</label>
-    <textarea id="ev-detail" style="min-height:70px;white-space:pre-wrap;"
-      placeholder="例: 明日は全力!! 末尾7に注目..."></textarea>
-    <details>
-      <summary class="muted">示唆（任意・予想に加点されます／「🔮 示唆分析」から自動入力も可）</summary>
-      <div class="row">
-        <div><label>示唆 末尾</label><input id="ev-h-tail" placeholder="例 7"></div>
-        <div><label>示唆 機種</label><input id="ev-h-machine" placeholder="例 マイジャグラー"></div>
-        <div><label>示唆 台番号(カンマ区切り)</label><input id="ev-h-nums" placeholder="例 2007,2107"></div>
-      </div>
-    </details>
-    <button class="primary" onclick="addEvent()">➕ イベントを追加</button>
-
-    <details style="margin-top:12px;" open>
-      <summary class="muted">📋 ネットの予定表からまとめて登録（何日分でもOK・日付は全自動判定）</summary>
-      <p class="muted">「6/7 取材」「6/11 ゾロ目」「6/17 マイジャグラー全力」のように日付が入った行を貼り付け。
-        日付を自動で読み取って登録します（末尾・機種の示唆も自動で拾います）。</p>
-      <div class="row">
-        <div><label>年</label><input id="bulk-year" type="number" style="width:100px"></div>
-        <div><label>店舗</label><input id="bulk-store" value="全店"></div>
-      </div>
-      <textarea id="bulk-text" style="min-height:120px;white-space:pre-wrap;"
-        placeholder="6/7(土) 取材 末尾7&#10;6/11 ゾロ目の日&#10;6/17 マイジャグラー全力"></textarea>
-      <button class="primary" onclick="bulkAddEvents()">📥 まとめて登録</button>
-      <div id="bulk-msg"></div>
-    </details>
-    </details>
-
-    <h3 style="font-size:14px;margin:8px 0 0;">登録済みイベントルール（編集・削除可）</h3>
+    <h3 style="font-size:14px;margin:14px 0 0;">登録済みイベントルール（編集・削除可）</h3>
     <div id="ev-list" style="margin-top:8px;"></div>
   </div>
 
