@@ -76,7 +76,6 @@
     <button data-t="tail">🔢 末尾分析</button>
     <button data-t="week">📅 曜日分析</button>
     <button data-t="rank">🎯 狙い台予想</button>
-    <button data-t="bt">🧪 バックテスト</button>
     <button data-t="csv">💾 CSV/管理</button>
   </div>
 
@@ -323,23 +322,10 @@
     <div id="t-week"></div>
   </div>
 
-  <!-- バックテスト -->
-  <div class="panel" id="p-bt">
-    <h2>🧪 バックテスト（予想精度の検証）</h2>
-    <p class="muted">過去の各日について「その日より前のデータだけ」で狙い台ランキングを作り、実際の翌日結果と照合します。
-      未来データは一切使いません。データが多いほど信頼できます。</p>
-    <div class="row">
-      <div><label>店舗</label><select id="bt-store"></select></div>
-      <div style="display:flex;align-items:flex-end;"><button class="primary" style="margin-top:0" onclick="runBacktest()">▶ 検証する</button></div>
-    </div>
-    <div id="t-bt"><p class="muted">「検証する」を押してください。</p></div>
-  </div>
-
   <!-- 狙い台予想 -->
   <div class="panel" id="p-rank">
-    <h2>翌日の狙い台予想（100点満点）</h2>
-    <p class="muted">蓄積データ＋イベントから、各台の「高設定が入る期待度」を100点満点で採点。
-      機種名・台番号・根拠つき。完璧な予想ではなく傾向の見える化です。</p>
+    <h2>翌日の狙い台予想（100点満点・全台評価）</h2>
+    <p class="muted">蓄積データ＋イベント＋実績学習から、対象機種の全台を100点満点で採点。機種・台番号・加点/減点理由つき。</p>
     <div class="row">
       <div><label>店舗</label><select id="r-store" onchange="render()"></select></div>
       <div><label>予想する日（空欄＝最新データの翌日）</label><input id="r-date" type="date" onchange="render()"></div>
@@ -350,12 +336,15 @@
         </label>
       </div>
     </div>
-    <button class="primary" onclick="aiPredict()">🤖 AIに予想させる（要APIキー・Claude）</button>
-    <p class="muted">蓄積データ・推定設定・イベント・示唆をまとめてClaudeに渡し、AIが狙い台を選びます。
-      APIキーは「🔮 示唆分析」タブのAI設定で保存してください。</p>
-    <div id="t-rank-ai"></div>
-    <h3 style="font-size:14px;margin:14px 0 4px;">計算式の予想（キー不要）</h3>
+    <button class="primary" onclick="render()">🎯 予想する</button>
     <div id="t-rank"></div>
+
+    <details style="margin-top:16px;">
+      <summary class="muted"><b>🧪 バックテスト（この予想の精度を検証）</b></summary>
+      <p class="muted">過去の各日を「その日より前のデータだけ」で予想し、実際の結果と照合します（未来データ不使用）。</p>
+      <button class="primary" onclick="runBacktest()">▶ この店舗で検証する</button>
+      <div id="t-bt"><p class="muted">「検証する」を押してください。</p></div>
+    </details>
   </div>
 
   <!-- CSV / 管理 -->
@@ -931,7 +920,6 @@ function refreshAll(){
   const dates=[...new Set(rows.map(r=>r.date))].sort().reverse();
   fillSelect("s-store",stores.length?stores:["（データなし）"]);
   fillSelect("s-date",dates.length?dates:["（データなし）"]);
-  fillSelect("bt-store",stores.length?stores:["（データなし）"]);
   fillSelect("ea-store",stores.length?stores:["（データなし）"]);
   renderEvents(); render();
 }
@@ -1275,54 +1263,10 @@ function copyAllAiPrompt(){
 function fallbackCopy(t){ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0";
   document.body.appendChild(ta); ta.focus(); ta.select(); try{document.execCommand("copy");alert("コピーしました");}catch(e){alert("コピーできませんでした。手動で選択してください");} document.body.removeChild(ta); }
 
-// ---------- AI予想（Claudeに丸ごと渡す）----------
-function buildAiPayload(store){
-  const rows=load().filter(r=>r.store===store); if(rows.length<2) return null;
-  const md=maxDate(rows); const ndDef=new Date(md+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
-  const ndStr=val("r-date")||fmtDate(ndDef); const nd=new Date(ndStr+"T00:00:00");
-  const ev=eventsOn(ndStr,store);
-  const rec=recent(rows,30); const gM=groupBy(rec,"machine_no");
-  const byM={}; rows.forEach(r=>{(byM[r.machine_no]=byM[r.machine_no]||[]).push(r);});
-  for(const k in byM) byM[k].sort((a,b)=>a.date<b.date?-1:1);
-  const machines=[];
-  for(const mno in gM){ const g=gM[mno]; const ests=g.map(r=>estimateSetting(r)).filter(Boolean);
-    machines.push({台:+mno,機種:g[g.length-1].machine_name,日数:g.length,
-      平均合算:Math.round(avg(g.map(r=>r.combined))||0),平均REG:Math.round(avg(g.map(r=>r.reg_prob))||0),
-      推定高設定率:ests.length?Math.round(avg(ests.map(e=>e.high))*100):null,
-      直近:byM[mno].slice(-5).map(r=>{const e=estimateSetting(r);return {日:r.date.slice(5),合算:r.combined,推定設定:e?e.setting:null,差枚:r.sabe};})});
-  }
-  return {店:store,予想日:ndStr,曜日:WD[nd.getDay()],
-    イベント:ev.map(e=>({種別:eventDesc(e),内容:e.name,示唆:e.hints})),機種データ:machines};
-}
-async function aiPredict(){
-  const store=val("r-store"); const el=document.getElementById("t-rank-ai");
-  let cfg={}; try{cfg=JSON.parse(localStorage.getItem("jagler_ai")||"{}");}catch(e){}
-  if(!cfg.key||!cfg.model){ el.innerHTML='<div class="warn">先に「🔮 示唆分析」タブのAI設定でAPIキーとモデルIDを保存してください。</div>'; return; }
-  const payload=buildAiPayload(store);
-  if(!payload){ el.innerHTML='<div class="warn">データが足りません。</div>'; return; }
-  const prompt="あなたはジャグラーの設定推測のプロです。以下はある店舗の台データです（合算/REGは1/Nの分母で小さいほど高設定。推定設定は公式スペックからの統計推定、推定高設定率は設定4以上の確率%）。"+
-    "予想日に高設定が入りそうな狙い台を根拠つきで選んでください。イベント・前日の凹み(翌日上げ狙い)・据え置き・末尾/角/並び・曜日傾向・データ量(少ないほど不確実)を総合的に考慮。"+
-    "必ず次のJSONのみで返答: {\"ranking\":[{\"台\":番号,\"機種\":\"名\",\"点数\":0〜100,\"理由\":\"日本語\"}],\"総評\":\"日本語\"}。上位20台。\n\nデータ:\n"+JSON.stringify(payload);
-  el.innerHTML='<div class="muted">🤖 AIが予想中…（数十秒かかります）</div>';
-  try{
-    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
-      headers:{"content-type":"application/json","x-api-key":cfg.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:cfg.model,max_tokens:3000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})});
-    if(!r.ok){ el.innerHTML='<div class="warn">AIエラー('+r.status+'): '+(await r.text()).slice(0,200)+'</div>'; return; }
-    const data=await r.json(); const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
-    let j; try{ j=JSON.parse(txt.match(/\{[\s\S]*\}/)[0]); }catch(e){ el.innerHTML='<div class="note">AI回答:<br>'+txt.replace(/</g,"&lt;")+'</div>'; return; }
-    let html='<div class="note">🤖 <b>AI総評</b>: '+(j.総評||"")+'</div><div class="scroll"><table>'+
-      '<tr><th>順位</th><th>機種</th><th>台</th><th>点数</th><th>理由</th></tr>';
-    (j.ranking||[]).slice(0,20).forEach((x,i)=>{ html+="<tr><td>"+(i+1)+"</td><td>"+(x.機種||"")+"</td><td>"+(x.台||"")+
-      "</td><td class='score' "+cellStyle(combinedInfo(x.点数>=80?75:x.点数>=65?115:140))+">"+(x.点数||"")+"点</td>"+
-      "<td style='text-align:left' class='reason'>"+(x.理由||"")+"</td></tr>"; });
-    el.innerHTML=html+"</table></div>";
-  }catch(x){ el.innerHTML='<div class="warn">通信に失敗しました: '+x+'</div>'; }
-}
 
 // ---------- バックテスト ----------
 function runBacktest(){
-  const store=val("bt-store"); const el=document.getElementById("t-bt");
+  const store=val("r-store"); const el=document.getElementById("t-bt");
   if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データがありません。</p>"; return; }
   const srAll=load().filter(r=>r.store===store);
   const dates=[...new Set(srAll.map(r=>r.date))].sort();
