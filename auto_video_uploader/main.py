@@ -16,7 +16,7 @@ import csv
 import hashlib
 import sys
 import traceback
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -71,6 +71,19 @@ def pending_topics(rows: list) -> list:
 # 予約投稿時刻
 # ---------------------------------------------------------------------------
 
+def _get_timezone():
+    """設定されたタイムゾーンを返す。tzdata 未導入の Windows でも止まらないよう
+    取得に失敗した場合は日本時間 (+09:00) にフォールバックする。"""
+    try:
+        return ZoneInfo(config.TIMEZONE)
+    except Exception:
+        get_logger().warning(
+            "タイムゾーン情報 (%s) を取得できないため日本時間(+09:00)を使用します。"
+            "`pip install tzdata` で解消できます", config.TIMEZONE,
+        )
+        return timezone(timedelta(hours=9), "JST")
+
+
 def compute_publish_at(date_str: str) -> str | None:
     """topics.csv の date が未来日なら RFC3339 の予約投稿時刻を返す。
 
@@ -88,7 +101,7 @@ def compute_publish_at(date_str: str) -> str | None:
         return None
     hour, minute = (int(x) for x in config.PUBLISH_TIME.split(":"))
     dt = datetime(target.year, target.month, target.day, hour, minute,
-                  tzinfo=ZoneInfo(config.TIMEZONE))
+                  tzinfo=_get_timezone())
     return dt.isoformat()
 
 
