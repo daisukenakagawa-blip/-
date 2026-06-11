@@ -35,12 +35,19 @@ TOPIC_FIELDS = ["date", "topic", "platform", "status"]
 def load_topics() -> list:
     if not config.TOPICS_CSV.exists():
         raise FileNotFoundError(f"topics.csv が見つかりません: {config.TOPICS_CSV}")
-    with open(config.TOPICS_CSV, encoding="utf-8") as f:
-        return [row for row in csv.DictReader(f)]
+    # Excel で編集・保存されると Shift-JIS になることがあるため両対応で読む
+    for enc in ("utf-8-sig", "cp932"):
+        try:
+            with open(config.TOPICS_CSV, encoding=enc, newline="") as f:
+                return [row for row in csv.DictReader(f)]
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("topics.csv の文字コードを判別できませんでした")
 
 
 def save_topics(rows: list) -> None:
-    with open(config.TOPICS_CSV, "w", encoding="utf-8", newline="") as f:
+    # BOM 付き UTF-8 で保存すると Excel でも文字化けせずに開ける
+    with open(config.TOPICS_CSV, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=TOPIC_FIELDS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)

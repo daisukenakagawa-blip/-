@@ -66,12 +66,18 @@ def load_uploaded_topics() -> set:
     uploaded = set()
     if not config.UPLOADED_LOG_CSV.exists():
         return uploaded
-    with open(config.UPLOADED_LOG_CSV, encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            topic = _normalize_topic(row.get("topic", ""))
-            platform = (row.get("platform") or "youtube").strip().lower()
-            if topic:
-                uploaded.add((topic, platform))
+    # Excel で開いて保存されても読めるよう両対応
+    for enc in ("utf-8-sig", "cp932"):
+        try:
+            with open(config.UPLOADED_LOG_CSV, encoding=enc, newline="") as f:
+                for row in csv.DictReader(f):
+                    topic = _normalize_topic(row.get("topic", ""))
+                    platform = (row.get("platform") or "youtube").strip().lower()
+                    if topic:
+                        uploaded.add((topic, platform))
+            return uploaded
+        except UnicodeDecodeError:
+            continue
     return uploaded
 
 
