@@ -137,8 +137,20 @@
   <!-- イベント日 -->
   <div class="panel" id="p-event">
     <h2>イベント日の登録</h2>
-    <p class="muted">「7のつく日」などをネットで拾って登録します。毎週・毎月・単発を選べます。
-      繰り返しイベントは該当日すべてが自動でイベント扱いになり、データ一覧・狙い台予想に反映されます。</p>
+
+    <div class="note" style="background:#eef7ff;border-color:#9cc8ff;">
+      <b>⭐ みんパチ等の「特徴」欄をそのまま貼り付け</b>
+      <p class="muted" style="margin:4px 0;">「1の付く日→旧イベ」「毎月第一土曜→店長就任イベ」「毎月11・22、月ゾロ→旧イベ」のような行を
+        まるごと貼るだけで、イベント種類・対象機種・強さ・末尾示唆を自動登録します。</p>
+      <div class="row"><div><label>店舗</label><input id="feat-store" placeholder="全店 でもOK" value="全店"></div></div>
+      <textarea id="feat-text" style="min-height:130px;white-space:pre-wrap;"
+        placeholder="1の付く日→特定強化日&#10;5の付く日→ジャグラー強化日&#10;7の付く日→旧イベ&#10;毎月第一土曜→店長就任イベ&#10;毎月21日→本館周年日&#10;毎月11・22、月ゾロ→旧イベ&#10;25日→強化日"></textarea>
+      <button class="primary" onclick="addFeatureEvents()">📋 特徴欄から自動登録</button>
+      <div id="feat-msg"></div>
+    </div>
+
+    <details style="margin-top:10px;"><summary class="muted">手動で1件ずつ登録する</summary>
+    <p class="muted">「7のつく日」などを個別に。毎週・毎月・単発を選べます。</p>
     <div class="row">
       <div><label>種別</label>
         <select id="ev-type" onchange="evTypeChange()">
@@ -199,8 +211,10 @@
       <button class="primary" onclick="bulkAddEvents()">📥 まとめて登録</button>
       <div id="bulk-msg"></div>
     </details>
+    </details>
 
-    <div id="ev-list" style="margin-top:12px;"></div>
+    <h3 style="font-size:14px;margin:8px 0 0;">登録済みイベントルール（編集・削除可）</h3>
+    <div id="ev-list" style="margin-top:8px;"></div>
   </div>
 
   <!-- 示唆分析 -->
@@ -738,35 +752,137 @@ function bulkAddEvents(){
     (added===0?'<div class="warn">0件でした。貼り付けた文の例を確認してください（日付が画像だと読めません）。</div>':'');
   if(added) document.getElementById("bulk-text").value="";
 }
+const WDLABEL=["日","月","火","水","木","金","土"];
+const WDIDX={"日":0,"月":1,"火":2,"水":3,"木":4,"金":5,"土":6};
 function eventDesc(e){
-  if(e.type==="weekly")  return "毎週 "+WD[e.weekday]+"曜";
-  if(e.type==="monthly") return "毎月 "+e.day+"日";
-  if(e.type==="digit")   return e.digit+"のつく日";
+  if(e.type==="weekly")     return "毎週"+WDLABEL[e.weekday]+"曜";
+  if(e.type==="monthly")    return "毎月"+e.day+"日";
+  if(e.type==="monthlyDays")return "毎月"+(e.days||[]).join("・")+"日";
+  if(e.type==="nthWeekday") return "毎月第"+e.nth+WDLABEL[e.weekday]+"曜";
+  if(e.type==="digit")      return e.digit+"のつく日";
   return "単発 "+(e.date||"");
 }
 function eventMatches(e,dateStr,store){
   if(e.store && e.store!=="全店" && e.store!==store) return false;
   const d=new Date(dateStr+"T00:00:00"), wd=d.getDay(), dom=d.getDate();
-  if(e.type==="weekly")  return Number(e.weekday)===wd;
-  if(e.type==="monthly") return Number(e.day)===dom;
-  if(e.type==="digit")   return String(dom).includes(String(e.digit));
+  if(e.type==="weekly")      return Number(e.weekday)===wd;
+  if(e.type==="monthly")     return Number(e.day)===dom;
+  if(e.type==="monthlyDays") return (e.days||[]).map(Number).includes(dom);
+  if(e.type==="nthWeekday")  return wd===Number(e.weekday) && (Math.floor((dom-1)/7)+1)===Number(e.nth);
+  if(e.type==="digit")       return dom%10===Number(e.digit);   // Xのつく日＝末尾X(1,11,21,31)
   return e.date===dateStr;   // single / 旧形式
 }
 function eventsOn(dateStr,store){ return loadEvents().filter(e=>eventMatches(e,dateStr,store)); }
 function isEventDate(dateStr,store){ return eventsOn(dateStr,store).length>0; }
 function eventLabel(dateStr,store){
-  return eventsOn(dateStr,store).map(e=>e.name||eventDesc(e)).join("・");
+  return eventsOn(dateStr,store).map(e=>e.eventName||e.name||eventDesc(e)).join("・");
+}
+
+// ===== みんパチ等の「特徴」欄を解析してイベントルール化 =====
+function parseConditions(cond){
+  const c=toHalf(cond); const rules=[]; let m;
+  const NK={"一":1,"二":2,"三":3,"四":4,"五":5,"1":1,"2":2,"3":3,"4":4,"5":5};
+  // 第N○曜（第一土曜 など）
+  const nthRe=/第\s*([一二三四五12345])\s*([日月火水木金土])/g;
+  while(m=nthRe.exec(c)) rules.push({type:"nthWeekday",nth:NK[m[1]],weekday:WDIDX[m[2]],nat:"第"+m[1]+m[2]+"曜"});
+  // 毎週○曜
+  const wkRe=/毎週\s*([日月火水木金土])/g;
+  while(m=wkRe.exec(c)) rules.push({type:"weekly",weekday:WDIDX[m[1]],nat:"毎週"+m[1]});
+  // Xのつく日（付く/つく 両対応）
+  const digRe=/([0-9])\s*の?\s*[付つ]く/g;
+  while(m=digRe.exec(c)) rules.push({type:"digit",digit:m[1],tail:m[1],nat:m[1]+"のつく日"});
+  // ゾロ目・月ゾロ → 11,22日
+  if(/ゾロ/.test(c)) rules.push({type:"monthlyDays",days:[11,22],nat:"ゾロ目"});
+  // 複数日 11・22 / 11,22
+  const pair=[]; const pairRe=/(\d{1,2})\s*[・,、]\s*(\d{1,2})/g;
+  while(m=pairRe.exec(c)){ pair.push(+m[1],+m[2]); }
+  // 単一/複数の「D日」
+  const dayHi=[...c.matchAll(/(\d{1,2})\s*日/g)].map(x=>+x[1]);
+  let days=[...new Set([...pair,...dayHi])].filter(d=>d>=1&&d<=31);
+  if(days.length){ if(days.length===1) rules.push({type:"monthly",day:days[0],nat:"毎月"+days[0]+"日"});
+    else rules.push({type:"monthlyDays",days,nat:"毎月"+days.join("・")+"日"}); }
+  // 重複除去
+  const seen=new Set(); return rules.filter(r=>{const k=r.type+JSON.stringify(r.days||r.day||r.digit||(r.nth+"-"+r.weekday)); if(seen.has(k))return false; seen.add(k); return true;});
+}
+function parseDesc(d){
+  const t=d||""; let eventType=null,strength=4,targetMachine=null;
+  if(/周年/.test(t)){ eventType="周年"; strength=5; }
+  else if(/旧イベ/.test(t)){ eventType="旧イベント"; }
+  else if(/取材/.test(t)){ eventType="取材"; }
+  else if(/強化/.test(t)){ eventType="強化日"; }
+  if(/ジャグラー/.test(t)) targetMachine="ジャグラー";
+  return {eventType,strength,targetMachine};
+}
+function parseFeatureText(text,store){
+  const out=[]; const lines=toHalf(text).split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>1);
+  for(const ln of lines){
+    let cond=ln, desc="";
+    const a=ln.split(/→|⇒|:|：|＝|=/); if(a.length>=2){ cond=a[0]; desc=a.slice(1).join(" "); }
+    const rules=parseConditions(cond); if(!rules.length) continue;
+    const descAll=toHalf(desc+" "+cond);
+    const strength=/周年/.test(descAll)?5:4;
+    const targetMachine=/ジャグラー/.test(descAll)?"ジャグラー":null;
+    for(const ru of rules){
+      // 種別の優先順位: 周年>旧イベ>取材> (Xのつく/第N曜/ゾロ等の日付ルール名) >強化日
+      let evType;
+      if(/周年/.test(descAll)) evType="周年";
+      else if(/旧イベ/.test(descAll)) evType="旧イベント";
+      else if(/取材/.test(descAll)) evType="取材";
+      else if(ru.type==="digit"||ru.type==="nthWeekday"||(ru.type==="monthlyDays"&&ru.nat==="ゾロ目")) evType=ru.nat;
+      else if(/強化/.test(descAll)) evType="強化日";
+      else evType=ru.nat;
+      const e={ id:"ev"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+        type:ru.type, store, storeName:store,
+        eventName:(desc||evType).trim()||evType, eventType:evType, strength,
+        targetMachine, targetTail: (ru.tail!=null?ru.tail:null),
+        isRecurring:true, recurringType:ru.type, memo:ln, detail:ln, createdAt:new Date().toISOString(),
+        targetDateRule: ru.nat };
+      if(ru.type==="digit") e.digit=ru.digit;
+      if(ru.type==="monthly") e.day=ru.day;
+      if(ru.type==="monthlyDays") e.days=ru.days;
+      if(ru.type==="nthWeekday"){ e.nth=ru.nth; e.weekday=ru.weekday; }
+      if(ru.type==="weekly") e.weekday=ru.weekday;
+      out.push(e);
+    }
+  }
+  return out;
+}
+function addFeatureEvents(){
+  const store=val("feat-store").trim()||"全店";
+  const parsed=parseFeatureText(val("feat-text"),store);
+  const msg=document.getElementById("feat-msg");
+  if(!parsed.length){ msg.innerHTML='<div class="warn">ルールを読み取れませんでした。「1の付く日→旧イベ」のような行が必要です。</div>'; return; }
+  const ev=loadEvents();
+  const sig=e=>e.store+"|"+e.type+"|"+(e.digit||e.day||(e.days||[]).join(",")||(e.nth+"-"+e.weekday)||e.weekday);
+  const seen=new Set(ev.map(sig)); let added=0,skip=0; const list=[];
+  for(const e of parsed){ if(seen.has(sig(e))){ skip++; continue; } seen.add(sig(e)); ev.push(e); added++;
+    list.push(eventDesc(e)+(e.eventType?"["+e.eventType+"]":"")); }
+  saveEvents(ev); renderEvents(); render();
+  msg.innerHTML='<div class="ok">登録 '+added+'件: '+list.join("、")+'（重複スキップ'+skip+'）</div>';
+  if(added) document.getElementById("feat-text").value="";
+}
+function editEvent(i){
+  const ev=loadEvents(); const e=ev[i]; if(!e) return;
+  const name=prompt("イベント名",e.eventName||e.name||""); if(name===null) return;
+  const st=prompt("強さレベル(4 or 5)",e.strength||4);
+  const tm=prompt("対象機種(空欄可)",e.targetMachine||"");
+  const tt=prompt("末尾示唆(数字 or 空欄)",e.targetTail||"");
+  e.eventName=name; e.strength=parseInt(st,10)||4; e.targetMachine=tm.trim()||null; e.targetTail=tt.trim()||null;
+  saveEvents(ev); renderEvents(); render();
 }
 function renderEvents(){
   const ev=loadEvents(); const el=document.getElementById("ev-list");
   if(!ev.length){ el.innerHTML='<p class="muted">まだ登録がありません。</p>'; return; }
   el.innerHTML=ev.map((e,i)=>{
-    let h=""; if(e.hints){ const p=[]; if(e.hints.tail)p.push("末尾"+e.hints.tail);
-      if(e.hints.machine)p.push(e.hints.machine); if(e.hints.numbers&&e.hints.numbers.length)p.push("台"+e.hints.numbers.join("・"));
-      if(p.length)h='<br><span class="muted">示唆: '+p.join(" / ")+'</span>'; }
-    const d=e.detail?'<br><span class="muted">📝 '+e.detail.slice(0,60)+'</span>':"";
-    return '<div class="ev"><span>🎉 <b>'+eventDesc(e)+'</b>　'+(e.store||"全店")+
-      (e.name?'　'+e.name:'')+h+d+'</span><button class="ghost" onclick="delEvent('+i+')">削除</button></div>';
+    const tags=[]; if(e.eventType)tags.push("種別:"+e.eventType); if(e.strength)tags.push("強さ"+e.strength);
+    if(e.targetMachine)tags.push("対象:"+e.targetMachine); if(e.targetTail)tags.push("末尾"+e.targetTail);
+    let hint=""; if(e.hints){ const p=[]; if(e.hints.tail)p.push("末尾"+e.hints.tail); if(e.hints.machine)p.push(e.hints.machine);
+      if(e.hints.numbers&&e.hints.numbers.length)p.push("台"+e.hints.numbers.join("・")); if(p.length)hint=" / 示唆:"+p.join(" "); }
+    const sub=(tags.join(" / ")+hint); const memo=e.eventName&&e.eventName!==e.eventType?("　"+e.eventName):"";
+    return '<div class="ev"><span>🎉 <b>'+eventDesc(e)+'</b>'+memo+'　'+(e.store||"全店")+
+      (sub?'<br><span class="muted">'+sub+'</span>':"")+'</span><span>'+
+      '<button class="ghost" style="padding:3px 8px" onclick="editEvent('+i+')">編集</button>'+
+      '<button class="ghost" style="padding:3px 8px;color:#c00" onclick="delEvent('+i+')">削除</button></span></div>';
   }).join("");
 }
 
@@ -1000,6 +1116,15 @@ function computeRanking(srAll, store, targetDate, forceEvent){
       if(keepRate>=0.5){ add("据え置き",8); reasons.push("前日高設定＋据え置き傾向("+Math.round(keepRate*100)+"%)(+8)"); }
       else { add("据え置き",-5); reasons.push("前日高設定だが下げ傾向("+Math.round((1-keepRate)*100)+"%)(-5)"); } }
     if(eventTomorrow){ add("イベント",15); reasons.push("予想日はイベント"+(evLabelNext?"("+evLabelNext+")":"")+"→高設定投入に期待(+15)"); }
+    // 登録イベントルール（特徴欄）の属性で加点
+    for(const e of autoEv){
+      if(/周年/.test(e.eventType||"")){ add("周年日",15); reasons.push("周年日(+15)"); }
+      else if(/旧イベ/.test(e.eventType||"")){ add("旧イベント",8); reasons.push("旧イベント(+8)"); }
+      if(e.strength>=5){ add("強さLv5",10); reasons.push("強さLv5(+10)"); }
+      else if(e.strength>=4){ add("強さLv4",6); reasons.push("強さLv4(+6)"); }
+      if(e.targetMachine && mname && mname.includes(e.targetMachine)){ add("対象機種一致",12); reasons.push("対象機種"+e.targetMachine+"一致(+12)"); }
+      if(e.targetTail!=null && e.targetTail!=="" && String(e.targetTail)===String(t)){ add("末尾示唆一致",12); reasons.push("末尾"+e.targetTail+"示唆一致(+12)"); }
+    }
     for(const hr of evHints){
       if(hr.machine&&mname&&mname.includes(hr.machine)){ add("告知示唆",12); reasons.push("告知の示唆機種("+hr.machine+")に合致(+12)"); }
       if(hr.tail!==""&&hr.tail!=null&&String(hr.tail)===String(t)){ add("告知示唆",12); reasons.push("告知の示唆末尾"+hr.tail+"に合致(+12)"); }
