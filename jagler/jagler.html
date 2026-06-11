@@ -260,8 +260,9 @@
 
   <!-- 狙い台予想 -->
   <div class="panel" id="p-rank">
-    <h2>翌日の狙い台予想（100点満点・全台評価）</h2>
-    <p class="muted">蓄積データ＋イベント＋実績学習から、対象機種の全台を100点満点で採点。機種・台番号・加点/減点理由つき。</p>
+    <h2>🧪 バックテスト反映済み・翌日の全台予想</h2>
+    <p class="muted">過去のバックテストで実際に有効だった傾向を反映し、対象機種の全台を100点満点で採点。
+      予想時に裏で検証を実行し、要約・信頼度・各台のBT根拠を表示します。</p>
     <div class="row">
       <div><label>店舗</label><select id="r-store" onchange="render()"></select></div>
       <div><label>予想する日（空欄＝最新データの翌日）</label><input id="r-date" type="date" onchange="render()"></div>
@@ -999,7 +1000,7 @@ function renderWeek(rows){ document.getElementById("t-week").innerHTML=
 
 // ---------- 狙い台予想（100点満点）----------
 // 予想スコア計算（純粋関数）：targetDate より前のデータのみ使用（未来データ不使用）
-function computeRanking(srAll, store, targetDate, forceEvent){
+function computeRanking(srAll, store, targetDate, forceEvent, weights){
   const sr=srAll.filter(r=>r.date<targetDate);   // ★その日より前のデータだけ
   if(sr.length<2) return null;
   const rec=recent(sr,30), rec7=recent(sr,7);
@@ -1051,7 +1052,7 @@ function computeRanking(srAll, store, targetDate, forceEvent){
     const aReg=avg(g.map(r=>r.reg_prob)), aComb=avg(g.map(r=>r.combined)), aTot=avg(g.map(r=>r.total));
     const mname=g[g.length-1].machine_name||""; const t=mno%10;
     let s=30; const reasons=[]; const C={};
-    const add=(key,p)=>{ s+=p; C[key]=(C[key]||0)+p; };
+    const add=(key,p)=>{ const w=(weights&&weights[key]!=null)?weights[key]:1; const pv=p*w; s+=pv; C[key]=(C[key]||0)+pv; };
 
     const ests=g.map(r=>estimateSetting(r)).filter(Boolean);
     const pHigh=ests.length?avg(ests.map(e=>e.high)):null;
@@ -1162,9 +1163,24 @@ function renderRank(rows){
   if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
   const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
   const targetDate=val("r-date")||fmtDate(ndDef);
-  const R=computeRanking(srAll,store,targetDate,document.getElementById("r-event").checked);
+  // バックテスト連動: 前日までで検証し、有効項目の重み＋根拠を算出（キャッシュで再計算回避）
+  const _key=store+"|"+srAll.length+"|"+targetDate+"|"+loadEvents().length;
+  if(!_rankBt||_rankBt.key!==_key){ const _bt=backtestStats(srAll,store,targetDate);
+    _rankBt={key:_key,bt:_bt,D:_bt.days.length>=3?btDerive(_bt):null}; }
+  const bt=_rankBt.bt, D=_rankBt.D;
+  const weights=D?D.weights:null;
+  const byTE={}; if(D) bt.records.forEach(x=>{ if(x.eventDay){ (byTE[x.tail]=byTE[x.tail]||[]).push(x.regProb); } });
+  const R=computeRanking(srAll,store,targetDate,document.getElementById("r-event").checked,weights);
   if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータが不足）。</p>"; return; }
   const {md,ndStr,nextWd,autoEv,evLabelNext,keepRate,out}=R;
+  // バックテスト要約バナー
+  let btBanner;
+  if(D){ const n=D.hit.n, pc=x=>n?Math.round(x/n*100)+"%":"-";
+    btBanner="<div class='note' style='background:#eef7ff;border-color:#9cc8ff'>🧪 <b>バックテスト要約</b>（過去"+bt.days.length+"日検証・高設定あり"+n+"日）<br>"+
+      "的中率 1位"+pc(D.hit.top1)+" / 3位内"+pc(D.hit.top3)+" / 5位内"+pc(D.hit.top5)+" / 10位内"+pc(D.hit.top10)+"<br>"+
+      "見送り判定の妥当性: 見送り台の高設定率 "+(D.miss.highRate!=null?Math.round(D.miss.highRate*100)+"%":"-")+"（低いほど妥当）<br>"+
+      "<b>このロジックの信頼度: "+D.reliability+"%</b>　<span class='muted'>※有効だった項目の加点を自動で強調済み</span></div>";
+  } else btBanner="<div class='note'>🧪 バックテスト要約: 検証データ不足（3日以上で表示・予想は基本ロジック）</div>";
   let nextEvBanner="";
   { let found=null; for(let i=0;i<=45;i++){ const dd=new Date(md+"T00:00:00"); dd.setDate(dd.getDate()+i);
       const ds=fmtDate(dd); if(ds>=ndStr && eventsOn(ds,store).length){ found=ds; break; } }
@@ -1174,7 +1190,7 @@ function renderRank(rows){
   const ranked=out.map((o,i)=>({...o,rank:i+1}));   // 点数順で順位付け
   const sortMode=val("r-sort")||"score";
   const disp = sortMode==="mno" ? ranked.slice().sort((a,b)=>a.mno-b.mno) : ranked;
-  let h=nextEvBanner+"<p class='muted'>"+store+" ／ 予想日="+ndStr.slice(5)+"("+nextWd+"曜)"+
+  let h=btBanner+nextEvBanner+"<p class='muted'>"+store+" ／ 予想日="+ndStr.slice(5)+"("+nextWd+"曜)"+
     (autoEv.length?" 🎉"+evLabelNext:(document.getElementById("r-event").checked?"・イベント想定":""))+
     (keepRate!=null?" ／ 店のクセ:"+(keepRate>=0.5?"据え置き寄り":"下げ寄り"):"")+
     " ／ 対象"+ranked.length+"台（全台表示）</p>";
@@ -1183,16 +1199,22 @@ function renderRank(rows){
      "<option value='mno'"+(sortMode==='mno'?' selected':'')+">台番号順</option></select></div>"+
      "<div style='display:flex;align-items:flex-end'><button class='ghost' style='width:100%' onclick='copyAllAiPrompt()'>📋 全台AI分析用プロンプトをコピー</button></div></div>";
   h+="<div class='scroll'><table><tr><th>順位</th><th>台</th><th>機種</th><th>末尾</th><th>点数</th><th>判定</th>"+
-    "<th>主な加点理由</th><th>主な減点理由</th><th>REG傾向</th><th>合算傾向</th><th>イベント</th><th>コメント</th></tr>";
+    "<th>主な加点理由</th><th>主な減点理由</th><th>REG傾向</th><th>合算傾向</th><th>イベント</th><th>コメント</th><th>BT根拠</th></tr>";
   disp.forEach(r=>{ const ci=combinedInfo(r.aComb);
     const regTr = r.aReg!=null ? "1/"+r.aReg+(r.gReg!=null?(r.aReg<r.gReg?" <span style='color:#1a7f37'>↑良</span>":" <span style='color:#c00'>↓悪</span>"):"") : "-";
     const scStyle = r.score>=80?"#7CFC00":r.score>=65?"#b6f5a0":r.score>=50?"#ffe066":r.score>=35?"#ffd0d0":"#eee";
+    // バックテスト根拠
+    const btP=[]; const bm=D&&D.byM[r.mno]; const bTl=D&&D.byT[r.tail];
+    if(bm&&bm.n>=2) btP.push("過去予想"+bm.n+"回中"+bm.hi+"回高設定");
+    if(bTl&&bTl.n>=3) btP.push("末尾"+r.tail+"の高設定率"+Math.round(bTl.hi/bTl.n*100)+"%");
+    if(autoEv.length&&byTE[r.tail]&&byTE[r.tail].length>=2) btP.push("イベント時末尾"+r.tail+"の平均REG"+btDen(btMean(byTE[r.tail])));
     h+="<tr><td>"+r.rank+"</td><td>"+r.mno+"</td><td>"+r.mname+"</td><td>"+r.tail+
       "</td><td class='score' style='background:"+scStyle+"'>"+r.score+"</td><td>"+r.mark+"</td>"+
       "<td class='reason' style='text-align:left;color:#1a7f37'>"+(r.pros.length?r.pros.slice(0,3).join("<br>"):"—")+"</td>"+
       "<td class='reason' style='text-align:left;color:#b35900'>"+(r.cons.length?r.cons.slice(0,3).join("<br>"):"—")+"</td>"+
       "<td>"+regTr+"</td><td "+cellStyle(ci)+">"+(r.aComb?"1/"+r.aComb:"-")+"</td>"+
-      "<td>"+(r.evMatch||"—")+"</td><td style='text-align:left' class='reason'>"+r.comment+"</td></tr>"; });
+      "<td>"+(r.evMatch||"—")+"</td><td style='text-align:left' class='reason'>"+r.comment+"</td>"+
+      "<td class='reason' style='text-align:left;color:#1565c0'>"+(btP.join("<br>")||"—")+"</td></tr>"; });
   el.innerHTML=h+"</table></div>";
 }
 function copyAllAiPrompt(){
@@ -1223,7 +1245,40 @@ function fallbackCopy(t){ const ta=document.createElement("textarea"); ta.value=
 
 
 // ---------- バックテスト ----------
-let _btData=null;
+// 予想連動用：バックテスト統計（baseロジックで前日まで照合）
+function backtestStats(srAll, store, before){
+  const dates=[...new Set(srAll.map(r=>r.date))].sort().filter(d=>!before||d<before);
+  const isHigh=r=>{const e=estimateSetting(r);return e&&e.setting>=5;};
+  const days=[], records=[];
+  for(let i=1;i<dates.length;i++){ const D=dates[i];
+    const R=computeRanking(srAll,store,D,false,null);   // base（重みなし・未来不使用）
+    if(!R||!R.out.length) continue;
+    const actByNo={}; srAll.filter(r=>r.date===D).forEach(r=>actByNo[r.machine_no]=r);
+    const ranked=R.out; const inTop=N=>ranked.slice(0,N).some(o=>actByNo[o.mno]&&isHigh(actByNo[o.mno]));
+    const highs=Object.values(actByNo).filter(isHigh);
+    days.push({D,eventDay:R.eventDay,hasHigh:highs.length>0,
+      top1:actByNo[ranked[0].mno]?isHigh(actByNo[ranked[0].mno]):false,top3:inTop(3),top5:inTop(5),top10:inTop(10)});
+    ranked.forEach((o,idx)=>{const act=actByNo[o.mno];if(!act)return;
+      records.push({mno:o.mno,tail:o.tail,rank:idx+1,score:o.score,mark:o.mark,contrib:o.contrib,eventDay:R.eventDay,high:isHigh(act),regProb:act.reg_prob});});
+  }
+  return {days,records};
+}
+function btDerive(bt){
+  const dh=bt.days.filter(d=>d.hasHigh);
+  const baseHigh=bt.records.length?bt.records.filter(r=>r.high).length/bt.records.length:0;
+  const factors={}; bt.records.forEach(r=>{for(const k in (r.contrib||{})){if(r.contrib[k]>0){(factors[k]=factors[k]||{n:0,hi:0});factors[k].n++;if(r.high)factors[k].hi++;}}});
+  const weights={}; for(const k in factors){ if(factors[k].n>=8&&baseHigh>0){ weights[k]=Math.max(0.5,Math.min(1.5,(factors[k].hi/factors[k].n)/baseHigh)); } }
+  const byM={},byT={}; bt.records.forEach(r=>{ (byM[r.mno]=byM[r.mno]||{n:0,hi:0}); byM[r.mno].n++; if(r.high)byM[r.mno].hi++;
+    (byT[r.tail]=byT[r.tail]||{n:0,hi:0}); byT[r.tail].n++; if(r.high)byT[r.tail].hi++; });
+  const miss=bt.records.filter(r=>r.mark.includes("見送り"));
+  const top5rate=dh.length?dh.filter(d=>d.top5).length/dh.length:0;
+  const reliability=Math.round(top5rate*(dh.length/(dh.length+7))*100);
+  return {hit:{n:dh.length,top1:dh.filter(d=>d.top1).length,top3:dh.filter(d=>d.top3).length,top5:dh.filter(d=>d.top5).length,top10:dh.filter(d=>d.top10).length},
+    miss:{n:miss.length,highRate:miss.length?miss.filter(r=>r.high).length/miss.length:null},
+    weights,byM,byT,factors,baseHigh,reliability,daysTested:bt.days.length};
+}
+
+let _btData=null, _rankBt=null;
 const btPct=(a,b)=>b?Math.round(a/b*100)+"%":"-";
 const btMean=a=>{const x=a.filter(v=>v!=null);return x.length?x.reduce((s,v)=>s+v,0)/x.length:null;};
 const btDen=v=>v!=null?"1/"+v.toFixed(0):"-";
