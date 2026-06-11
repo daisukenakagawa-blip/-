@@ -127,13 +127,11 @@
     <input id="ph-file" type="file" accept="image/*" multiple onchange="pickPhotos(event)">
     <p class="muted">📷 撮影 / 🖼 アルバムから複数選択OK。<b>続けて選ぶと下に追記</b>されます（クリアで全消去）。</p>
     <div class="row" style="margin-top:4px">
-      <div style="flex:1"><button class="primary" style="width:100%;background:#6b46c1" onclick="photoAI()">🤖 AIで読み取る（高精度・推奨／要APIキー）</button></div>
-      <div style="flex:1"><button class="ghost" style="width:100%" onclick="photoOcr()">🔤 無料OCRで読み取る</button></div>
+      <div style="flex:1"><button class="primary" style="width:100%" onclick="photoOcr()">🔤 写真から数字を読み取る</button></div>
+      <div style="flex:0 0 auto"><button class="ghost" onclick="clearOcrText()">🗑 クリア</button></div>
     </div>
-    <p class="muted">PIAMO（ぴあも）は文字が細かく無料OCRでは読みにくいです。<b>「AIで読み取る」</b>を推奨（AI設定タブでAPIキーを登録）。</p>
-    <div class="row" style="margin-top:2px">
-      <div style="flex:0 0 auto"><button class="ghost" onclick="clearOcrText()">🗑 写真と結果をクリア</button></div>
-    </div>
+    <p class="muted">写真を選ぶ → このボタンを押すと読み取ります（複数枚は順に処理）。
+      <b>暗い背景・明るい背景どちらも自動補正</b>します。読み取り後に数字を確認・修正してください。</p>
     <div id="ph-status" class="muted" style="margin-top:6px;"></div>
     <div id="ph-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
     <label>読み取り結果（1行1台、確認・修正OK）<br>
@@ -554,28 +552,39 @@ function doImport(){
 }
 
 // ---------- 写真OCR ----------
-// 画像の前処理：拡大＋グレースケール＋コントラスト強調でOCR精度を上げる
-function preprocessImage(file){
+// 画像の前処理：拡大＋グレースケール＋Otsu二値化＋暗背景の自動反転でOCR精度を上げる
+// src は File でも dataURL文字列でも可
+function preprocessImage(src){
   return new Promise((resolve,reject)=>{
     const img=new Image();
     img.onload=()=>{
       try{
-        const scale=Math.max(1, Math.min(3, 1600/(img.width||1600)));
+        const targetW=2200;   // PIAMO等は文字が小さいので大きめに拡大
+        const scale=Math.max(1, Math.min(4, targetW/(img.width||targetW)));
         const w=Math.max(1,Math.round(img.width*scale)), h=Math.max(1,Math.round(img.height*scale));
         const c=document.createElement("canvas"); c.width=w; c.height=h;
         const ctx=c.getContext("2d"); ctx.drawImage(img,0,0,w,h);
-        const id=ctx.getImageData(0,0,w,h), d=id.data;
-        for(let i=0;i<d.length;i+=4){
-          let g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];   // グレースケール
-          g=(g-128)*1.5+128;                              // コントラスト強調
-          g=g<0?0:g>255?255:g; d[i]=d[i+1]=d[i+2]=g;
-        }
+        const id=ctx.getImageData(0,0,w,h), d=id.data, N=w*h;
+        const gray=new Uint8Array(N); const hist=new Array(256).fill(0); let sum=0;
+        for(let i=0,p=0;i<d.length;i+=4,p++){ const g=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])|0; gray[p]=g; hist[g]++; sum+=g; }
+        const mean=sum/N, dark=mean<128;   // 平均が暗い＝ダークテーマ（明るい文字）→反転が必要
+        // Otsu法でしきい値を自動決定
+        let sumAll=0; for(let t=0;t<256;t++) sumAll+=t*hist[t];
+        let wB=0,sumB=0,maxVar=-1,thr=128;
+        for(let t=0;t<256;t++){ wB+=hist[t]; if(!wB)continue; const wF=N-wB; if(!wF)break;
+          sumB+=t*hist[t]; const mB=sumB/wB, mF=(sumAll-sumB)/wF, v=wB*wF*(mB-mF)*(mB-mF);
+          if(v>maxVar){ maxVar=v; thr=t; } }
+        // 二値化：文字を必ず「黒(0)・背景白(255)」にする（暗背景は反転）
+        for(let i=0,p=0;i<d.length;i+=4,p++){ const bright=gray[p]>thr;
+          const val = dark ? (bright?0:255) : (bright?255:0);
+          d[i]=d[i+1]=d[i+2]=val; }
         ctx.putImageData(id,0,0);
         resolve(c.toDataURL("image/png"));
       }catch(err){ reject(err); }
     };
     img.onerror=reject;
-    const rd=new FileReader(); rd.onload=()=>img.src=rd.result; rd.onerror=reject; rd.readAsDataURL(file);
+    if(typeof src==="string"){ img.src=src; }   // dataURL
+    else { const rd=new FileReader(); rd.onload=()=>img.src=rd.result; rd.onerror=reject; rd.readAsDataURL(src); }
   });
 }
 let _phImgs=[];   // 選んだ写真のdataURL（OCR/AI両方で使う・複数枚）
@@ -590,7 +599,7 @@ async function pickPhotos(e){
   for(const f of files){ try{ const u=await readDataURL(f); _phImgs.push(u);
     const im=document.createElement("img"); im.src=u;
     im.style.cssText="width:64px;height:64px;object-fit:cover;border:1px solid #ccc;border-radius:4px"; th.appendChild(im); }catch(_){} }
-  st.innerHTML='<span class="ok">写真'+_phImgs.length+'枚を読み込みました。上の「🤖 AIで読み取る」または「🔤 無料OCRで読み取る」を押してください。</span>';
+  st.innerHTML='<span class="ok">写真'+_phImgs.length+'枚を読み込みました。「🔤 写真から数字を読み取る」を押してください。</span>';
 }
 // 無料OCR（Tesseract）：前処理してから読み取り、結果を追記
 async function photoOcr(){
@@ -603,10 +612,13 @@ async function photoOcr(){
     try{ worker=await Tesseract.createWorker("eng");
          await worker.setParameters({ tessedit_char_whitelist:"0123456789/.- ", tessedit_pageseg_mode:"6" }); }
     catch(_){ worker=null; }
+    const th=document.getElementById("ph-thumbs"); th.innerHTML="";   // 前処理後の画像に差し替えて確認できるように
     let added=0;
     for(let i=0;i<_phImgs.length;i++){
       st.innerHTML='読み取り中… ('+(i+1)+'/'+_phImgs.length+') 数十秒かかることがあります';
       let src=_phImgs[i]; try{ src=await preprocessImage(_phImgs[i]); }catch(_){}
+      try{ const im=document.createElement("img"); im.src=src; im.title="OCR用に補正した画像（黒文字・白背景になっていればOK）";
+           im.style.cssText="width:80px;height:80px;object-fit:cover;border:1px solid #ccc;border-radius:4px"; th.appendChild(im); }catch(_){}
       let text="";
       try{ const r = worker ? await worker.recognize(src)
                             : await Tesseract.recognize(src,"eng",{ tessedit_char_whitelist:"0123456789/.- " });
@@ -616,42 +628,9 @@ async function photoOcr(){
     ta.dataset.hasNo="";   // OCRテキストは台番号なし形式（papimo 6列）
     st.innerHTML = added
       ? '<span class="ok">'+added+'枚 読み取り完了。数字を確認・修正して「取り込む」を押してください。</span>'
-      : '<span class="warn">数字を読み取れませんでした。「🤖 AIで読み取る」をお試しください。</span>';
-  }catch(x){ st.innerHTML='<span class="warn">読み取りに失敗しました。「🤖 AIで読み取る」をお試しください。</span>'; }
+      : '<span class="warn">数字を読み取れませんでした。明るく・台データ部分が大きく写るように撮り直してください。</span>';
+  }catch(x){ st.innerHTML='<span class="warn">読み取りに失敗しました（電波の良い所で再読み込みを）。手入力でも取り込めます。</span>'; }
   finally{ if(worker){ try{ await worker.terminate(); }catch(_){} } }
-}
-// 高精度：Claude(AI)で写真から台データを読み取り、ph-text を埋める
-async function photoAI(){
-  const st=document.getElementById("ph-status"), ta=document.getElementById("ph-text");
-  if(!_phImgs.length){ st.innerHTML='<span class="warn">先に写真を選んでください。</span>'; return; }
-  const key=val("ai-key").trim(), model=val("ai-model").trim();
-  if(!key||!model){ st.innerHTML='<span class="warn">「AI設定」タブでAnthropic APIキーとモデルIDを登録してください（写真の高精度読み取りに使用）。</span>'; return; }
-  const content=[];
-  for(const u of _phImgs){ const mm=(u||"").match(/^data:(.*?);base64,(.*)$/); if(mm) content.push({type:"image",source:{type:"base64",media_type:mm[1],data:mm[2]}}); }
-  content.push({type:"text",text:
-    "これはパチスロ（ジャグラー）の台データ表（papimo/PIAMO等）の写真です。各台について以下の数値を上から順に読み取ってください。\n"+
-    "・BB数（BIG回数）\n・RB数（REG回数）\n・総スタート（総回転数。『総スタート』『総G』等の列。BB確率/合成確率/持ちメダルは無視）\n"+
-    "台番号が写っていれば machine_no に入れてください（無ければ null）。\n"+
-    "必ず次のJSONのみで返答（前後に文章を付けない）: {\"rows\":[{\"machine_no\":数値またはnull,\"big\":数値,\"reg\":数値,\"total\":数値}, ...]}\n"+
-    "数値が読めない台は飛ばしてください。複数枚ある場合は写真の順に全台を1つの配列にまとめてください。"});
-  st.innerHTML='<span class="muted">🤖 AIが写真を読み取り中…（数十秒）</span>';
-  try{
-    const r=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
-      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model,max_tokens:4096,messages:[{role:"user",content}]}) });
-    if(!r.ok){ const e=await r.text(); st.innerHTML='<span class="warn">AIエラー('+r.status+'): '+e.slice(0,200)+'</span>'; return; }
-    const data=await r.json();
-    const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
-    let obj; try{ obj=JSON.parse(txt.match(/\{[\s\S]*\}/)[0]); }catch(e){ st.innerHTML='<span class="warn">AIの回答を解析できませんでした。もう一度お試しください。</span>'; return; }
-    const rows=(obj.rows||[]).filter(x=>x&&x.big!=null&&x.reg!=null&&x.total!=null);
-    if(!rows.length){ st.innerHTML='<span class="warn">AIが台データを読み取れませんでした。写真を撮り直すか、無料OCRをお試しください。</span>'; return; }
-    const hasNo=rows.every(x=>x.machine_no!=null);   // 全台に番号があるときだけ番号列を使う（桁ズレ防止）
-    // 既存パーサーに合わせて出力（台番号 BB RB - - 総スタート）。台番号が無ければ BB から。
-    const lines=rows.map(x=> (hasNo?((x.machine_no!=null?x.machine_no:"")+" "):"")+x.big+" "+x.reg+" - - "+x.total);
-    ta.value=(ta.value?ta.value.replace(/\s*$/,"")+"\n":"")+lines.join("\n");
-    if(hasNo) document.getElementById("ph-text").dataset.hasNo="1";
-    st.innerHTML='<span class="ok">🤖 AIが'+rows.length+'台を読み取りました'+(hasNo?'（台番号も認識）':'')+'。内容を確認して「取り込む」を押してください。</span>';
-  }catch(x){ st.innerHTML='<span class="warn">通信に失敗しました: '+x+'</span>'; }
 }
 function doPhotoImport(){
   const store=val("ph-store").trim(),machine=val("ph-machine").trim(),date=val("ph-date");
