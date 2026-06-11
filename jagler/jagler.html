@@ -379,7 +379,8 @@ function matchSpec(name){
 }
 // BIG/REG回数と総回転からポアソン尤度で設定を推定
 function estimateSetting(rec){
-  const sp=matchSpec(rec&&rec.machine_name); if(!sp||!rec.total) return null;
+  if(rec&&rec.__est!==undefined) return rec.__est;   // メモ化（クセ学習で多数回呼ぶため）
+  const sp=matchSpec(rec&&rec.machine_name); if(!sp||!rec.total){ if(rec)rec.__est=null; return null; }
   const lls=[];
   for(let s=0;s<6;s++){
     const lb=rec.total/sp.big[s], lr=rec.total/sp.reg[s];
@@ -387,7 +388,9 @@ function estimateSetting(rec){
   }
   const mx=Math.max(...lls); const ex=lls.map(x=>Math.exp(x-mx)); const sum=ex.reduce((a,b)=>a+b,0);
   const probs=ex.map(x=>x/sum); let best=0; for(let i=1;i<6;i++) if(probs[i]>probs[best]) best=i;
-  return {setting:best+1, prob:probs[best], high:probs[3]+probs[4]+probs[5]}; // high=P(設定4以上)
+  const res={setting:best+1, prob:probs[best], high:probs[3]+probs[4]+probs[5]}; // high=P(設定4以上)
+  if(rec) rec.__est=res;
+  return res;
 }
 function settingStyle(s){ if(s>=6)return "background:#7CFC00;font-weight:bold"; if(s===5)return "background:#b6f5a0";
   if(s===4)return "background:#e6f8d8"; return ""; }
@@ -899,6 +902,104 @@ function learnStoreTendency(sr,gReg,gComb){
     upRate:upT>=4?up/upT:null, streakUpRate:sUpT>=3?sUp/sUpT:null };
 }
 
+// ===== 店舗クセ学習（10要素・予想日より前のデータのみ使用＝未来不使用）=====
+// 高設定の判定は「設定4以上」。各要素は 発生回数 / 高設定率 / 店平均との差 を保持する。
+function learnCusp(sr, isEvtDate, md){
+  const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+  const isLo=r=>{const e=estimateSetting(r);return !!(e&&e.setting<=2);};
+  const dates=[...new Set(sr.map(r=>r.date))].sort();
+  const byM={}; sr.forEach(r=>{(byM[r.machine_no]=byM[r.machine_no]||[]).push(r);});
+  for(const k in byM) byM[k].sort((a,b)=>a.date<b.date?-1:1);
+  const byDateNo={}; sr.forEach(r=>{(byDateNo[r.date]=byDateNo[r.date]||{})[r.machine_no]=r;});
+  const nos=[...new Set(sr.map(r=>r.machine_no))].sort((a,b)=>a-b);
+  const minNo=nos[0], maxNo=nos[nos.length-1];
+  const overallHi = sr.length ? sr.filter(isHi).length/sr.length : 0;
+
+  // ① 高設定据え置き率（高設定の翌日も高設定か）
+  let keep=0,keepT=0;
+  for(const k in byM){const a=byM[k];for(let i=1;i<a.length;i++){ if(isHi(a[i-1])){keepT++; if(isHi(a[i]))keep++;} }}
+  const keepRate = keepT>=3 ? keep/keepT : null;
+
+  // ② 不発後投入率（連続不発N日後の翌日高設定率・N別）
+  const afterMiss={};
+  for(const k in byM){const a=byM[k];
+    for(let i=1;i<a.length;i++){ let st=0,j=i-1; while(j>=0&&!isHi(a[j])){st++;j--;}
+      if(st>=1){ const b=Math.min(st,5); (afterMiss[b]=afterMiss[b]||{n:0,hi:0}); afterMiss[b].n++; if(isHi(a[i]))afterMiss[b].hi++; } } }
+  const missRate={}; for(const b in afterMiss){ if(afterMiss[b].n>=3) missRate[b]={n:afterMiss[b].n,hi:afterMiss[b].hi/afterMiss[b].n}; }
+
+  // ③ 角投入率（角台/角2/角3 vs 内側）
+  const cornerSet=new Set([minNo,maxNo]), c2Set=new Set([minNo+1,maxNo-1]), c3Set=new Set([minNo+2,maxNo-2]);
+  const posR=set=>{const a=sr.filter(r=>set.has(r.machine_no));return a.length>=3?{n:a.length,hi:a.filter(isHi).length/a.length}:null;};
+  const cornerR=posR(cornerSet), c2R=posR(c2Set), c3R=posR(c3Set);
+  const innerArr=sr.filter(r=>!cornerSet.has(r.machine_no)&&!c2Set.has(r.machine_no)&&!c3Set.has(r.machine_no));
+  const innerHi=innerArr.length?innerArr.filter(isHi).length/innerArr.length:overallHi;
+
+  // ④ 並び投入率（同日に隣接台と一緒に高設定が入る率）
+  let narabiHi=0,narabiT=0;
+  for(const d in byDateNo){ const day=byDateNo[d]; for(const no in day){ if(isHi(day[no])){ const n=+no;
+    narabiT++; if((day[n-1]&&isHi(day[n-1]))||(day[n+1]&&isHi(day[n+1])))narabiHi++; } } }
+  const narabiRate = narabiT>=4 ? narabiHi/narabiT : null;
+
+  // ⑤ 高設定台の隣投入率（前日に隣が高設定→翌日この台が高設定）
+  let nbHi=0,nbT=0;
+  for(let i=1;i<dates.length;i++){ const prev=byDateNo[dates[i-1]], cur=byDateNo[dates[i]];
+    for(const no in cur){ const n=+no; const pnb=(prev[n-1]&&isHi(prev[n-1]))||(prev[n+1]&&isHi(prev[n+1]));
+      if(pnb){ nbT++; if(isHi(cur[no]))nbHi++; } } }
+  const nbRate = nbT>=4 ? nbHi/nbT : null;
+
+  // ⑥ 台番号別高設定率
+  const machHi={}; for(const k in byM){ const a=byM[k]; if(a.length>=3) machHi[k]={n:a.length,hi:a.filter(isHi).length/a.length}; }
+
+  // ⑦ イベント翌日据え置き率（イベント日に高設定→翌日も高設定）
+  let evKeep=0,evKeepT=0;
+  for(let i=1;i<dates.length;i++){ if(!isEvtDate(dates[i-1]))continue; const prev=byDateNo[dates[i-1]], cur=byDateNo[dates[i]];
+    for(const no in prev){ if(isHi(prev[no])){ evKeepT++; if(cur[no]&&isHi(cur[no]))evKeep++; } } }
+  const evKeepRate = evKeepT>=3 ? evKeep/evKeepT : null;
+
+  // ⑧ 機種ローテーション（機種ごとの高設定周期と経過日数）
+  const machByName={}; sr.forEach(r=>{(machByName[r.machine_name]=machByName[r.machine_name]||[]).push(r);});
+  const rotate={};
+  for(const nm in machByName){ const hiDates=[...new Set(machByName[nm].filter(isHi).map(r=>r.date))].sort();
+    if(hiDates.length<2)continue; const gaps=[]; for(let i=1;i<hiDates.length;i++)gaps.push(dayDiff(hiDates[i-1],hiDates[i]));
+    const cad=avg(gaps); if(!cad)continue; const since=dayDiff(hiDates[hiDates.length-1],md);
+    rotate[nm]={cad,since,n:hiDates.length,due:since>=cad*0.8}; }
+
+  // ⑨ 月初月末傾向（1-10/11-20/21-末）
+  const phase=d=>{const day=+d.slice(8,10); return day<=10?"月初":day<=20?"月中":"月末";};
+  const phaseG={}; sr.forEach(r=>{const p=phase(r.date);(phaseG[p]=phaseG[p]||[]).push(r);});
+  const phaseRate={}; for(const p in phaseG){ if(phaseG[p].length>=5) phaseRate[p]={n:phaseG[p].length,hi:phaseG[p].filter(isHi).length/phaseG[p].length}; }
+
+  // ⑩ 店舗タイプ（補正係数の決定用・srのみで判定）
+  let lowUp=0,lowUpT=0;
+  for(const k in byM){const a=byM[k];for(let i=1;i<a.length;i++){ if(isLo(a[i-1])){lowUpT++; if(isHi(a[i]))lowUp++;} }}
+  const lowUpRate=lowUpT>=3?lowUp/lowUpT:null;
+  const evR=sr.filter(r=>isEvtDate(r.date)), nmR=sr.filter(r=>!isEvtDate(r.date));
+  const evHi=evR.length?evR.filter(isHi).length/evR.length:null, normHi=nmR.length?nmR.filter(isHi).length/nmR.length:null;
+  const tg={},ig={}; sr.forEach(r=>{(tg[r.machine_no%10]=tg[r.machine_no%10]||[]).push(r);(ig[Math.floor(r.machine_no/10)]=ig[Math.floor(r.machine_no/10)]||[]).push(r);});
+  const tailHi={},islHi={}; for(const k in tg)tailHi[k]=tg[k].filter(isHi).length/tg[k].length; for(const k in ig)islHi[k]=ig[k].filter(isHi).length/ig[k].length;
+  const cov=arr=>{if(arr.length<2)return 0;const m=avg(arr);if(!m)return 0;const v=avg(arr.map(x=>(x-m)*(x-m)));return Math.sqrt(v)/m;};
+  const tailConc=cov(Object.values(tailHi)), islConc=cov(Object.values(islHi));
+  const types=[];
+  if(keepRate!=null&&keepRate>=0.5)types.push("据え置き型");
+  if(lowUpRate!=null&&lowUpRate>=0.30)types.push("上げ狙い型");
+  if(evHi!=null&&normHi!=null&&evHi>=normHi+0.15)types.push("イベント依存型");
+  if(tailConc>=0.5)types.push("末尾重視型");
+  if(islConc>=0.5)types.push("並び重視型");
+  if(!types.length)types.push("ばらつき型");
+  const tmul=f=>{ let m=1;
+    if(types.includes("据え置き型")&&(f==="①"||f==="⑦"))m+=0.3;
+    if(types.includes("上げ狙い型")&&(f==="②"||f==="⑤"))m+=0.3;
+    if(types.includes("並び重視型")&&(f==="③"||f==="④"||f==="⑤"))m+=0.2;
+    if(types.includes("末尾重視型")&&f==="⑥")m+=0.1;
+    if(types.includes("イベント依存型")&&f==="⑦")m+=0.2;
+    return m; };
+
+  return {isHi,overallHi,minNo,maxNo,byM,byDateNo,
+    keepRate,keepT,missRate,cornerSet,c2Set,c3Set,cornerR,c2R,c3R,innerHi,
+    narabiRate,narabiT,nbRate,nbT,machHi,evKeepRate,evKeepT,rotate,phaseRate,phase,
+    types,tmul,lowUpRate};
+}
+
 // ---------- 描画 ----------
 function refreshAll(){
   const rows=load(); const stores=[...new Set(rows.map(r=>r.store))].sort();
@@ -1063,6 +1164,9 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
 
   // 店のクセを学習（未来不使用）
   const ST=learnStoreTendency(sr,gReg,gComb);
+  // 店舗クセ学習（10要素・未来不使用）
+  const CU=learnCusp(sr, d=>isEventDate(d,store), md);
+  const mdIsEvent=isEventDate(md,store);
   // 過去イベント実績の学習（同種イベントで強い末尾/機種/台番号帯を%で・未来不使用）
   const srDates=[...new Set(sr.map(r=>r.date))];
   const evLearn=autoEv.map(e=>{
@@ -1119,12 +1223,45 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     const bandk=Math.floor(+mno/100);
     if(ST.bandCombPct[bandk]!=null) kAdd("クセ:台番帯",grad(ST.bandCombPct[bandk],6),bandk+"00番台は合算が店平均より"+(ST.bandCombPct[bandk]*100).toFixed(1)+"%良い");
     if(ST.wdCombPct[nextWd]!=null) kAdd("クセ:曜日",grad(ST.wdCombPct[nextWd],6),nextWd+"曜は合算が店平均より"+(ST.wdCombPct[nextWd]*100).toFixed(1)+"%良い");
-    if(ST.cornerSet.has(+mno)) kAdd("クセ:角台",grad(ST.cornerPct,4),"この店は角台が店平均より"+(ST.cornerPct*100).toFixed(1)+"%良い");
-    if(ST.c2Set.has(+mno)) kAdd("クセ:角2",grad(ST.c2Pct,4),"この店は角2が店平均より"+(ST.c2Pct*100).toFixed(1)+"%良い");
-    const eldK=ld?estimateSetting(ld):null;
-    if(eldK&&eldK.setting>=5&&keepRate!=null&&keepRate>0.5) kAdd("クセ:据え置き",Math.min(6,(keepRate-0.5)*12),"前日高設定×据え置き傾向"+Math.round(keepRate*100)+"%");
-    if(ld&&ld.combined!=null&&gComb!=null&&ld.combined>gComb&&ST.upRate!=null&&ST.upRate>0.5) kAdd("クセ:上げ",Math.min(6,(ST.upRate-0.5)*12),"前日不発×この店の上げ傾向"+Math.round(ST.upRate*100)+"%");
-    if(streak>=2&&ST.streakUpRate!=null&&ST.streakUpRate>0.5) kAdd("クセ:連続不発後上げ",Math.min(6,(ST.streakUpRate-0.5)*12),streak+"日連続不発×上げ傾向"+Math.round(ST.streakUpRate*100)+"%");
+    // ===== 店舗クセ学習（10要素・各要素 発生回数/高設定率/平均との差 を表示）=====
+    { const pct=x=>Math.round(x*100)+"%", sd=x=>(x>=0?"+":"")+Math.round(x*100)+"pt";
+      const cuAdd=(key,p,text)=>{ if(!p)return; p=+p.toFixed(1); add(key,p); kuse.push(text+(p>0?"(+":"(")+p.toFixed(1)+")"); };
+      const ma=CU.byM[mno]||[]; const mldHi = ld?CU.isHi(ld):false;
+      let nmiss=0; for(let i=ma.length-1;i>=0;i--){ if(!CU.isHi(ma[i]))nmiss++; else break; }
+      const nbHiMd = (lastDay[+mno-1]&&CU.isHi(lastDay[+mno-1]))||(lastDay[+mno+1]&&CU.isHi(lastDay[+mno+1]));
+      // ① 高設定据え置き率
+      if(mldHi && CU.keepRate!=null){ const kr=CU.keepRate;
+        let p = kr>=0.70?12: kr>=0.60?8: kr>=0.50?4: kr<0.40?-5:0; p*=CU.tmul("①");
+        cuAdd("クセ①据え置き",p,"①前日高設定×据え置き率"+pct(kr)+"(発生"+CU.keepT+"回,平均差"+sd(kr-CU.overallHi)+")"); }
+      // ② 不発後投入率
+      if(nmiss>=1){ const b=Math.min(nmiss,5), r=CU.missRate[b];
+        if(r){ const diff=r.hi-CU.overallHi; let p=diff>0?Math.min(15,diff/0.30*15):0; p*=CU.tmul("②");
+          if(p>0) cuAdd("クセ②不発後投入",p,"②連続不発"+nmiss+"日後の高設定率"+pct(r.hi)+"(発生"+r.n+"回,平均差"+sd(diff)+")"); } }
+      // ③ 角投入率
+      { let pr=null,pn=""; if(CU.cornerSet.has(+mno)){pr=CU.cornerR;pn="角台";}
+        else if(CU.c2Set.has(+mno)){pr=CU.c2R;pn="角2";} else if(CU.c3Set.has(+mno)){pr=CU.c3R;pn="角3";}
+        if(pr){ const diff=pr.hi-CU.innerHi; let p=diff>0?Math.min(10,diff/0.25*10):0; p*=CU.tmul("③");
+          if(p>0) cuAdd("クセ③角投入",p,"③"+pn+"の高設定率"+pct(pr.hi)+"(発生"+pr.n+"回,内側差"+sd(diff)+")"); } }
+      // ④ 並び投入率
+      if(CU.narabiRate!=null && nbHiMd){ let p=Math.min(10,CU.narabiRate/0.6*10); p*=CU.tmul("④");
+        if(p>0) cuAdd("クセ④並び投入",p,"④並び投入率"+pct(CU.narabiRate)+"×隣が前日高設定(発生"+CU.narabiT+"回)"); }
+      // ⑤ 高設定台の隣投入率
+      if(CU.nbRate!=null && nbHiMd){ const diff=CU.nbRate-CU.overallHi; let p=diff>0?Math.min(10,diff/0.25*10):0; p*=CU.tmul("⑤");
+        if(p>0) cuAdd("クセ⑤隣投入",p,"⑤高設定隣の翌日投入率"+pct(CU.nbRate)+"(発生"+CU.nbT+"回,平均差"+sd(diff)+")"); }
+      // ⑥ 台番号別高設定率
+      { const mh=CU.machHi[mno]; if(mh){ const diff=mh.hi-CU.overallHi; let p=diff>0?Math.min(15,diff/0.30*15):0; p*=CU.tmul("⑥");
+        if(p>0) cuAdd("クセ⑥台番号別",p,"⑥台"+mno+"の高設定率"+pct(mh.hi)+"(発生"+mh.n+"回,店平均差"+sd(diff)+")"); } }
+      // ⑦ イベント翌日据え置き率
+      if(mldHi && mdIsEvent && CU.evKeepRate!=null){ let p=Math.min(12,CU.evKeepRate/0.7*12); p*=CU.tmul("⑦");
+        if(p>0) cuAdd("クセ⑦イベ翌日据置",p,"⑦イベント翌日据え置き率"+pct(CU.evKeepRate)+"(発生"+CU.evKeepT+"回)"); }
+      // ⑧ 機種ローテーション
+      { const ro=CU.rotate[mname]; if(ro&&ro.due){ let p=Math.min(8,(ro.since/ro.cad)*4); p*=CU.tmul("⑧");
+        if(p>0) cuAdd("クセ⑧ローテ",p,"⑧"+mname+"がローテ的にそろそろ(周期約"+Math.round(ro.cad)+"日,"+ro.since+"日経過,発生"+ro.n+"回)"); } }
+      // ⑨ 月初月末傾向
+      { const ph=CU.phase(ndStr), pr=CU.phaseRate[ph];
+        if(pr){ const diff=pr.hi-CU.overallHi; let p=diff>0?Math.min(6,diff/0.20*6):0; p*=CU.tmul("⑨");
+          if(p>0) cuAdd("クセ⑨"+ph,p,"⑨"+ph+"は高設定率"+pct(pr.hi)+"(発生"+pr.n+"回,平均差"+sd(diff)+")"); } }
+    }
     // 同種イベントで過去に強い末尾/機種/台番号帯（段階）
     for(const lv of evLearn){ if(lv.recs<4) continue;
       if(lv.tailPct[t]!=null) kAdd("イベ実績:末尾",grad(lv.tailPct[t],8),"過去の"+lv.label+"で末尾"+t+"がREG店平均より"+(lv.tailPct[t]*100).toFixed(1)+"%良い");
@@ -1144,7 +1281,6 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights){
     } else { const evRows=g.filter(r=>evDates.has(r.date));
       if(evRows.length>=1){ const ae=avg(evRows.map(r=>r.combined));
         if(ae!=null&&aComb!=null&&ae<aComb-3){ add("イベント種別相性",6); reasons.push("過去イベント日に強い台(平均1/"+ae.toFixed(0)+")(+6)"); } } }
-    if(ld&&isGood(ld.combined)&&keepRate!=null&&keepRate<0.5){ add("下げ傾向",-5); reasons.push("前日高設定だがこの店は下げ傾向("+Math.round((1-keepRate)*100)+"%)(-5)"); }
     if(eventTomorrow){ add("イベント",15); reasons.push("予想日はイベント"+(evLabelNext?"("+evLabelNext+")":"")+"→高設定投入に期待(+15)"); }
     // 登録イベントルール（特徴欄）の属性で加点
     for(const e of autoEv){
