@@ -833,7 +833,7 @@ function renderEvents(){
 }
 
 // ---------- 集計ユーティリティ ----------
-const val=id=>document.getElementById(id).value;
+const val=id=>{ const el=document.getElementById(id); return el?el.value:""; };
 function fmtDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 // 全角数字・記号を半角へ（日本語サイトのコピペ対策）
 function toHalf(s){ return (s||"").replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0))
