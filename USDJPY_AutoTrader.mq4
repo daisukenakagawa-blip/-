@@ -51,6 +51,13 @@ extern int     TradeEndHour       = 23;     // 取引終了時刻
 extern string  _sec7_             = "=== スプレッドフィルター ===";
 extern double  MaxSpreadPips      = 3.0;    // 最大許容スプレッド (pips)
 
+extern string  _sec8_             = "=== スマホ通知 ===";
+extern bool    UsePushNotify      = true;   // スマホMT4へプッシュ通知 (要MetaQuotes ID設定)
+extern bool    UseEmailNotify     = false;  // メール通知 (要MT4メール設定)
+extern bool    NotifyOnStart      = true;   // EA起動/停止を通知
+extern bool    NotifyOnEntry      = true;   // 新規エントリーを通知
+extern bool    NotifyOnClose      = true;   // 決済(SL/TP含む)を通知
+
 //+------------------------------------------------------------------+
 //| グローバル変数                                                     |
 //+------------------------------------------------------------------+
@@ -61,6 +68,7 @@ int    g_lastTradeDay;
 double g_peakBalance;
 double g_point;
 int    g_digits;
+int    g_lastHistoryTotal;  // 決済検出用
 
 //+------------------------------------------------------------------+
 //| 初期化                                                            |
@@ -94,12 +102,18 @@ int OnInit()
    g_todayTrades    = 0;
    g_todayPL        = 0;
    g_lastTradeDay   = DayOfYear();
-   
+   g_lastHistoryTotal = OrdersHistoryTotal();
+
    Print("=== USDJPY AutoTrader 起動 ===");
    Print("口座: ", AccountNumber(), " (", IsDemo() ? "デモ" : "リアル", ")");
    Print("残高: ", AccountBalance(), " ", AccountCurrency());
    Print("ロット: ", LotSize, " SL: ", StopLossPips, "pips TP: ", TakeProfitPips, "pips");
-   
+
+   if(NotifyOnStart)
+      Notify("EA起動 | 口座:" + IntegerToString(AccountNumber()) +
+             (IsDemo() ? "(デモ)" : "(リアル)") +
+             " 残高:" + DoubleToString(AccountBalance(), 0) + AccountCurrency());
+
    return INIT_SUCCEEDED;
 }
 
@@ -109,6 +123,9 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    Print("=== USDJPY AutoTrader 停止 ===");
+   // パラメーター変更や時間足切替による再起動では通知しない
+   if(NotifyOnStart && reason != REASON_PARAMETERS && reason != REASON_CHARTCHANGE && reason != REASON_RECOMPILE)
+      Notify("EA停止 | 残高:" + DoubleToString(AccountBalance(), 0) + AccountCurrency());
 }
 
 //+------------------------------------------------------------------+
@@ -128,9 +145,13 @@ void OnTick()
    if(AccountBalance() > g_peakBalance)
       g_peakBalance = AccountBalance();
    
+   // ===== 決済検出 → スマホ通知 =====
+   if(NotifyOnClose)
+      CheckClosedPositions();
+
    // ===== 安全装置チェック =====
    if(!SafetyCheck()) return;
-   
+
    // ===== トレーリングストップ =====
    if(TrailingStopPips > 0)
       ManageTrailingStop();
@@ -290,8 +311,14 @@ void ExecuteTrade(int signal)
    if(ticket > 0)
    {
       g_todayTrades++;
-      Print(signal == 1 ? "BUY" : "SELL", " エントリー: ", price, 
+      Print(signal == 1 ? "BUY" : "SELL", " エントリー: ", price,
             " SL: ", sl, " TP: ", tp, " Lot: ", lot);
+      if(NotifyOnEntry)
+         Notify((signal == 1 ? "BUY" : "SELL") + " エントリー " +
+                DoubleToString(price, g_digits) +
+                " Lot:" + DoubleToString(lot, 2) +
+                " SL:" + DoubleToString(sl, g_digits) +
+                " TP:" + DoubleToString(tp, g_digits));
    }
    else
    {
@@ -339,7 +366,9 @@ void CloseAllPositions(string reason)
 {
    Print("★ 全ポジション決済: ", reason);
    Alert("★ ", reason, " - 全ポジション決済実行");
-   
+   Notify("★緊急決済: " + reason + " | 残高:" + DoubleToString(AccountBalance(), 0) + AccountCurrency());
+
+
    for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
       if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
@@ -349,6 +378,45 @@ void CloseAllPositions(string reason)
       if(!OrderClose(OrderTicket(), OrderLots(), closePrice, 3, clrYellow))
          Print("決済エラー: ", GetLastError());
    }
+}
+
+//+------------------------------------------------------------------+
+//| 決済検出 (SL/TP/手動決済をスマホに通知)                              |
+//+------------------------------------------------------------------+
+void CheckClosedPositions()
+{
+   int total = OrdersHistoryTotal();
+   if(total <= g_lastHistoryTotal) { g_lastHistoryTotal = total; return; }
+
+   // 新たに履歴入りした注文のうち、このEAの決済を通知
+   for(int i = g_lastHistoryTotal; i < total; i++)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY)) continue;
+      if(OrderSymbol() != Symbol() || OrderMagicNumber() != MagicNumber) continue;
+      if(OrderType() != OP_BUY && OrderType() != OP_SELL) continue;
+
+      double pl = OrderProfit() + OrderSwap() + OrderCommission();
+      Notify((OrderType() == OP_BUY ? "BUY" : "SELL") + " 決済 " +
+             DoubleToString(OrderClosePrice(), g_digits) +
+             " 損益:" + (pl >= 0 ? "+" : "") + DoubleToString(pl, 0) + AccountCurrency() +
+             " | 残高:" + DoubleToString(AccountBalance(), 0) + AccountCurrency());
+   }
+   g_lastHistoryTotal = total;
+}
+
+//+------------------------------------------------------------------+
+//| 通知送信 (スマホMT4プッシュ + メール)                                |
+//+------------------------------------------------------------------+
+void Notify(string msg)
+{
+   string text = "[USDJPY EA] " + msg;
+   if(UsePushNotify)
+   {
+      if(!SendNotification(text))
+         Print("プッシュ通知エラー: ", GetLastError(), " (MetaQuotes IDの設定を確認してください)");
+   }
+   if(UseEmailNotify)
+      SendMail("USDJPY AutoTrader", text);
 }
 
 //+------------------------------------------------------------------+
