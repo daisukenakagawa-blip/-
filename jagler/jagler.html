@@ -279,6 +279,28 @@
       <summary class="muted"><b>🧪 バックテスト（この予想の精度を検証）</b></summary>
       <p class="muted">過去の各日を「その日より前のデータだけ」で予想し、実際の結果と照合します（未来データ不使用）。</p>
       <button class="primary" onclick="runBacktest()">▶ この店舗で検証する</button>
+      <div id="bt-filters" style="display:none;margin-top:8px;">
+        <p class="muted" style="margin:4px 0;">フィルター（変更すると即反映）</p>
+        <div class="row">
+          <div><label>機種(部分一致)</label><input id="bt-f-machine" oninput="renderBacktest()"></div>
+          <div><label>台番号</label><input id="bt-f-no" oninput="renderBacktest()"></div>
+          <div><label>末尾</label><select id="bt-f-tail" onchange="renderBacktest()">
+            <option value="all">全部</option><option>0</option><option>1</option><option>2</option><option>3</option>
+            <option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>日付from</label><input id="bt-f-from" type="date" onchange="renderBacktest()"></div>
+          <div><label>日付to</label><input id="bt-f-to" type="date" onchange="renderBacktest()"></div>
+          <div><label>日種別</label><select id="bt-f-event" onchange="renderBacktest()">
+            <option value="all">全部</option><option value="event">イベント日のみ</option><option value="normal">通常日のみ</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>予想順位(○位以内)</label><input id="bt-f-rank" type="number" min="1" oninput="renderBacktest()"></div>
+          <div><label>判定</label><select id="bt-f-mark" onchange="renderBacktest()">
+            <option value="all">全部</option><option value="本命">本命</option><option value="対抗">対抗</option>
+            <option value="注意">注意</option><option value="低期待">低期待</option><option value="見送り">見送り</option></select></div>
+        </div>
+      </div>
       <div id="t-bt"><p class="muted">「検証する」を押してください。</p></div>
     </details>
   </div>
@@ -1201,87 +1223,146 @@ function fallbackCopy(t){ const ta=document.createElement("textarea"); ta.value=
 
 
 // ---------- バックテスト ----------
+let _btData=null;
+const btPct=(a,b)=>b?Math.round(a/b*100)+"%":"-";
+const btMean=a=>{const x=a.filter(v=>v!=null);return x.length?x.reduce((s,v)=>s+v,0)/x.length:null;};
+const btDen=v=>v!=null?"1/"+v.toFixed(0):"-";
+const btScoreColor=s=>s>=80?"#7CFC00":s>=65?"#b6f5a0":s>=50?"#ffe066":s>=35?"#ffd0d0":"#eee";
 function runBacktest(){
   const store=val("r-store"); const el=document.getElementById("t-bt");
   if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データがありません。</p>"; return; }
   const srAll=load().filter(r=>r.store===store);
   const dates=[...new Set(srAll.map(r=>r.date))].sort();
   if(dates.length<3){ el.innerHTML="<p class='warn'>検証には最低3日分のデータが必要です（現在"+dates.length+"日）。</p>"; return; }
-  const isHigh=r=>{ const e=estimateSetting(r); return e&&e.setting>=5; };           // 実際の高設定（推定5以上）
-  const isLow =r=>{ const e=estimateSetting(r); return e&&e.setting<=2; };
-  const recs=[];   // 予想×実結果のペア
-  const days=[];   // 日ごとの集計
+  const isHigh=r=>{ const e=estimateSetting(r); return e&&e.setting>=5; };
+  const records=[], days=[];
   for(let i=1;i<dates.length;i++){
     const D=dates[i];
-    const R=computeRanking(srAll,store,D,false);   // ★Dより前のデータだけ
+    const R=computeRanking(srAll,store,D,false);   // ★Dより前のデータだけ（未来不使用）
     if(!R||!R.out.length) continue;
     const actByNo={}; srAll.filter(r=>r.date===D).forEach(r=>actByNo[r.machine_no]=r);
-    const ranked=R.out;                            // 既にスコア降順
+    const ranked=R.out;
     const predHighInTop=N=>ranked.slice(0,N).some(o=>actByNo[o.mno]&&isHigh(actByNo[o.mno]));
     const actualHighs=Object.values(actByNo).filter(isHigh);
-    days.push({D,eventDay:R.eventDay,
-      hasHigh:actualHighs.length>0,
+    days.push({D,eventDay:R.eventDay,hasHigh:actualHighs.length>0,
       top1:actByNo[ranked[0].mno]?isHigh(actByNo[ranked[0].mno]):false,
       top3:predHighInTop(3),top5:predHighInTop(5),top10:predHighInTop(10),
-      // recall: 実際の高設定が予想上位5/10に入った割合
       highTotal:actualHighs.length,
       highInTop5:actualHighs.filter(r=>ranked.slice(0,5).some(o=>o.mno===r.machine_no)).length,
       highInTop10:actualHighs.filter(r=>ranked.slice(0,10).some(o=>o.mno===r.machine_no)).length });
     ranked.forEach((o,idx)=>{ const act=actByNo[o.mno]; if(!act) return;
-      recs.push({score:o.score,mark:o.mark,rank:idx+1,contrib:o.contrib,eventDay:R.eventDay,
-        actReg:act.reg_prob,actComb:act.combined,high:isHigh(act),low:isLow(act)}); });
+      const e=estimateSetting(act); const high=e&&e.setting>=5, low=e&&e.setting<=2;
+      let result="—";
+      if(o.score>=65) result=high?"○当たり":"×外れ";
+      else if(o.score<=34) result=high?"×見逃し":(low?"○妥当":"—");
+      records.push({date:D,rank:idx+1,mno:o.mno,mname:o.mname,tail:o.tail,score:o.score,mark:o.mark,
+        pros:o.pros,cons:o.cons,contrib:o.contrib,eventDay:R.eventDay,big:act.big,reg:act.reg,total:act.total,
+        regProb:act.reg_prob,combined:act.combined,estSetting:e?e.setting:null,high,low,result}); });
   }
-  if(!recs.length){ el.innerHTML="<p class='warn'>検証できる日がありませんでした。</p>"; return; }
-  const pct=(a,b)=>b?Math.round(a/b*100)+"%":"-";
-  const mean=a=>{const x=a.filter(v=>v!=null);return x.length?x.reduce((s,v)=>s+v,0)/x.length:null;};
+  if(!records.length){ el.innerHTML="<p class='warn'>検証できる日がありませんでした。</p>"; return; }
+  _btData={store,records,days};
+  const bf=document.getElementById("bt-filters"); if(bf) bf.style.display="";
+  renderBacktest();
+}
+function renderBacktest(){
+  const el=document.getElementById("t-bt"); if(!_btData){ el.innerHTML="<p class='muted'>「検証する」を押してください。</p>"; return; }
+  const {records,days,store}=_btData;
+  const fm=val("bt-f-machine").trim(),fFrom=val("bt-f-from"),fTo=val("bt-f-to"),fEv=val("bt-f-event"),
+    fNo=val("bt-f-no").trim(),fTail=val("bt-f-tail"),fRank=parseInt(val("bt-f-rank"),10),fMark=val("bt-f-mark");
+  const recF=records.filter(r=>{
+    if(fm&&!(r.mname||"").includes(fm)) return false;
+    if(fFrom&&r.date<fFrom) return false;
+    if(fTo&&r.date>fTo) return false;
+    if(fEv==="event"&&!r.eventDay) return false;
+    if(fEv==="normal"&&r.eventDay) return false;
+    if(fNo&&String(r.mno)!==fNo) return false;
+    if(fTail&&fTail!=="all"&&String(r.tail)!==fTail) return false;
+    if(fRank&&r.rank>fRank) return false;
+    if(fMark&&fMark!=="all"&&!r.mark.includes(fMark)) return false;
+    return true; });
+  const dayF=days.filter(d=>{ if(fFrom&&d.D<fFrom)return false; if(fTo&&d.D>fTo)return false;
+    if(fEv==="event"&&!d.eventDay)return false; if(fEv==="normal"&&d.eventDay)return false; return true; });
 
-  // ① 的中率（高設定が予想上位に入った日の割合）
-  const dh=days.filter(d=>d.hasHigh);
-  let h="<div class='note'>検証日数 "+days.length+"日（うち高設定あり"+dh.length+"日）／予想×実結果 "+recs.length+"件<br>"+
-    "<span class='muted'>「的中」＝予想上位Nに実際の高設定(推定設定5以上)が入っていた日の割合</span></div>";
-  const hitTable=(arr,label)=>{ const a=arr.filter(d=>d.hasHigh); if(!a.length) return "";
-    return "<tr><td style='text-align:left'>"+label+"("+a.length+"日)</td>"+
-      "<td>"+pct(a.filter(d=>d.top1).length,a.length)+"</td><td>"+pct(a.filter(d=>d.top3).length,a.length)+
-      "</td><td>"+pct(a.filter(d=>d.top5).length,a.length)+"</td><td>"+pct(a.filter(d=>d.top10).length,a.length)+"</td></tr>"; };
-  h+="<h3 style='font-size:14px'>① 的中率（1位/3位内/5位内/10位内）</h3><div class='scroll'><table>"+
+  let h="<div class='note'>店舗 <b>"+store+"</b>／検証日数 "+dayF.length+"日／予想×実結果 "+recF.length+"件"+
+    "<br><span class='muted'>高設定＝推定設定5以上。すべて「予想対象日より前のデータのみ」で予想（未来不使用）。</span></div>";
+
+  // ① 全体的中率（日別・高設定が上位に入った日の割合）
+  const hitRow=(arr,label)=>{ const a=arr.filter(d=>d.hasHigh); if(!a.length) return "";
+    return "<tr><td style='text-align:left'>"+label+"("+a.length+"日)</td><td>"+btPct(a.filter(d=>d.top1).length,a.length)+
+      "</td><td>"+btPct(a.filter(d=>d.top3).length,a.length)+"</td><td>"+btPct(a.filter(d=>d.top5).length,a.length)+
+      "</td><td>"+btPct(a.filter(d=>d.top10).length,a.length)+"</td></tr>"; };
+  h+="<h3 style='font-size:14px'>① 全体的中率（1位/3位内/5位内/10位内に高設定）</h3><div class='scroll'><table>"+
     "<tr><th>区分</th><th>1位</th><th>3位内</th><th>5位内</th><th>10位内</th></tr>"+
-    hitTable(days,"全体")+hitTable(days.filter(d=>d.eventDay),"イベント日")+hitTable(days.filter(d=>!d.eventDay),"通常日")+"</table></div>";
+    hitRow(dayF,"全体")+hitRow(dayF.filter(d=>d.eventDay),"イベント日")+hitRow(dayF.filter(d=>!d.eventDay),"通常日")+"</table></div>";
 
-  // ②③ スコア別の実際の平均REG/合算
-  const buckets=[["80-100",80,101],["65-79",65,80],["50-64",50,65],["0-49",0,50]];
-  h+="<h3 style='font-size:14px'>②③ 予想スコア別の実際の平均REG/合算・高設定率</h3><div class='scroll'><table>"+
+  // ② 日別予想一覧（全台・開閉式）
+  const byDate={}; recF.forEach(r=>{(byDate[r.date]=byDate[r.date]||[]).push(r);});
+  h+="<h3 style='font-size:14px'>② 日別予想一覧（全台・タップで開閉）</h3>";
+  Object.keys(byDate).sort().reverse().slice(0,90).forEach(d=>{
+    const arr=byDate[d].slice().sort((a,b)=>a.rank-b.rank); const ev=arr[0].eventDay?" 🎉":"";
+    const hi=arr.filter(r=>r.rank<=5&&r.high).length;
+    h+="<details><summary>"+d+ev+"（"+arr.length+"台・上位5に高設定"+hi+"台）</summary><div class='scroll'><table>"+
+      "<tr><th>順</th><th>台</th><th>機種</th><th>点</th><th>判定</th><th>BIG</th><th>REG</th><th>総ｽﾀｰﾄ</th><th>実REG率</th><th>実合算</th><th>推定</th><th>高</th><th>結果</th><th>主な根拠</th></tr>";
+    arr.forEach(r=>{ h+="<tr><td>"+r.rank+"</td><td>"+r.mno+"</td><td>"+r.mname+"</td>"+
+      "<td class='score' style='background:"+btScoreColor(r.score)+"'>"+r.score+"</td><td>"+r.mark+"</td>"+
+      "<td>"+r.big+"</td><td>"+r.reg+"</td><td>"+r.total+"</td><td>"+btDen(r.regProb)+"</td>"+
+      "<td "+cellStyle(combinedInfo(r.combined))+">"+btDen(r.combined)+"</td>"+
+      "<td style='"+settingStyle(r.estSetting)+"'>"+(r.estSetting?"設"+r.estSetting:"-")+"</td><td>"+(r.high?"◎":"")+"</td>"+
+      "<td>"+r.result+"</td><td class='reason' style='text-align:left'>"+((r.score>=50?r.pros:r.cons).slice(0,2).join(" / ")||"-")+"</td></tr>"; });
+    h+="</table></div></details>"; });
+
+  // ③ 台番号別バックテスト
+  const byNo={}; recF.forEach(r=>{(byNo[r.mno]=byNo[r.mno]||[]).push(r);});
+  h+="<h3 style='font-size:14px'>③ 台番号別バックテスト</h3><div class='scroll'><table>"+
+    "<tr><th>台</th><th>予想回数</th><th>平均点</th><th>実平均REG</th><th>実平均合算</th><th>高設定率</th><th>上位10入り</th><th>的中率※</th></tr>";
+  Object.keys(byNo).map(Number).sort((a,b)=>a-b).forEach(no=>{ const a=byNo[no]; const t5=a.filter(r=>r.rank<=5);
+    h+="<tr><td>"+no+"</td><td>"+a.length+"</td><td>"+Math.round(btMean(a.map(r=>r.score)))+"</td>"+
+      "<td>"+btDen(btMean(a.map(r=>r.regProb)))+"</td><td>"+btDen(btMean(a.map(r=>r.combined)))+"</td>"+
+      "<td>"+btPct(a.filter(r=>r.high).length,a.length)+"</td><td>"+a.filter(r=>r.rank<=10).length+"回</td>"+
+      "<td>"+(t5.length?btPct(t5.filter(r=>r.high).length,t5.length):"-")+"</td></tr>"; });
+  h+="</table></div><p class='muted'>※的中率＝予想上位5位に入った時に実際が高設定だった割合</p>";
+
+  // ④ 予想上位台(10位以内)の実結果
+  const top10=recF.filter(r=>r.rank<=10).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:a.rank-b.rank);
+  h+="<h3 style='font-size:14px'>④ 予想上位台(10位以内)の実結果 "+top10.length+"件</h3><div class='scroll'><table>"+
+    "<tr><th>日付</th><th>順</th><th>台</th><th>点</th><th>実REG</th><th>実合算</th><th>推定</th><th>結果</th><th>主な根拠</th></tr>";
+  top10.slice(0,400).forEach(r=>{ h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.rank+"</td><td>"+r.mno+"</td>"+
+    "<td class='score' style='background:"+btScoreColor(r.score)+"'>"+r.score+"</td><td>"+btDen(r.regProb)+"</td>"+
+    "<td "+cellStyle(combinedInfo(r.combined))+">"+btDen(r.combined)+"</td><td style='"+settingStyle(r.estSetting)+"'>"+(r.estSetting?"設"+r.estSetting:"-")+"</td>"+
+    "<td>"+r.result+"</td><td class='reason' style='text-align:left'>"+(r.pros.slice(0,2).join(" / ")||"-")+"</td></tr>"; });
+  h+="</table></div>";
+
+  // ⑤ 見送り台の実結果
+  const miss=recF.filter(r=>r.mark.includes("見送り")).sort((a,b)=>a.date<b.date?1:-1);
+  h+="<h3 style='font-size:14px'>⑤ 見送り台の実結果 "+miss.length+"件</h3>";
+  if(miss.length){ const mr=btMean(miss.map(r=>r.regProb)),mc=btMean(miss.map(r=>r.combined));
+    h+="<div class='note'>見送り平均: REG"+btDen(mr)+" 合算"+btDen(mc)+" ／ 実は高設定だった割合 "+btPct(miss.filter(r=>r.high).length,miss.length)+
+      "（低いほど判定が正しい）</div><div class='scroll'><table><tr><th>日付</th><th>台</th><th>点</th><th>実REG</th><th>実合算</th><th>推定</th><th>高設定?</th><th>見送り理由</th></tr>";
+    miss.slice(0,400).forEach(r=>{ h+="<tr><td>"+r.date.slice(5)+"</td><td>"+r.mno+"</td><td>"+r.score+"</td>"+
+      "<td>"+btDen(r.regProb)+"</td><td "+cellStyle(combinedInfo(r.combined))+">"+btDen(r.combined)+"</td>"+
+      "<td style='"+settingStyle(r.estSetting)+"'>"+(r.estSetting?"設"+r.estSetting:"-")+"</td><td>"+(r.high?"⚠高設定":"")+"</td>"+
+      "<td class='reason' style='text-align:left'>"+(r.cons.slice(0,2).join(" / ")||"-")+"</td></tr>"; });
+    h+="</table></div>"; }
+
+  // ⑥ スコア帯別／⑦ 項目別貢献度
+  const buckets=[["80-100",80,101],["65-79",65,80],["50-64",50,65],["35-49",35,50],["0-34",0,35]];
+  h+="<h3 style='font-size:14px'>⑥ スコア帯別の実結果</h3><div class='scroll'><table>"+
     "<tr><th>スコア帯</th><th>件数</th><th>実平均REG</th><th>実平均合算</th><th>高設定率</th></tr>";
-  buckets.forEach(([lb,lo,hi])=>{ const a=recs.filter(r=>r.score>=lo&&r.score<hi); if(!a.length){return;}
-    const mr=mean(a.map(r=>r.actReg)),mc=mean(a.map(r=>r.actComb));
-    h+="<tr><td>"+lb+"</td><td>"+a.length+"</td><td>"+(mr?"1/"+mr.toFixed(0):"-")+"</td><td>"+(mc?"1/"+mc.toFixed(0):"-")+
-      "</td><td>"+pct(a.filter(r=>r.high).length,a.length)+"</td></tr>"; });
-  h+="</table></div><p class='muted'>スコアが高い帯ほどREG/合算が良く高設定率が高ければ、予想は機能しています。</p>";
-
-  // ④ 高設定を何%拾えているか（recall）
-  const totHigh=days.reduce((s,d)=>s+d.highTotal,0);
-  const in5=days.reduce((s,d)=>s+d.highInTop5,0), in10=days.reduce((s,d)=>s+d.highInTop10,0);
-  h+="<h3 style='font-size:14px'>④ 高設定の拾い率（recall）</h3><div class='note'>"+
-    "実際の高設定 "+totHigh+"台中、予想上位5位に "+pct(in5,totHigh)+"／上位10位に "+pct(in10,totHigh)+" を捕捉</div>";
-
-  // ⑤ 見送り判定が実際に弱かったか
-  const miss=recs.filter(r=>r.mark.indexOf("見送り")>=0);
-  if(miss.length){ const mr=mean(miss.map(r=>r.actReg)),mc=mean(miss.map(r=>r.actComb));
-    h+="<h3 style='font-size:14px'>⑤ 見送り判定の実際</h3><div class='note'>見送り"+miss.length+"件 → 実平均REG 1/"+(mr?mr.toFixed(0):"-")+
-      "・実平均合算 1/"+(mc?mc.toFixed(0):"-")+"・高設定だった割合 "+pct(miss.filter(r=>r.high).length,miss.length)+
-      "・低設定(推定2以下)だった割合 "+pct(miss.filter(r=>r.low).length,miss.length)+
-      "<br><span class='muted'>見送りの高設定率が低く、低設定率が高ければ判定は妥当です。</span></div>"; }
-
-  // ⑥ 項目ごとの貢献度（その項目が加点された台の実際の高設定率）
-  const base=pct(recs.filter(r=>r.high).length,recs.length);
-  const factors={}; recs.forEach(r=>{ for(const k in r.contrib){ if(r.contrib[k]>0){ (factors[k]=factors[k]||{n:0,hi:0}); factors[k].n++; if(r.high)factors[k].hi++; } } });
-  h+="<h3 style='font-size:14px'>⑥ 項目ごとの貢献度（全体高設定率 "+base+"）</h3><div class='scroll'><table>"+
-    "<tr><th>項目</th><th>加点された件数</th><th>その台の高設定率</th></tr>";
+  buckets.forEach(([lb,lo,hi])=>{ const a=recF.filter(r=>r.score>=lo&&r.score<hi); if(!a.length)return;
+    h+="<tr><td>"+lb+"</td><td>"+a.length+"</td><td>"+btDen(btMean(a.map(r=>r.regProb)))+"</td><td>"+btDen(btMean(a.map(r=>r.combined)))+
+      "</td><td>"+btPct(a.filter(r=>r.high).length,a.length)+"</td></tr>"; });
+  h+="</table></div><p class='muted'>スコアが高い帯ほどREG/合算が良く高設定率が高ければ予想は機能しています。</p>";
+  // ⑦ 項目別貢献度
+  const base=btPct(recF.filter(r=>r.high).length,recF.length);
+  const factors={}; recF.forEach(r=>{ for(const k in (r.contrib||{})){ if(r.contrib[k]>0){ (factors[k]=factors[k]||{n:0,hi:0}); factors[k].n++; if(r.high)factors[k].hi++; } } });
+  h+="<h3 style='font-size:14px'>⑦ 項目別貢献度（全体高設定率 "+base+"）</h3><div class='scroll'><table>"+
+    "<tr><th>項目</th><th>加点件数</th><th>その台の高設定率</th></tr>";
   Object.entries(factors).sort((a,b)=>(b[1].hi/b[1].n)-(a[1].hi/a[1].n)).forEach(([k,v])=>{
-    h+="<tr><td style='text-align:left'>"+k+"</td><td>"+v.n+"</td><td>"+pct(v.hi,v.n)+"</td></tr>"; });
-  h+="</table></div><p class='muted'>「その台の高設定率」が全体より高い項目ほど、予想に効いています。</p>";
-
+    h+="<tr><td style='text-align:left'>"+k+"</td><td>"+v.n+"</td><td>"+btPct(v.hi,v.n)+"</td></tr>"; });
+  h+="</table></div><p class='muted'>「高設定率」が全体より高い項目ほど予想に効いています。</p>";
   el.innerHTML=h;
 }
+
 
 // ---------- イベント実績の学習（分析画面用・全データ使用）----------
 function learnEventStats(store){
