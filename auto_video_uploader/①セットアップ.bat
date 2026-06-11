@@ -4,7 +4,7 @@ title ①セットアップ(最初に1回だけ)
 cd /d "%~dp0"
 
 echo ============================================================
-echo  自動セットアップを開始します(5〜10分かかります)
+echo  自動セットアップを開始します（5〜10分かかります）
 echo  途中で [Y] か「同意」を聞かれたら Y を押して Enter してください
 echo ============================================================
 echo.
@@ -66,14 +66,14 @@ if errorlevel 1 (
 )
 
 rem ---- [3/4] Python の部品 ----
-echo [3/4] 必要な部品をインストールしています(数分かかります)...
+echo [3/4] 必要な部品をインストールしています（数分かかります）...
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 if errorlevel 1 (
     echo.
     echo [エラー] 部品のインストールに失敗しました。
     echo すぐ上に表示されている赤い文字がエラーの内容です。
-    echo その部分を 撮影(Windowsキー+Shift+S)して相談してください。
+    echo その部分を 撮影（Windowsキー+Shift+S）して相談してください。
     pause
     exit /b 1
 )

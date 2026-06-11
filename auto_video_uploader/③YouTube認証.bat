@@ -9,7 +9,7 @@ if not exist client_secret*.json (
     echo  まだ「client_secret.json」がありません。
     echo.
     echo  これは Google からもらう鍵ファイルで、ここだけは
-    echo  Google の決まりで手作業が必要です(1回だけ)。
+    echo  Google の決まりで手作業が必要です（1回だけ）。
     echo.
     echo  手順は README.md の「YouTube API 認証の手順」を見るか、
     echo  チャットで「認証の手順を教えて」と聞いてください。
