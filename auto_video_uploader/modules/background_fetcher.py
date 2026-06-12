@@ -18,13 +18,19 @@ SEARCH_URL = "https://api.pexels.com/videos/search"
 
 
 def _to_direct_url(url: str) -> str:
-    """Google ドライブの共有リンクを直接ダウンロード URL に変換する。"""
+    """Google ドライブの共有リンクを直接ダウンロード URL に変換する。
+
+    drive.usercontent.google.com + confirm=t を使うことで、100MB 超の
+    ファイルでも「ウイルススキャンできません」の確認ページを回避できる。
+    """
     m = re.search(r"drive\.google\.com/file/d/([\w-]+)", url)
+    if not m:
+        m = re.search(r"drive\.google\.com/open\?id=([\w-]+)", url)
     if m:
-        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
-    m = re.search(r"drive\.google\.com/open\?id=([\w-]+)", url)
-    if m:
-        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+        return (
+            "https://drive.usercontent.google.com/download"
+            f"?id={m.group(1)}&export=download&confirm=t"
+        )
     return url
 
 
@@ -59,19 +65,53 @@ def download_custom(url: str, prefix: str = "background_custom") -> Path | None:
     if cached and cached[0].stat().st_size > 0:
         return cached[0]
 
+    max_bytes = int(config.MAX_MEDIA_MB * 1024 * 1024)
     try:
-        resp = requests.get(_to_direct_url(url), timeout=300, allow_redirects=True)
-        resp.raise_for_status()
-        ctype = resp.headers.get("content-type", "")
-        if "text/html" in ctype:
-            logger.warning(
-                "素材URLがファイルではなくWebページを返しました。Google ドライブの場合は"
-                "共有設定を「リンクを知っている全員」にしてください: %s", url,
-            )
-            return None
-        ext = _guess_extension(ctype, resp.content[:16])
+        with requests.get(
+            _to_direct_url(url), timeout=300, allow_redirects=True, stream=True
+        ) as resp:
+            resp.raise_for_status()
+            ctype = resp.headers.get("content-type", "")
+            if "text/html" in ctype:
+                logger.warning(
+                    "素材URLがファイルではなくWebページを返しました。Google ドライブの場合は"
+                    "共有設定を「リンクを知っている全員」にしてください: %s", url,
+                )
+                return None
+            length = int(resp.headers.get("content-length") or 0)
+            if length > max_bytes:
+                logger.warning(
+                    "素材が大きすぎます (%d MB > 上限 %d MB)。"
+                    "スマホで30〜60秒にトリミングしてから送ってください: %s",
+                    length // (1024 * 1024), config.MAX_MEDIA_MB, url,
+                )
+                return None
+
+            # 分割ダウンロード (大容量でもメモリを使い切らない)
+            tmp_path = config.ASSETS_DIR / f"{prefix}_{cache_key}.part"
+            head = b""
+            written = 0
+            with open(tmp_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    if len(head) < 16:
+                        head += chunk[:16]
+                    written += len(chunk)
+                    if written > max_bytes:
+                        f.close()
+                        tmp_path.unlink(missing_ok=True)
+                        logger.warning(
+                            "素材が上限 %d MB を超えたため中断しました。"
+                            "短くトリミングして送り直してください: %s",
+                            config.MAX_MEDIA_MB, url,
+                        )
+                        return None
+                    f.write(chunk)
+
+        ext = _guess_extension(ctype, head)
         out_path = config.ASSETS_DIR / f"{prefix}_{cache_key}{ext}"
-        out_path.write_bytes(resp.content)
+        tmp_path.rename(out_path)
         logger.info(
             "指定された素材を取得しました (%s, %d KB)",
             ext, out_path.stat().st_size // 1024,

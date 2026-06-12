@@ -71,6 +71,10 @@ QUALITY_MIN_SCORE = int(os.getenv("QUALITY_MIN_SCORE", "80"))
 QUALITY_MAX_RETRIES = int(os.getenv("QUALITY_MAX_RETRIES", "2"))
 QUALITY_LOG_TXT = LOGS_DIR / "quality_log.txt"
 
+# 背景・BGM素材のダウンロード上限 (MB)。これを超えるファイルはスキップして
+# トリミングを促す (フォーム経由の巨大動画対策)
+MAX_MEDIA_MB = int(os.getenv("MAX_MEDIA_MB", "500"))
+
 # 日本語フォント (テロップ / サムネイル用)
 FONT_PATH = os.getenv(
     "FONT_PATH",
