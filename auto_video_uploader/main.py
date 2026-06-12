@@ -25,7 +25,7 @@ from modules import script_generator, voice_generator, video_editor, thumbnail_g
 from modules.logger import append_uploaded_log, get_logger, is_already_uploaded, log_error
 from modules.platform_base import get_uploader
 
-TOPIC_FIELDS = ["date", "topic", "platform", "status", "background"]
+TOPIC_FIELDS = ["date", "topic", "platform", "status", "background", "script"]
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +97,7 @@ def sync_topics_from_sheet() -> None:
                     "platform": (row.get("platform") or "youtube").lower(),
                     "status": (row.get("status") or "pending").lower(),
                     "background": row.get("background", ""),
+                    "script": row.get("script", ""),
                 }
             )
     except Exception as e:
@@ -112,18 +113,19 @@ def sync_topics_from_sheet() -> None:
     for s in sheet_rows:
         key = (s["topic"], s["platform"])
         if key in by_key:
-            # 既存行でも、シート側で background が追記・変更されたら反映する
+            # 既存行でも、シート側で background / script が追記・変更されたら反映する
             r = by_key[key]
-            if s["background"] and (r.get("background") or "") != s["background"]:
-                r["background"] = s["background"]
-                updated += 1
+            for field in ("background", "script"):
+                if s[field] and (r.get(field) or "") != s[field]:
+                    r[field] = s[field]
+                    updated += 1
             continue
         rows.append(s)
         by_key[key] = s
         added += 1
     if added or updated:
         save_topics(rows)
-        logger.info("スプレッドシートから取り込み: 追加 %d 件 / 背景更新 %d 件", added, updated)
+        logger.info("スプレッドシートから取り込み: 追加 %d 件 / 更新 %d 件", added, updated)
 
 
 def resolve_background(rows: list, target_row: dict) -> str:
@@ -228,11 +230,16 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "") 
             mark_topic_done(topic, platform)
             return True
 
-        # --- 1. 台本生成 (生成済みなら再利用) -----------------------------
+        # --- 1. 台本 (シート持ち込み > 生成済み再利用 > 新規生成) ----------
         script_path = config.SCRIPTS_DIR / f"{stem}.json"
+        user_script = (row.get("script") or "").strip()
         if script_path.exists():
             logger.info("生成済みの台本を再利用します: %s", script_path)
             content = script_generator.load_script(script_path)
+        elif user_script:
+            logger.info("シートの script 列の台本をそのまま使用します")
+            content = script_generator.build_from_user_script(topic, user_script)
+            script_generator.save_script(content, script_path)
         else:
             content = script_generator.generate(topic)
             script_generator.save_script(content, script_path)
