@@ -394,7 +394,12 @@ def _build_slideshow(images: list, segment_durations: list | None,
     ズームイン/ズームアウトを交互にかけて単調さを防ぐ。
     """
     w, h, fps = config.VIDEO_WIDTH, config.VIDEO_HEIGHT, config.VIDEO_FPS
-    durs = list(segment_durations) if segment_durations else [total_sec]
+    if segment_durations:
+        durs = list(segment_durations)
+    else:
+        # 通常構成(持ち込み台本など)では写真の枚数で均等割りして全部使う
+        n = max(1, len(images))
+        durs = [total_sec / n] * n
     durs[-1] += 1.0  # 末尾の余韻ぶん
 
     clips = [(images[i % len(images)], d) for i, d in enumerate(durs)]
