@@ -127,7 +127,7 @@ def sync_topics_from_sheet() -> None:
             topic = row.get("topic", "")
             if not topic:
                 continue
-            # \u30d5\u30a9\u30fc\u30e0\u306e\u30d5\u30a1\u30a4\u30eb\u6dfb\u4ed8\u306f URL \u304c\u30ab\u30f3\u30de\u533a\u5207\u308a\u3067\u8907\u6570\u5165\u308b\u3053\u3068\u304c\u3042\u308b
+            # フォームのファイル添付は URL がカンマ区切りで複数入ることがある
             background = row.get("background", "")
             if "," in background:
                 background = background.split(",")[0].strip()
