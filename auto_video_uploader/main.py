@@ -64,6 +64,25 @@ def mark_topic_done(topic: str, platform: str) -> None:
     save_topics(rows)
 
 
+# Google フォームの回答シート等、日本語の見出しでも読み取れるようにする
+FIELD_ALIASES = [
+    ("date", ("date", "公開日", "投稿日", "日付")),
+    ("topic", ("topic", "タイトル", "テーマ", "お題", "ネタ")),
+    ("platform", ("platform", "プラットフォーム")),
+    ("status", ("status", "ステータス", "状態")),
+    ("background", ("background", "背景")),
+    ("script", ("script", "台本", "原稿")),
+]
+
+
+def _normalize_header(name: str) -> str | None:
+    n = (name or "").strip().lstrip("\ufeff").lower()
+    for field, keys in FIELD_ALIASES:
+        if any(k in n for k in keys):
+            return field
+    return None  # タイムスタンプ等の不明な列は無視
+
+
 def _sheet_csv_url(url: str) -> str:
     """スプレッドシートの URL を CSV 取得用 URL に正規化する。
 
@@ -98,21 +117,27 @@ def sync_topics_from_sheet() -> None:
         resp.raise_for_status()
         resp.encoding = "utf-8"
         sheet_rows = []
-        for row in csv.DictReader(io.StringIO(resp.text)):
-            row = {
-                (k or "").strip().lower().lstrip("\ufeff"): (v or "").strip()
-                for k, v in row.items()
-            }
+        for raw_row in csv.DictReader(io.StringIO(resp.text)):
+            row = {}
+            for k, v in raw_row.items():
+                field = _normalize_header(k)
+                value = (v or "").strip()
+                if field and value and not row.get(field):
+                    row[field] = value
             topic = row.get("topic", "")
             if not topic:
                 continue
+            # フォームのファイル添付は URL がカンマ区切りで複数入ることがある
+            background = row.get("background", "")
+            if "," in background:
+                background = background.split(",")[0].strip()
             sheet_rows.append(
                 {
                     "date": row.get("date", ""),
                     "topic": topic,
                     "platform": (row.get("platform") or "youtube").lower(),
                     "status": (row.get("status") or "pending").lower(),
-                    "background": row.get("background", ""),
+                    "background": background,
                     "script": row.get("script", ""),
                 }
             )
