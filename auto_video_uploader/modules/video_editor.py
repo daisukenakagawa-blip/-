@@ -58,20 +58,56 @@ def _find_or_create_background() -> Path:
     if generated.exists():
         return generated
 
-    from PIL import Image
+    from PIL import Image, ImageDraw
 
     w, h = config.VIDEO_WIDTH, config.VIDEO_HEIGHT
     img = Image.new("RGB", (w, h))
     px = img.load()
-    # 紺 → 紫の縦グラデーション
-    top, bottom = (12, 16, 48), (72, 24, 96)
+    # 黒 → 深紅の縦グラデーション (ホールの照明イメージ)
+    top, bottom = (8, 8, 14), (70, 10, 22)
     for y in range(h):
         t = y / (h - 1)
         color = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
         for x in range(w):
             px[x, y] = color
+
+    draw = ImageDraw.Draw(img)
+
+    # スロット実機風の筐体パネル (中央やや下: 上部のデータカードと重ならない位置)
+    panel = (90, int(h * 0.44), w - 90, int(h * 0.70))
+    draw.rounded_rectangle(panel, radius=40, fill=(26, 10, 12),
+                           outline=(214, 38, 50), width=10)
+
+    # 3連リール (白窓 + 赤い「7」)
+    reel_w = (panel[2] - panel[0] - 4 * 36) // 3
+    reel_h = int((panel[3] - panel[1]) * 0.58)
+    reel_y = panel[1] + ((panel[3] - panel[1]) - reel_h) // 2
+    try:
+        from PIL import ImageFont
+        font_path = Path(config.FONT_PATH)
+        seven_font = (ImageFont.truetype(str(font_path), int(reel_h * 0.62))
+                      if font_path.exists() else ImageFont.load_default(int(reel_h * 0.6)))
+    except Exception:
+        from PIL import ImageFont
+        seven_font = ImageFont.load_default()
+    for i in range(3):
+        rx = panel[0] + 36 + i * (reel_w + 36)
+        draw.rounded_rectangle((rx, reel_y, rx + reel_w, reel_y + reel_h),
+                               radius=18, fill=(244, 240, 230), outline=(80, 70, 60), width=4)
+        text = "7"
+        tw = draw.textlength(text, font=seven_font)
+        draw.text((rx + (reel_w - tw) / 2, reel_y + reel_h * 0.12), text,
+                  font=seven_font, fill=(206, 32, 40))
+
+    # 上下のランプ列 (黄色の電飾)
+    for ly in (panel[1] - 70, panel[3] + 40):
+        for i in range(9):
+            cx = 120 + i * (w - 240) // 8
+            draw.ellipse((cx - 16, ly - 16, cx + 16, ly + 16),
+                         fill=(255, 200, 40) if i % 2 == 0 else (255, 120, 30))
+
     img.save(generated)
-    get_logger().info("背景素材が無いためグラデーション背景を生成しました: %s", generated)
+    get_logger().info("背景素材が無いためスロット実機風の背景を生成しました: %s", generated)
     return generated
 
 
@@ -264,18 +300,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 f"Dialogue: 1,{_ass_time(start)},{_ass_time(end)},Banner,,0,0,0,,{fx}{label}"
             )
 
-        # 台データカード (台番 / REG / 合算 / 判定)
+        # 台データカード (台番 / BIG / REG / 合算 / 差枚 / 判定)
         if seg.get("machine_no") or seg.get("verdict"):
             card_lines = []
             if seg.get("machine_no"):
                 card_lines.append(_emphasize_numbers(_escape_ass(seg["machine_no"]), "&H00FFFFFF"))
-            nums = []
+            row1 = []
+            if seg.get("big"):
+                row1.append("BIG " + seg["big"])
             if seg.get("reg"):
-                nums.append("REG " + seg["reg"])
+                row1.append("REG " + seg["reg"])
+            if row1:
+                card_lines.append(_emphasize_numbers(_escape_ass("  ".join(row1)), "&H00FFFFFF"))
+            row2 = []
             if seg.get("total"):
-                nums.append("合算 " + seg["total"])
-            if nums:
-                card_lines.append(_emphasize_numbers(_escape_ass("  ".join(nums)), "&H00FFFFFF"))
+                row2.append("合算 " + seg["total"])
+            if seg.get("diff"):
+                row2.append("差枚 " + seg["diff"])
+            if row2:
+                card_lines.append(_emphasize_numbers(_escape_ass("  ".join(row2)), "&H00FFFFFF"))
             if seg.get("verdict"):
                 vcolor = VERDICT_COLOR.get(seg["verdict"], "&H00FFFFFF")
                 card_lines.append(
@@ -314,6 +357,7 @@ def create_video(
     stem: str,
     background_url: str = "",
     segment_durations: list | None = None,
+    bgm_url: str = "",
 ) -> Path:
     """完成動画を videos/ に生成してパスを返す。
 
@@ -361,8 +405,16 @@ def create_video(
         cmd += ["-loop", "1", "-i", str(background)]
     cmd += ["-i", str(audio_path)]
 
-    bgm = Path(config.BGM_PATH)
-    use_bgm = bgm.exists()
+    # BGM: シートの bgm 列の URL (ドライブ共有リンク可) > assets/bgm.mp3
+    bgm = None
+    if bgm_url:
+        from modules.background_fetcher import download_custom
+
+        bgm = download_custom(bgm_url, prefix="bgm_custom")
+    if bgm is None:
+        local_bgm = Path(config.BGM_PATH)
+        bgm = local_bgm if local_bgm.exists() else None
+    use_bgm = bgm is not None
     if use_bgm:
         cmd += ["-stream_loop", "-1", "-i", str(bgm)]
 

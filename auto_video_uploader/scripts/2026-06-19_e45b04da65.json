@@ -44,7 +44,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     },
     {
       "role": "rank3",
@@ -54,9 +56,11 @@
         "取れなければ撤退"
       ],
       "machine_no": "末尾7の台",
-      "reg": "1/245",
-      "total": "1/120",
-      "verdict": "対抗"
+      "reg": "1/252",
+      "total": "1/124",
+      "verdict": "対抗",
+      "big": "1/245",
+      "diff": "+1300枚"
     },
     {
       "role": "rank2",
@@ -66,9 +70,11 @@
         "見落とされがちな穴"
       ],
       "machine_no": "末尾17/27の台",
-      "reg": "1/240",
-      "total": "1/118",
-      "verdict": "対抗"
+      "reg": "1/248",
+      "total": "1/122",
+      "verdict": "対抗",
+      "big": "1/242",
+      "diff": "+1500枚"
     },
     {
       "role": "rank1",
@@ -78,9 +84,11 @@
         "入れたい台はここ!"
       ],
       "machine_no": "角の末尾7",
-      "reg": "1/225",
-      "total": "1/108",
-      "verdict": "本命"
+      "reg": "1/228",
+      "total": "1/112",
+      "verdict": "本命",
+      "big": "1/222",
+      "diff": "+3100枚"
     },
     {
       "role": "caution",
@@ -90,9 +98,11 @@
         "夕方の後ヅモも正解"
       ],
       "machine_no": "夕方の空き台",
-      "reg": "1/260",
-      "total": "1/135",
-      "verdict": "注意"
+      "reg": "1/300",
+      "total": "1/140",
+      "verdict": "注意",
+      "big": "1/262",
+      "diff": "-600枚"
     },
     {
       "role": "summary",
@@ -104,7 +114,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     }
   ]
 }

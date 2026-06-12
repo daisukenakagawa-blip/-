@@ -44,7 +44,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     },
     {
       "role": "rank3",
@@ -54,9 +56,11 @@
         "様子見して続行あり"
       ],
       "machine_no": "合算良好のハマり台",
-      "reg": "1/255",
+      "reg": "1/286",
       "total": "1/130",
-      "verdict": "対抗"
+      "verdict": "対抗",
+      "big": "1/238",
+      "diff": "+400枚"
     },
     {
       "role": "rank2",
@@ -66,9 +70,11 @@
         "粘る価値あり"
       ],
       "machine_no": "REG良好ハマり台",
-      "reg": "1/238",
-      "total": "1/125",
-      "verdict": "対抗"
+      "reg": "1/236",
+      "total": "1/121",
+      "verdict": "対抗",
+      "big": "1/250",
+      "diff": "+800枚"
     },
     {
       "role": "rank1",
@@ -78,9 +84,11 @@
         "G数では決めない!"
       ],
       "machine_no": "数字で判断する台",
-      "reg": "1/230",
-      "total": "1/112",
-      "verdict": "本命"
+      "reg": "1/234",
+      "total": "1/116",
+      "verdict": "本命",
+      "big": "1/230",
+      "diff": "+2000枚"
     },
     {
       "role": "caution",
@@ -90,9 +98,11 @@
         "財布が先に尽きる"
       ],
       "machine_no": "低設定のハマり台",
-      "reg": "1/330",
-      "total": "1/158",
-      "verdict": "見送り"
+      "reg": "1/430",
+      "total": "1/177",
+      "verdict": "見送り",
+      "big": "1/300",
+      "diff": "-3300枚"
     },
     {
       "role": "summary",
@@ -104,7 +114,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     }
   ]
 }

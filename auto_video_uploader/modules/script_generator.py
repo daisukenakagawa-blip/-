@@ -80,14 +80,16 @@ RANKING_SCHEMA = {
                     },
                     "lines": {"type": "array", "items": {"type": "string"}},
                     "machine_no": {"type": "string"},
+                    "big": {"type": "string"},
                     "reg": {"type": "string"},
                     "total": {"type": "string"},
+                    "diff": {"type": "string"},
                     "verdict": {
                         "type": "string",
                         "enum": ["本命", "対抗", "見送り", "注意", ""],
                     },
                 },
-                "required": ["role", "lines", "machine_no", "reg", "total", "verdict"],
+                "required": ["role", "lines", "machine_no", "big", "reg", "total", "diff", "verdict"],
                 "additionalProperties": False,
             },
         },
@@ -118,10 +120,14 @@ RANKING_PROMPT = """\
 
 rank3/rank2/rank1/caution には台データを入れる:
 - machine_no: 台番の予想 (例 "1038番台")
+- big: BIG確率 (例 "1/230")
 - reg: REG確率 (例 "1/240")
-- total: 合算確率 (例 "1/115")
+- total: 合算確率。**必ず 1/(1/BIG + 1/REG) を計算して一致させること** (例 BIG 1/230, REG 1/240 → 合算 1/117)
+- diff: 想定差枚数 (例 "+2800枚" / "-1500枚")。高設定想定はプラス、低設定想定はマイナスにして判定と矛盾させない
 - verdict: rank1=本命, rank2=対抗, rank3=対抗, caution=見送り
-hook と summary は machine_no/reg/total/verdict をすべて空文字にする。
+数値はジャグラー実機の設定別スペックとして現実的な範囲にすること
+(BIG 1/210〜1/300, REG 1/230〜1/450, 合算 1/105〜1/180)。
+hook と summary は machine_no/big/reg/total/diff/verdict をすべて空文字にする。
 
 その他:
 - title: タップしたくなるタイトル。数字を含める。28文字以内
@@ -165,18 +171,22 @@ def _generate_ranking_template(topic: str) -> dict:
         "title": f"狙い台TOP3!{short}"[:28],
         "segments": [
             {"role": "hook", "lines": [f"狙い台TOP3発表!"],
-             "machine_no": "", "reg": "", "total": "", "verdict": ""},
+             "machine_no": "", "big": "", "reg": "", "total": "", "diff": "", "verdict": ""},
             {"role": "rank3", "lines": ["第3位は角台", "出玉の波に注目"],
-             "machine_no": "末尾3の台", "reg": "1/270", "total": "1/130", "verdict": "対抗"},
+             "machine_no": "末尾3の台", "big": "1/258", "reg": "1/270",
+             "total": "1/132", "diff": "+900枚", "verdict": "対抗"},
             {"role": "rank2", "lines": ["第2位は末尾7", "前日高設定の可能性"],
-             "machine_no": "末尾7の台", "reg": "1/250", "total": "1/125", "verdict": "対抗"},
+             "machine_no": "末尾7の台", "big": "1/244", "reg": "1/250",
+             "total": "1/123", "diff": "+1500枚", "verdict": "対抗"},
             {"role": "rank1", "lines": ["第1位はこれ", "REGが強い台", "朝一から狙う価値あり"],
-             "machine_no": "角2の台", "reg": "1/230", "total": "1/110", "verdict": "本命"},
+             "machine_no": "角2の台", "big": "1/226", "reg": "1/230",
+             "total": "1/114", "diff": "+2800枚", "verdict": "本命"},
             {"role": "caution", "lines": ["逆に危険な台", "前日大量出玉は", "リセット警戒"],
-             "machine_no": "前日万枚の台", "reg": "1/350", "total": "1/160", "verdict": "見送り"},
+             "machine_no": "前日万枚の台", "big": "1/272", "reg": "1/388",
+             "total": "1/160", "diff": "-2100枚", "verdict": "見送り"},
             {"role": "summary", "lines": ["あくまで予想です", "無理は禁物",
                                           "登録して明日の予想もチェック"],
-             "machine_no": "", "reg": "", "total": "", "verdict": ""},
+             "machine_no": "", "big": "", "reg": "", "total": "", "diff": "", "verdict": ""},
         ],
         "description": (
             f"{topic} の狙い台をランキング形式で紹介。\n\n"
@@ -218,8 +228,10 @@ def _validate_ranking(content: dict, topic: str) -> dict:
                 "role": role,
                 "lines": lines,
                 "machine_no": str(seg.get("machine_no") or "").strip(),
+                "big": str(seg.get("big") or "").strip(),
                 "reg": str(seg.get("reg") or "").strip(),
                 "total": str(seg.get("total") or "").strip(),
+                "diff": str(seg.get("diff") or "").strip(),
                 "verdict": str(seg.get("verdict") or "").strip(),
             }
         )

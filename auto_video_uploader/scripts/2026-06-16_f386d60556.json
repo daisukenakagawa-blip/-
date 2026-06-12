@@ -45,7 +45,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     },
     {
       "role": "rank3",
@@ -56,8 +58,10 @@
       ],
       "machine_no": "前日REG良台",
       "reg": "1/250",
-      "total": "1/120",
-      "verdict": "対抗"
+      "total": "1/125",
+      "verdict": "対抗",
+      "big": "1/252",
+      "diff": "+1200枚"
     },
     {
       "role": "rank2",
@@ -67,9 +71,11 @@
         "閉店メモが武器になる"
       ],
       "machine_no": "ぶどう良好台",
-      "reg": "1/240",
-      "total": "1/115",
-      "verdict": "対抗"
+      "reg": "1/243",
+      "total": "1/121",
+      "verdict": "対抗",
+      "big": "1/240",
+      "diff": "+1600枚"
     },
     {
       "role": "rank1",
@@ -81,8 +87,10 @@
       ],
       "machine_no": "閉店良挙動台",
       "reg": "1/230",
-      "total": "1/110",
-      "verdict": "本命"
+      "total": "1/113",
+      "verdict": "本命",
+      "big": "1/224",
+      "diff": "+2800枚"
     },
     {
       "role": "caution",
@@ -92,9 +100,11 @@
         "リセット濃厚"
       ],
       "machine_no": "前日5000枚台",
-      "reg": "1/300",
-      "total": "1/150",
-      "verdict": "見送り"
+      "reg": "1/388",
+      "total": "1/160",
+      "verdict": "見送り",
+      "big": "1/272",
+      "diff": "-2100枚"
     },
     {
       "role": "summary",
@@ -106,7 +116,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     }
   ]
 }
