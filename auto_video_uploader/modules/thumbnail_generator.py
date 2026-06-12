@@ -43,12 +43,13 @@ def _wrap_text(draw, text: str, font, max_width: int) -> list:
     return lines
 
 
-def create_thumbnail(title: str, stem: str, badge: str = "狙い台TOP3") -> Path:
+def create_thumbnail(title: str, stem: str, badge: str = "狙い台TOP3",
+                     punch: str = "") -> Path:
     """固定テンプレートのサムネイルを thumbnails/ に生成してパスを返す。
 
-    テンプレート構成(毎回同じレイアウト):
-      上: 赤帯 + チャンネルジャンル名 / 中: タイトル(黄・黒縁) /
-      左下: バッジ(TOP3 等) / 下: 黄帯
+    テンプレート構成(毎回同じレイアウト・超高コントラスト):
+      上: 赤帯 + チャンネルジャンル名 / 中: パンチワード(10文字以内・特大) /
+      その下: タイトル(小さめ) / 左下: バッジ / 下: 黄帯
     """
     config.ensure_dirs()
     out_path = config.THUMBNAILS_DIR / f"{stem}.jpg"
@@ -80,32 +81,44 @@ def create_thumbnail(title: str, stem: str, badge: str = "狙い台TOP3") -> Pat
         )
         draw.text((bx, by), badge, font=badge_font, fill=(255, 230, 60))
 
-    # 中央のタイトル
-    font_size = 100
-    margin = 70
-    while font_size >= 44:
+    # 中央のパンチワード (10文字以内・特大・超高コントラスト)
+    punch = (punch or title)[:10]
+    margin = 60
+    font_size = 230
+    while font_size >= 90:
         font = _load_font(font_size)
-        lines = _wrap_text(draw, title, font, THUMB_W - margin * 2)
-        line_height = int(font_size * 1.25)
-        if len(lines) * line_height <= THUMB_H - 420:
+        lines = _wrap_text(draw, punch, font, THUMB_W - margin * 2)
+        line_height = int(font_size * 1.2)
+        if len(lines) * line_height <= 380:
             break
-        font_size -= 8
-    else:
-        font = _load_font(44)
-        lines = _wrap_text(draw, title, font, THUMB_W - margin * 2)
-        line_height = 56
-
+        font_size -= 16
     total_height = len(lines) * line_height
-    y = 130 + (THUMB_H - 320 - total_height) // 2
+    y = 150 + (400 - total_height) // 2
     for line in lines:
         width = draw.textlength(line, font=font)
         x = (THUMB_W - width) // 2
-        # 黒縁取り
-        for dx in (-4, -2, 0, 2, 4):
-            for dy in (-4, -2, 0, 2, 4):
+        # 太い黒縁 + 赤の二重縁で視認性を最大化
+        for dx in (-10, -6, 0, 6, 10):
+            for dy in (-10, -6, 0, 6, 10):
                 draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0))
+        for dx in (-3, 3):
+            for dy in (-3, 3):
+                draw.text((x + dx, y + dy), line, font=font, fill=(170, 20, 30))
         draw.text((x, y), line, font=font, fill=(255, 230, 60))
         y += line_height
+
+    # パンチワードの下にタイトル (小さめ・白)
+    tfont = _load_font(54)
+    tlines = _wrap_text(draw, title, tfont, THUMB_W - margin * 2)[:2]
+    ty = 575
+    for line in tlines:
+        width = draw.textlength(line, font=tfont)
+        x = (THUMB_W - width) // 2
+        for dx in (-3, 0, 3):
+            for dy in (-3, 0, 3):
+                draw.text((x + dx, ty + dy), line, font=tfont, fill=(0, 0, 0))
+        draw.text((x, ty), line, font=tfont, fill=(255, 255, 255))
+        ty += 64
 
     # YouTube サムネイルの上限 2MB に収まるよう品質を下げながら保存
     for quality in (90, 80, 70, 60):

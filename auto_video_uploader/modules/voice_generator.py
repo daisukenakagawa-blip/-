@@ -36,10 +36,13 @@ def _generate_voicevox(text: str, out_path: Path) -> Path:
     )
     query.raise_for_status()
 
+    payload = query.json()
+    payload["speedScale"] = config.VOICEVOX_SPEED  # テンポ良く (約1.15倍速)
+
     synthesis = requests.post(
         f"{base}/synthesis",
         params={"speaker": speaker},
-        json=query.json(),
+        json=payload,
         timeout=300,
     )
     synthesis.raise_for_status()

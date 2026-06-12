@@ -58,56 +58,47 @@ def _find_or_create_background() -> Path:
     if generated.exists():
         return generated
 
-    from PIL import Image, ImageDraw
+    import random as _random
 
+    from PIL import Image, ImageDraw, ImageFilter
+
+    # ホールの夜景を思わせる高級感のあるネオンボケ背景 (実写風)
     w, h = config.VIDEO_WIDTH, config.VIDEO_HEIGHT
     img = Image.new("RGB", (w, h))
     px = img.load()
-    # 黒 → 深紅の縦グラデーション (ホールの照明イメージ)
-    top, bottom = (8, 8, 14), (70, 10, 22)
+    top, bottom = (6, 6, 16), (28, 8, 30)
     for y in range(h):
         t = y / (h - 1)
         color = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
         for x in range(w):
             px[x, y] = color
 
-    draw = ImageDraw.Draw(img)
+    # ボケた光の玉 (ネオン・電飾の前ボケ) を重ねて写真的な奥行きを出す
+    glow = Image.new("RGB", (w, h), (0, 0, 0))
+    gdraw = ImageDraw.Draw(glow)
+    rng = _random.Random(7)  # 毎回同じ仕上がり (再現性)
+    palette = [
+        (255, 90, 60), (255, 170, 40), (255, 220, 90),
+        (200, 60, 120), (90, 120, 255), (255, 60, 90),
+    ]
+    for _ in range(46):
+        cx, cy = rng.randint(0, w), rng.randint(0, h)
+        r = rng.randint(36, 150)
+        c = palette[rng.randrange(len(palette))]
+        gdraw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=c)
+    glow = glow.filter(ImageFilter.GaussianBlur(70))
 
-    # スロット実機風の筐体パネル (中央やや下: 上部のデータカードと重ならない位置)
-    panel = (90, int(h * 0.44), w - 90, int(h * 0.70))
-    draw.rounded_rectangle(panel, radius=40, fill=(26, 10, 12),
-                           outline=(214, 38, 50), width=10)
-
-    # 3連リール (白窓 + 赤い「7」)
-    reel_w = (panel[2] - panel[0] - 4 * 36) // 3
-    reel_h = int((panel[3] - panel[1]) * 0.58)
-    reel_y = panel[1] + ((panel[3] - panel[1]) - reel_h) // 2
-    try:
-        from PIL import ImageFont
-        font_path = Path(config.FONT_PATH)
-        seven_font = (ImageFont.truetype(str(font_path), int(reel_h * 0.62))
-                      if font_path.exists() else ImageFont.load_default(int(reel_h * 0.6)))
-    except Exception:
-        from PIL import ImageFont
-        seven_font = ImageFont.load_default()
-    for i in range(3):
-        rx = panel[0] + 36 + i * (reel_w + 36)
-        draw.rounded_rectangle((rx, reel_y, rx + reel_w, reel_y + reel_h),
-                               radius=18, fill=(244, 240, 230), outline=(80, 70, 60), width=4)
-        text = "7"
-        tw = draw.textlength(text, font=seven_font)
-        draw.text((rx + (reel_w - tw) / 2, reel_y + reel_h * 0.12), text,
-                  font=seven_font, fill=(206, 32, 40))
-
-    # 上下のランプ列 (黄色の電飾)
-    for ly in (panel[1] - 70, panel[3] + 40):
-        for i in range(9):
-            cx = 120 + i * (w - 240) // 8
-            draw.ellipse((cx - 16, ly - 16, cx + 16, ly + 16),
-                         fill=(255, 200, 40) if i % 2 == 0 else (255, 120, 30))
+    img = Image.blend(img, glow, 0.55)
+    # 周辺減光 (ビネット) で高級感を出す
+    vignette = Image.new("L", (w, h), 0)
+    vdraw = ImageDraw.Draw(vignette)
+    vdraw.ellipse((-w * 0.35, -h * 0.25, w * 1.35, h * 1.25), fill=255)
+    vignette = vignette.filter(ImageFilter.GaussianBlur(220))
+    black = Image.new("RGB", (w, h), (0, 0, 0))
+    img = Image.composite(img, black, vignette)
 
     img.save(generated)
-    get_logger().info("背景素材が無いためスロット実機風の背景を生成しました: %s", generated)
+    get_logger().info("背景素材が無いためネオンボケ調の背景を生成しました: %s", generated)
     return generated
 
 
@@ -155,15 +146,44 @@ VERDICT_COLOR = {
 }
 
 
-def _emphasize_numbers(text: str, base_color: str) -> str:
-    """テロップ内の数字を黄色・大きめに強調する (ASS インライン装飾)。"""
-    def repl(m):
-        return (
-            r"{\c&H0000E5FF&\fscx118\fscy118}" + m.group(0)
-            + r"{\c" + base_color.replace("&H00", "&H") + r"&\fscx100\fscy100}"
-        )
+# 重要ワードの色分け (金 = 期待 / 赤 = 危険)
+GOLD_WORDS = ("設定6", "高設定", "本命", "鉄板", "設456", "据え置き")
+RED_WORDS = ("危険", "見送り", "禁物", "養分", "即やめ", "リセット", "回収")
 
-    return re.sub(r"[0-9]+(?:[./][0-9]+)*", repl, text)
+GOLD = r"&HD7FF"  # 未使用プレースホルダ
+_GOLD_TAG = r"{\c&H00D7FF&\fscx112\fscy112}"
+_RED_TAG = r"{\c&H3333FF&\fscx112\fscy112}"
+_NUM_TAG = r"{\c&H00E5FF&\fscx118\fscy118}"
+
+
+def _emphasize_numbers(text: str, base_color: str) -> str:
+    """テロップ内の重要ワード(金/赤)と数字(黄)を強調する (ASS インライン装飾)。"""
+    reset = r"{\c" + base_color.replace("&H00", "&H") + r"&\fscx100\fscy100}"
+
+    # 1) キーワードを退避しつつ色タグで包む (数字強調との二重適用を防ぐ)
+    tokens = {}
+
+    def stash(m, tag):
+        key = f"\x00{len(tokens)}\x00"
+        tokens[key] = tag + m.group(0) + reset
+        return key
+
+    for word in GOLD_WORDS:
+        text = re.sub(re.escape(word), lambda m: stash(m, _GOLD_TAG), text)
+    for word in RED_WORDS:
+        text = re.sub(re.escape(word), lambda m: stash(m, _RED_TAG), text)
+
+    # 2) 残りの数字を黄色で強調
+    text = re.sub(
+        r"[0-9]+(?:[./][0-9]+)*",
+        lambda m: _NUM_TAG + m.group(0) + reset,
+        text,
+    )
+
+    # 3) キーワードを戻す
+    for key, value in tokens.items():
+        text = text.replace(key, value)
+    return text
 
 
 def plan_line_schedule(content: dict, total_sec: float, segment_durations: list | None = None) -> list:
@@ -278,6 +298,7 @@ Style: Banner,{font},100,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100
 Style: Data,{font},66,&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,3,8,0,8,90,90,470,1
 Style: Hook,{font},92,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,3,5,60,60,0,1
 Style: Sub,{font},80,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,3,2,60,60,420,1
+Style: Flash,{font},20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -286,6 +307,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     events = [
         f"Dialogue: 0,{_ass_time(0)},{_ass_time(total_sec)},Title,,0,0,0,,{_wrap_jp(content['title'], 18)}"
     ]
+
+    # セグメント切替時の発光 (画面全体の白フラッシュ)
+    flash_shape = rf"m 0 0 l {w} 0 l {w} {h} l 0 {h}"
+    boundary = 0.0
+    for dur in segment_durations[:-1]:
+        boundary += dur
+        events.append(
+            f"Dialogue: 5,{_ass_time(boundary - 0.04)},{_ass_time(boundary + 0.22)},Flash,,0,0,0,,"
+            + r"{\p1\bord0\shad0\1c&HFFFFFF&\1a&H58&\fad(40,180)}" + flash_shape + r"{\p0}"
+        )
 
     cursor = 0.0
     for seg, dur in zip(content["segments"], segment_durations):

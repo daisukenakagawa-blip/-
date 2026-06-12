@@ -69,6 +69,7 @@ RANKING_SCHEMA = {
     "type": "object",
     "properties": {
         "title": {"type": "string"},
+        "thumb_text": {"type": "string"},
         "segments": {
             "type": "array",
             "items": {
@@ -96,7 +97,7 @@ RANKING_SCHEMA = {
         "description": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["title", "segments", "description", "hashtags"],
+    "required": ["title", "thumb_text", "segments", "description", "hashtags"],
     "additionalProperties": False,
 }
 
@@ -107,16 +108,20 @@ RANKING_PROMPT = """\
 テーマ: {topic}
 
 動画構成(この順で segments を6個作る):
-1. role=hook    (約2秒)  強いフック1行のみ。14文字以内。数字か「!?」を含めて引きを作る
-2. role=rank3   (約6秒)  第3位の台。lines は2〜3行
-3. role=rank2   (約7秒)  第2位の台。lines は2〜3行
-4. role=rank1   (約9秒)  第1位の台。lines は3〜4行。一番熱く語る
-5. role=caution (約9秒)  打ってはいけない注意台。lines は2〜3行
-6. role=summary (約9秒)  まとめ + チャンネル登録のお願い。lines は2〜3行
+1. role=hook    (約3秒)  強烈なフック1行。14文字以内。
+   例:「9割が勘違いしてる真実」「知らないと損する3選」「高設定ほど◯◯が出る!?」
+2. role=rank3   (約6秒)  第3位。lines は2〜3行
+3. role=rank2   (約7秒)  第2位。lines は2〜3行
+4. role=rank1   (約9秒)  第1位。lines は3〜4行。一番熱く語る
+5. role=caution (約9秒)  打ってはいけない注意台・例外。lines は2〜3行
+6. role=summary (約9秒)  結論 + コメント誘導。lines は2〜3行。
+   最後の1行は必ず「あなたはどう思う?コメントで」「狙い方をコメントで教えて」等の
+   コメント誘導にすること(チャンネル登録のお願いではなくコメント誘導)
 
-各 lines の条件(テロップ最適化):
+各 lines の条件(テロップ最適化・TikTokトップクリエイター水準):
 - 1行 = 13文字以内。短く・大きく・数字中心に
-- 「REG 1/240」「合算 1/115」のような数字を積極的に入れる
+- 「REG 1/240」「合算 1/114.6」のような数字を積極的に入れる
+- 公表値を使う場合は小数第1位まで正確に (例 1/114.6。勝手に丸めない)
 
 rank3/rank2/rank1/caution には台データを入れる:
 - machine_no: 台番の予想 (例 "1038番台")
@@ -131,6 +136,8 @@ hook と summary は machine_no/big/reg/total/diff/verdict をすべて空文字
 
 その他:
 - title: タップしたくなるタイトル。数字を含める。28文字以内
+- thumb_text: サムネイル用の感情ワード。10文字以内・超強い言葉
+  (例「実は危険」「知らないと損」「設定6の癖」「9割が誤解」)
 - description: 要約 + 「※本動画は予想・考察であり、結果を保証するものではありません。」を含める
 - hashtags: #Shorts を必ず含む5〜8個
 - 断定ではなく予想・考察の表現を使うこと
@@ -187,9 +194,10 @@ def _generate_ranking_template(topic: str) -> dict:
              "machine_no": "前日万枚の台", "big": "1/272", "reg": "1/388",
              "total": "1/160", "diff": "-2100枚", "verdict": "見送り"},
             {"role": "summary", "lines": ["あくまで予想です", "無理は禁物",
-                                          "登録して明日の予想もチェック"],
+                                          "あなたの狙い目もコメントで!"],
              "machine_no": "", "big": "", "reg": "", "total": "", "diff": "", "verdict": ""},
         ],
+        "thumb_text": "狙い台TOP3",
         "description": (
             f"{topic} の狙い台をランキング形式で紹介。\n\n"
             "※本動画は予想・考察であり、結果を保証するものではありません。"
@@ -243,6 +251,7 @@ def _validate_ranking(content: dict, topic: str) -> dict:
     base["format"] = "ranking"
     base["segments"] = segments
     base["script_lines"] = [l for s in segments for l in s["lines"]]
+    base["thumb_text"] = str(content.get("thumb_text") or "").strip()[:10]
     return base
 
 

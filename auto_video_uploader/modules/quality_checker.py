@@ -80,9 +80,15 @@ def _score_info(content: dict) -> tuple:
             if s.get("machine_no") and s.get("reg") and s.get("total") and s.get("verdict")
         )
         ratio = filled / len(data_segs)
-        score = round(15 * ratio)
+        score = round(12 * ratio)
         if ratio < 1:
             reasons.append(f"台データ(台番/REG/合算/判定)が欠けている ({filled}/{len(data_segs)}件)")
+        # コメント誘導 (まとめにコメントを促す一言があるか)
+        summary = next((s for s in content["segments"] if s["role"] == "summary"), None)
+        if summary and any("コメント" in l for l in summary["lines"]):
+            score += 3
+        else:
+            reasons.append("まとめにコメント誘導が無い")
         return score, reasons
     lines = content.get("script_lines") or []
     digit_lines = sum(1 for l in lines if _DIGIT.search(l))
@@ -132,22 +138,24 @@ def _score_voice(content: dict, audio_path: Path, total_sec: float) -> tuple:
     return score, reasons
 
 
-def _score_thumbnail(title: str, thumb_path: Path) -> tuple:
+def _score_thumbnail(content: dict, thumb_path: Path) -> tuple:
     """サムネの強さ (15点)。"""
     reasons = []
     score = 0
+    title = content.get("title", "")
     if Path(thumb_path).exists() and Path(thumb_path).stat().st_size > 10_000:
         score += 5
     else:
         reasons.append("サムネイルが生成されていない")
-    if len(title) <= 28:
+    punch = (content.get("thumb_text") or "").strip()
+    if punch and len(punch) <= 10:
         score += 5
     else:
-        reasons.append(f"タイトルが長くサムネで読みにくい ({len(title)}文字)")
-    if _DIGIT.search(title):
+        reasons.append("サムネ用パンチワード(10文字以内)が無い")
+    if _DIGIT.search(title) and len(title) <= 28:
         score += 5
     else:
-        reasons.append("タイトルに数字が無くサムネの引きが弱い")
+        reasons.append("タイトルが28文字超か数字を含まない")
     return score, reasons
 
 
@@ -165,7 +173,7 @@ def evaluate(
         "情報の分かりやすさ": _score_info(content),
         "画面変化の多さ": _score_motion(content, total_sec, segment_durations),
         "音声の自然さ": _score_voice(content, audio_path, total_sec),
-        "サムネの強さ": _score_thumbnail(content.get("title", ""), thumb_path),
+        "サムネの強さ": _score_thumbnail(content, thumb_path),
     }
     breakdown = {name: s for name, (s, _) in checks.items()}
     reasons = [r for _, (_, rs) in checks.items() for r in rs]
