@@ -43,6 +43,37 @@
 
 以降は **スマホの Google スプレッドシートアプリでシートに行を足すだけ**。次回実行時に自動で取り込まれ、`⑥毎日自動実行を設定.bat` と組み合わせれば「スマホでネタを書く → PC が毎日自動投稿」が完成します(実行時刻に PC の電源が入っている必要があります)。
 
+## クラウド完全自動運用(PC不要・スマホだけで運用)
+
+GitHub Actions (`.github/workflows/auto_upload.yml`) により、**毎日 08:00 JST にクラウド上で動画生成 → YouTube 投稿**が自動実行されます。PC の電源は不要です。
+
+```
+スマホでスプレッドシートにテーマを書く
+  → クラウドが 台本AI生成 / VOICEVOX音声 / 背景動画自動取得 / テロップ / 合成 / 投稿
+```
+
+### 一度だけ必要な設定
+
+1. GitHub のリポジトリページ → **Settings → Secrets and variables → Actions → New repository secret** で以下を登録:
+
+| Secret 名 | 中身 | 必須 |
+|---|---|---|
+| `YOUTUBE_CLIENT_SECRET` | client_secret.json をメモ帳で開いた中身(全文) | ✅ |
+| `YOUTUBE_TOKEN` | token.json をメモ帳で開いた中身(全文) | ✅ |
+| `TOPICS_SHEET_URL` | スプレッドシートの「ウェブに公開(CSV)」URL | 推奨 |
+| `ANTHROPIC_API_KEY` | 台本の AI 生成用 | 任意 |
+| `PEXELS_API_KEY` | 背景動画の自動取得用 (https://www.pexels.com/api/ で無料発行) | 任意 |
+
+2. **Google Cloud Console → OAuth 同意画面 → 「アプリを公開」**(公開ステータスを「本番環境」に)。
+   テスト状態のままだと認証が**7日で失効**し、クラウド実行が止まります。
+3. ワークフローはリポジトリの**デフォルトブランチ**に置く必要があります(スケジュール実行の仕様)。
+
+### スマホでの操作
+
+- テーマ追加: Google スプレッドシートアプリで行を足すだけ
+- 今すぐ実行: GitHub アプリ → リポジトリ → Actions → auto-video-upload → **Run workflow**
+- 結果確認: 同じ画面で実行ログ閲覧可 / 失敗時は GitHub から通知メール
+
 ## 動画の品質を上げる
 
 | やること | 効果 |

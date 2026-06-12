@@ -1,0 +1,99 @@
+# クラウド完全自動運用: 毎日 1 本、動画を生成して YouTube に投稿する。
+# ユーザーの PC は不要。テーマはスマホから Google スプレッドシートに追加する。
+#
+# 必要な Secrets (リポジトリの Settings → Secrets and variables → Actions):
+#   YOUTUBE_CLIENT_SECRET ... client_secret.json の中身 (必須)
+#   YOUTUBE_TOKEN         ... token.json の中身 (必須)
+#   TOPICS_SHEET_URL      ... スプレッドシートの「ウェブに公開(CSV)」URL (推奨)
+#   ANTHROPIC_API_KEY     ... 台本の AI 生成 (任意)
+#   PEXELS_API_KEY        ... 背景動画の自動取得 (任意)
+
+name: auto-video-upload
+
+on:
+  schedule:
+    - cron: "0 23 * * *"   # 毎日 08:00 JST (UTC 23:00)
+  workflow_dispatch: {}     # スマホの GitHub アプリから手動実行も可能
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-video-upload
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: auto_video_uploader
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: FFmpeg と日本語フォントをインストール
+        working-directory: .
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg fonts-noto-cjk
+
+      - name: VOICEVOX エンジンを起動 (高品質な日本語音声)
+        working-directory: .
+        run: |
+          docker run -d --name voicevox -p 50021:50021 \
+            voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+          for i in $(seq 1 90); do
+            if curl -fs http://127.0.0.1:50021/version > /dev/null; then
+              echo "VOICEVOX ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "VOICEVOX が起動しませんでした (gTTS にフォールバックします)"
+
+      - name: Python パッケージをインストール
+        run: pip install -q -r requirements.txt
+
+      - name: 認証ファイルを配置
+        env:
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+        run: |
+          if [ -z "$YOUTUBE_CLIENT_SECRET" ] || [ -z "$YOUTUBE_TOKEN" ]; then
+            echo "::error::Secrets の YOUTUBE_CLIENT_SECRET / YOUTUBE_TOKEN が未設定です"
+            exit 1
+          fi
+          printf '%s' "$YOUTUBE_CLIENT_SECRET" > client_secret.json
+          printf '%s' "$YOUTUBE_TOKEN" > token.json
+
+      - name: 動画生成 → YouTube アップロード
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TOPICS_SHEET_URL: ${{ secrets.TOPICS_SHEET_URL }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc
+          FONT_NAME: Noto Sans CJK JP
+          TTS_ENGINE: auto
+        run: python main.py
+
+      - name: 投稿状態をリポジトリに保存
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add topics.csv uploaded_log.csv
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: 投稿状態を更新 [skip ci]"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: 失敗時はエラー内容をログに表示
+        if: failure()
+        run: |
+          echo "=== logs/error_log.txt ==="
+          cat logs/error_log.txt 2>/dev/null || echo "(エラーログなし)"

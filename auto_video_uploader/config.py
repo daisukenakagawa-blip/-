@@ -48,6 +48,10 @@ TARGET_MAX_SEC = int(os.getenv("TARGET_MAX_SEC", "60"))
 # 無ければ Pillow でグラデーション背景を自動生成する。
 BACKGROUND_CANDIDATES = ["background.mp4", "background.png", "background.jpg"]
 
+# Pexels API (任意): 設定すると背景の縦型動画を自動でダウンロードして使う
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
+BACKGROUND_KEYWORD = os.getenv("BACKGROUND_KEYWORD", "casino neon lights")
+
 # BGM: assets/bgm.mp3 (任意)。BGM_PATH で別パスも指定可能。
 BGM_PATH = os.getenv("BGM_PATH", str(ASSETS_DIR / "bgm.mp3"))
 BGM_VOLUME = float(os.getenv("BGM_VOLUME", "0.12"))

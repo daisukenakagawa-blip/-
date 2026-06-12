@@ -41,11 +41,17 @@ def get_audio_duration(path: Path) -> float:
 # ---------------------------------------------------------------------------
 
 def _find_or_create_background() -> Path:
-    """assets/ の背景素材を探し、無ければグラデーション画像を自動生成する。"""
+    """背景素材を決める。優先順: assets/ の手動素材 → Pexels 自動取得 → 自動生成。"""
     for name in config.BACKGROUND_CANDIDATES:
         p = config.ASSETS_DIR / name
         if p.exists():
             return p
+
+    from modules.background_fetcher import fetch_background
+
+    fetched = fetch_background()
+    if fetched:
+        return fetched
 
     generated = config.ASSETS_DIR / "background_auto.png"
     if generated.exists():
