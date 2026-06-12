@@ -32,7 +32,7 @@ from modules import (
 from modules.logger import append_uploaded_log, get_logger, is_already_uploaded, log_error
 from modules.platform_base import get_uploader
 
-TOPIC_FIELDS = ["date", "topic", "platform", "status", "background", "script"]
+TOPIC_FIELDS = ["date", "topic", "platform", "status", "background", "script", "bgm"]
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +77,7 @@ FIELD_ALIASES = [
     ("platform", ("platform", "プラットフォーム")),
     ("status", ("status", "ステータス", "状態")),
     ("background", ("background", "背景")),
+    ("bgm", ("bgm", "音楽", "曲")),
     ("script", ("script", "台本", "原稿")),
 ]
 
@@ -145,6 +146,7 @@ def sync_topics_from_sheet() -> None:
                     "status": (row.get("status") or "pending").lower(),
                     "background": background,
                     "script": row.get("script", ""),
+                    "bgm": row.get("bgm", ""),
                 }
             )
     except Exception as e:
@@ -162,7 +164,7 @@ def sync_topics_from_sheet() -> None:
         if key in by_key:
             # 既存行でも、シート側で background / script が追記・変更されたら反映する
             r = by_key[key]
-            for field in ("background", "script"):
+            for field in ("background", "script", "bgm"):
                 if s[field] and (r.get(field) or "") != s[field]:
                     r[field] = s[field]
                     updated += 1
@@ -175,19 +177,18 @@ def sync_topics_from_sheet() -> None:
         logger.info("スプレッドシートから取り込み: 追加 %d 件 / 更新 %d 件", added, updated)
 
 
-def resolve_background(rows: list, target_row: dict) -> str:
-    """対象行に適用する背景URLを決める。
+def resolve_sticky(rows: list, target_row: dict, field: str) -> str:
+    """対象行に適用する素材URL (background / bgm) を決める。
 
-    シートの background 列は「一度貼ればそれ以降の行にも適用」される仕様。
-    対象行までの行を順に見て、最後に指定された URL を引き継ぐ。
+    一度シートに貼るとそれ以降の行にも引き継がれ、新しい指定で切り替わる。
     """
-    bg = ""
+    value = ""
     for r in rows:
-        if (r.get("background") or "").strip():
-            bg = r["background"].strip()
+        if (r.get(field) or "").strip():
+            value = r[field].strip()
         if r is target_row:
             break
-    return bg
+    return value
 
 
 def _parse_date(date_str: str):
@@ -269,7 +270,8 @@ def make_stem(date_str: str, topic: str) -> str:
     return f"{date_part}_{digest}"
 
 
-def process_topic(row: dict, no_upload: bool = False, background_url: str = "") -> bool:
+def process_topic(row: dict, no_upload: bool = False, background_url: str = "",
+                  bgm_url: str = "") -> bool:
     """1テーマを 台本→音声→動画→サムネ→アップロード まで処理する。
 
     成功時 True。失敗時は error_log.txt に記録して False(status は pending のまま
@@ -339,6 +341,7 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "") 
                     content, audio_path, stem,
                     background_url=background_url,
                     segment_durations=segment_durations,
+                    bgm_url=bgm_url,
                 )
 
             # サムネイル (固定テンプレート)
@@ -470,8 +473,10 @@ def main() -> int:
 
     failed = 0
     for row in targets:
-        background_url = resolve_background(all_rows, row)
-        if not process_topic(row, no_upload=args.no_upload, background_url=background_url):
+        background_url = resolve_sticky(all_rows, row, "background")
+        bgm_url = resolve_sticky(all_rows, row, "bgm")
+        if not process_topic(row, no_upload=args.no_upload,
+                             background_url=background_url, bgm_url=bgm_url):
             failed += 1
 
     logger.info("完了: %d 件処理 / %d 件失敗", len(targets), failed)

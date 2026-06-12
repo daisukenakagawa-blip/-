@@ -44,7 +44,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     },
     {
       "role": "rank3",
@@ -54,9 +56,11 @@
         "曖昧なら深追いしない"
       ],
       "machine_no": "1G目要観察台",
-      "reg": "1/245",
-      "total": "1/120",
-      "verdict": "対抗"
+      "reg": "1/255",
+      "total": "1/126",
+      "verdict": "対抗",
+      "big": "1/250",
+      "diff": "+1000枚"
     },
     {
       "role": "rank2",
@@ -66,9 +70,11 @@
         "過信は禁物"
       ],
       "machine_no": "変更挙動あり台",
-      "reg": "1/250",
+      "reg": "1/265",
       "total": "1/130",
-      "verdict": "対抗"
+      "verdict": "対抗",
+      "big": "1/255",
+      "diff": "+700枚"
     },
     {
       "role": "rank1",
@@ -78,9 +84,11 @@
         "上げ変更の期待大!"
       ],
       "machine_no": "凹み後変更台",
-      "reg": "1/230",
-      "total": "1/110",
-      "verdict": "本命"
+      "reg": "1/232",
+      "total": "1/115",
+      "verdict": "本命",
+      "big": "1/228",
+      "diff": "+2400枚"
     },
     {
       "role": "caution",
@@ -90,9 +98,11 @@
         "通用しない店もある"
       ],
       "machine_no": "対策済みの店",
-      "reg": "1/300",
-      "total": "1/150",
-      "verdict": "注意"
+      "reg": "1/330",
+      "total": "1/148",
+      "verdict": "注意",
+      "big": "1/270",
+      "diff": "-1500枚"
     },
     {
       "role": "summary",
@@ -104,7 +114,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     }
   ]
 }

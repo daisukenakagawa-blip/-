@@ -44,7 +44,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     },
     {
       "role": "rank3",
@@ -56,7 +58,9 @@
       "machine_no": "REG先行の中間台",
       "reg": "1/260",
       "total": "1/140",
-      "verdict": "見送り"
+      "verdict": "見送り",
+      "big": "1/303",
+      "diff": "-900枚"
     },
     {
       "role": "rank2",
@@ -66,9 +70,11 @@
         "上げ狙いは罠の可能性"
       ],
       "machine_no": "3日連続凹み台",
-      "reg": "1/320",
-      "total": "1/155",
-      "verdict": "見送り"
+      "reg": "1/360",
+      "total": "1/161",
+      "verdict": "見送り",
+      "big": "1/290",
+      "diff": "-2600枚"
     },
     {
       "role": "rank1",
@@ -78,9 +84,11 @@
         "回収日を疑え!"
       ],
       "machine_no": "前日万枚の台",
-      "reg": "1/350",
-      "total": "1/160",
-      "verdict": "見送り"
+      "reg": "1/420",
+      "total": "1/175",
+      "verdict": "見送り",
+      "big": "1/300",
+      "diff": "-3800枚"
     },
     {
       "role": "caution",
@@ -90,9 +98,11 @@
         "凹み台が化ける"
       ],
       "machine_no": "イベント日の凹み台",
-      "reg": "1/250",
+      "reg": "1/255",
       "total": "1/125",
-      "verdict": "注意"
+      "verdict": "注意",
+      "big": "1/245",
+      "diff": "+1100枚"
     },
     {
       "role": "summary",
@@ -104,7 +114,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     }
   ]
 }

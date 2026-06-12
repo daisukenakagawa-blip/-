@@ -44,7 +44,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     },
     {
       "role": "rank3",
@@ -54,9 +56,11 @@
         "波が上向きのサイン"
       ],
       "machine_no": "早い当たり3連台",
-      "reg": "1/250",
-      "total": "1/125",
-      "verdict": "対抗"
+      "reg": "1/260",
+      "total": "1/127",
+      "verdict": "対抗",
+      "big": "1/248",
+      "diff": "+900枚"
     },
     {
       "role": "rank2",
@@ -66,9 +70,11 @@
         "出玉の伸びが違う"
       ],
       "machine_no": "BIG先行台",
-      "reg": "1/250",
-      "total": "1/120",
-      "verdict": "対抗"
+      "reg": "1/262",
+      "total": "1/125",
+      "verdict": "対抗",
+      "big": "1/238",
+      "diff": "+1400枚"
     },
     {
       "role": "rank1",
@@ -78,9 +84,11 @@
         "数字はウソをつかない"
       ],
       "machine_no": "合算良好台",
-      "reg": "1/230",
+      "reg": "1/222",
       "total": "1/108",
-      "verdict": "本命"
+      "verdict": "本命",
+      "big": "1/210",
+      "diff": "+2900枚"
     },
     {
       "role": "caution",
@@ -90,9 +98,11 @@
         "波は突然終わる"
       ],
       "machine_no": "連チャン直後の台",
-      "reg": "1/280",
-      "total": "1/140",
-      "verdict": "見送り"
+      "reg": "1/340",
+      "total": "1/152",
+      "verdict": "見送り",
+      "big": "1/275",
+      "diff": "-1700枚"
     },
     {
       "role": "summary",
@@ -104,7 +114,9 @@
       "machine_no": "",
       "reg": "",
       "total": "",
-      "verdict": ""
+      "verdict": "",
+      "big": "",
+      "diff": ""
     }
   ]
 }
