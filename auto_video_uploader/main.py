@@ -258,6 +258,8 @@ def compute_publish_at(date_str: str) -> str | None:
 def make_stem(date_str: str, topic: str) -> str:
     digest = hashlib.md5(topic.strip().encode("utf-8")).hexdigest()[:10]
     date_part = (date_str or "nodate").strip() or "nodate"
+    # "2026/06/12" のような日付がフォルダ区切りにならないよう記号を正規化
+    date_part = re.sub(r"[^0-9A-Za-z_-]", "-", date_part)
     return f"{date_part}_{digest}"
 
 
