@@ -348,8 +348,9 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "",
             thumb_path = config.THUMBNAILS_DIR / f"{stem}.jpg"
             if not thumb_path.exists():
                 badge = "狙い台TOP3" if is_ranking else "ジャグラー予想"
+                punch = (content.get("thumb_text") or "").strip()
                 thumb_path = thumbnail_generator.create_thumbnail(
-                    content["title"], stem, badge=badge
+                    content["title"], stem, badge=badge, punch=punch
                 )
 
             # 自動品質チェック

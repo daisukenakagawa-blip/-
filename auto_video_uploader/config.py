@@ -92,7 +92,10 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
 # ---------------------------------------------------------------------------
 TTS_ENGINE = os.getenv("TTS_ENGINE", "auto").lower()
 VOICEVOX_URL = os.getenv("VOICEVOX_URL", "http://127.0.0.1:50021")
-VOICEVOX_SPEAKER = int(os.getenv("VOICEVOX_SPEAKER", "3"))  # 3 = ずんだもん(ノーマル)
+# 13 = 青山龍星(落ち着いた男性声)。3 = ずんだもん
+VOICEVOX_SPEAKER = int(os.getenv("VOICEVOX_SPEAKER", "13"))
+# ショート向けにややテンポ良く
+VOICEVOX_SPEED = float(os.getenv("VOICEVOX_SPEED", "1.15"))
 GTTS_LANG = os.getenv("GTTS_LANG", "ja")
 
 # ---------------------------------------------------------------------------
