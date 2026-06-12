@@ -145,6 +145,67 @@ def _validate(content: dict, topic: str) -> dict:
     }
 
 
+def _split_script_text(text: str) -> list:
+    """ユーザーが持ち込んだ台本テキストをテロップ単位の行に分割する。
+
+    改行があれば改行単位、長い行は文(。!?)単位、それでも長ければ
+    30文字前後で機械的に切る。
+    """
+    max_len = 30
+    lines = []
+    for raw in text.replace("\r", "").split("\n"):
+        raw = raw.strip()
+        if not raw:
+            continue
+        for part in re.split(r"(?<=[。!?!?])", raw):
+            part = part.strip().rstrip("。")
+            if not part:
+                continue
+            lines.extend(_chunk_by_touten(part, max_len))
+    return [l for l in lines if l]
+
+
+def _chunk_by_touten(part: str, max_len: int) -> list:
+    """長い文を読点(、)の位置を優先して max_len 以内に分割する。"""
+    if len(part) <= max_len:
+        return [part]
+    out = []
+    current = ""
+    for seg in re.split(r"(?<=、)", part):
+        while len(seg) > max_len:  # 読点が無い超長文は機械的に切る
+            if current:
+                out.append(current)
+                current = ""
+            out.append(seg[:max_len])
+            seg = seg[max_len:]
+        if len(current) + len(seg) <= max_len:
+            current += seg
+        else:
+            out.append(current)
+            current = seg
+    if current:
+        out.append(current)
+    return [l.strip().rstrip("、") for l in out if l.strip()]
+
+
+def build_from_user_script(topic: str, script_text: str) -> dict:
+    """シートの script 列に貼られた台本をそのまま使う(生成はしない)。"""
+    lines = _split_script_text(script_text)
+    if not lines:
+        raise ValueError("script 列の台本が空です")
+    content = {
+        "title": topic,
+        "script_lines": lines,
+        "description": (
+            f"{topic}\n\n"
+            "※本動画は予想・考察であり、結果を保証するものではありません。\n"
+            "※パチンコ・パチスロは適度に楽しみましょう。"
+        ),
+        "hashtags": ["#Shorts", "#ジャグラー", "#パチスロ", "#スロット", "#狙い台"],
+    }
+    return _validate(content, topic)
+
+
 def generate(topic: str) -> dict:
     """テーマから台本一式を生成して dict で返す。"""
     if config.ANTHROPIC_API_KEY:
