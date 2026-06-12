@@ -56,6 +56,21 @@ BACKGROUND_KEYWORD = os.getenv("BACKGROUND_KEYWORD", "casino neon lights")
 BGM_PATH = os.getenv("BGM_PATH", str(ASSETS_DIR / "bgm.mp3"))
 BGM_VOLUME = float(os.getenv("BGM_VOLUME", "0.12"))
 
+# 効果音 (ランキング切り替え時)。assets/se.mp3 を置けば差し替え可能。
+# 無ければ ffmpeg で電子音を自動合成する。
+SE_PATH = os.getenv("SE_PATH", str(ASSETS_DIR / "se.mp3"))
+SE_VOLUME = float(os.getenv("SE_VOLUME", "0.45"))
+
+# ランキング構成モード (1=有効)。生成台本を Shorts 向けランキング構成にする
+RANKING_MODE = os.getenv("RANKING_MODE", "1").lower() not in ("0", "false", "no")
+
+# ---------------------------------------------------------------------------
+# 品質チェック
+# ---------------------------------------------------------------------------
+QUALITY_MIN_SCORE = int(os.getenv("QUALITY_MIN_SCORE", "80"))
+QUALITY_MAX_RETRIES = int(os.getenv("QUALITY_MAX_RETRIES", "2"))
+QUALITY_LOG_TXT = LOGS_DIR / "quality_log.txt"
+
 # 日本語フォント (テロップ / サムネイル用)
 FONT_PATH = os.getenv(
     "FONT_PATH",

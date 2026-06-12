@@ -4,6 +4,7 @@
 1080x1920 の縦動画 (YouTube Shorts 用) を生成する。
 """
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -100,6 +101,70 @@ def _wrap_jp(text: str, chars_per_line: int) -> str:
     return r"\N".join(lines)
 
 
+# ランキングのセグメント表示定義: (バナー文言, ASS色 &HAABBGGRR)
+ROLE_META = {
+    "hook":    ("",       "&H000000FF"),
+    "rank3":   ("第3位",  "&H00327FCD"),  # ブロンズ
+    "rank2":   ("第2位",  "&H00C0C0C0"),  # シルバー
+    "rank1":   ("第1位",  "&H0000D7FF"),  # ゴールド
+    "caution": ("注意台", "&H003333FF"),  # 赤
+    "summary": ("まとめ", "&H0066CC33"),  # 緑
+}
+
+VERDICT_COLOR = {
+    "本命": "&H0000D7FF",  # 金
+    "対抗": "&H00FFD0A0",  # 水色寄り
+    "見送り": "&H003333FF",
+    "注意": "&H003333FF",
+}
+
+
+def _emphasize_numbers(text: str, base_color: str) -> str:
+    """テロップ内の数字を黄色・大きめに強調する (ASS インライン装飾)。"""
+    def repl(m):
+        return (
+            r"{\c&H0000E5FF&\fscx118\fscy118}" + m.group(0)
+            + r"{\c" + base_color.replace("&H00", "&H") + r"&\fscx100\fscy100}"
+        )
+
+    return re.sub(r"[0-9]+(?:[./][0-9]+)*", repl, text)
+
+
+def plan_line_schedule(content: dict, total_sec: float, segment_durations: list | None = None) -> list:
+    """ナレーション行ごとの表示スケジュールを計算する。
+
+    戻り値: [{"start","end","text","role"}] 。品質チェック(画面変化の頻度)でも使う。
+    """
+    schedule = []
+    if content.get("format") == "ranking" and segment_durations:
+        cursor = 0.0
+        for seg, dur in zip(content["segments"], segment_durations):
+            weights = [len(l) + 4 for l in seg["lines"]]
+            total_w = sum(weights) or 1
+            inner = cursor
+            for line, w in zip(seg["lines"], weights):
+                d = dur * w / total_w
+                schedule.append(
+                    {"start": inner, "end": min(inner + d, cursor + dur),
+                     "text": line, "role": seg["role"]}
+                )
+                inner += d
+            cursor += dur
+    else:
+        lines = content["script_lines"]
+        weights = [len(l) + 4 for l in lines]
+        total_w = sum(weights) or 1
+        cursor = 0.0
+        for i, (line, w) in enumerate(zip(lines, weights)):
+            d = total_sec * w / total_w
+            schedule.append(
+                {"start": cursor, "end": min(cursor + d, total_sec),
+                 "text": line, "role": "hook" if i == 0 else "body"}
+            )
+            cursor += d
+    return schedule
+
+
 def build_ass_subtitles(title: str, script_lines: list, total_sec: float, out_path: Path) -> Path:
     """タイトル(上部固定) + 台本行(下部・読み上げに同期)の ASS 字幕を作る。
 
@@ -152,21 +217,109 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return out_path
 
 
+def build_ranking_ass(content: dict, segment_durations: list, out_path: Path) -> Path:
+    """ランキング構成用の ASS 字幕を作る。
+
+    - 上部: タイトル(全編) + セグメントバナー(第3位/第2位/第1位/注意台/まとめ)
+    - 中段: 台データカード(台番・REG・合算・判定を強調表示)
+    - 下部: ナレーション同期テロップ(短く・大きく・数字強調)
+    """
+    w, h = config.VIDEO_WIDTH, config.VIDEO_HEIGHT
+    font = config.FONT_NAME
+    total_sec = sum(segment_durations)
+
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {w}
+PlayResY: {h}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,{font},52,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,8,60,60,90,1
+Style: Banner,{font},100,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,4,8,60,60,250,1
+Style: Data,{font},66,&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,3,8,0,8,90,90,470,1
+Style: Hook,{font},92,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,3,5,60,60,0,1
+Style: Sub,{font},80,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,3,2,60,60,420,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    events = [
+        f"Dialogue: 0,{_ass_time(0)},{_ass_time(total_sec)},Title,,0,0,0,,{_wrap_jp(content['title'], 18)}"
+    ]
+
+    cursor = 0.0
+    for seg, dur in zip(content["segments"], segment_durations):
+        start, end = cursor, cursor + dur
+        label, color = ROLE_META.get(seg["role"], ("", "&H00FFFFFF"))
+
+        # セグメントバナー (ドンと出るポップ演出)
+        if label:
+            fx = (r"{\c" + color.replace("&H00", "&H") + r"&"
+                  r"\fad(120,80)\t(0,140,\fscx126\fscy126)\t(140,260,\fscx100\fscy100)}")
+            events.append(
+                f"Dialogue: 1,{_ass_time(start)},{_ass_time(end)},Banner,,0,0,0,,{fx}{label}"
+            )
+
+        # 台データカード (台番 / REG / 合算 / 判定)
+        if seg.get("machine_no") or seg.get("verdict"):
+            card_lines = []
+            if seg.get("machine_no"):
+                card_lines.append(_emphasize_numbers(_escape_ass(seg["machine_no"]), "&H00FFFFFF"))
+            nums = []
+            if seg.get("reg"):
+                nums.append("REG " + seg["reg"])
+            if seg.get("total"):
+                nums.append("合算 " + seg["total"])
+            if nums:
+                card_lines.append(_emphasize_numbers(_escape_ass("  ".join(nums)), "&H00FFFFFF"))
+            if seg.get("verdict"):
+                vcolor = VERDICT_COLOR.get(seg["verdict"], "&H00FFFFFF")
+                card_lines.append(
+                    r"{\c" + vcolor.replace("&H00", "&H") + r"&\fscx135\fscy135}"
+                    + _escape_ass("◆" + seg["verdict"] + "◆")
+                )
+            if card_lines:
+                events.append(
+                    f"Dialogue: 1,{_ass_time(start + 0.2)},{_ass_time(end)},Data,,0,0,0,,"
+                    + r"{\fad(140,80)}" + r"\N".join(card_lines)
+                )
+        cursor = end
+
+    # ナレーション同期テロップ
+    for item in plan_line_schedule(content, total_sec, segment_durations):
+        style = "Hook" if item["role"] == "hook" else "Sub"
+        wrapped = _wrap_jp(item["text"], 9 if style == "Hook" else 11)
+        base = "&H0000E5FF" if style == "Hook" else "&H00FFFFFF"
+        emphasized = _emphasize_numbers(wrapped, base)
+        fx = r"{\fad(120,80)\t(0,120,\fscx110\fscy110)\t(120,240,\fscx100\fscy100)}"
+        events.append(
+            f"Dialogue: 2,{_ass_time(item['start'])},{_ass_time(item['end'])},{style},,0,0,0,,{fx}{emphasized}"
+        )
+
+    out_path.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
+    return out_path
+
+
 # ---------------------------------------------------------------------------
 # 動画合成
 # ---------------------------------------------------------------------------
 
 def create_video(
-    title: str,
-    script_lines: list,
+    content: dict,
     audio_path: Path,
     stem: str,
     background_url: str = "",
+    segment_durations: list | None = None,
 ) -> Path:
     """完成動画を videos/ に生成してパスを返す。
 
-    background_url が指定されていれば、その動画 (Google ドライブ共有リンク可) を
-    背景に使う。取得できない場合は通常の背景選択にフォールバックする。
+    content が format=ranking かつ segment_durations 付きの場合は、
+    バナー・台データカード・効果音入りのランキング演出でレンダリングする。
+    background_url が指定されていれば、その動画/写真を背景に使う。
     """
     logger = get_logger()
     config.ensure_dirs()
@@ -176,10 +329,19 @@ def create_video(
     audio_path = Path(audio_path).resolve()
     audio_sec = get_audio_duration(audio_path)
     total_sec = audio_sec + 0.5
-    logger.info("ナレーション %.1f 秒 / 動画 %.1f 秒で合成します", audio_sec, total_sec)
+    is_ranking = content.get("format") == "ranking" and segment_durations
+    logger.info(
+        "ナレーション %.1f 秒 / 動画 %.1f 秒で合成します (%s構成)",
+        audio_sec, total_sec, "ランキング" if is_ranking else "通常",
+    )
 
     ass_name = f"{stem}.ass"
-    build_ass_subtitles(title, script_lines, audio_sec, config.VIDEOS_DIR / ass_name)
+    if is_ranking:
+        build_ranking_ass(content, segment_durations, config.VIDEOS_DIR / ass_name)
+    else:
+        build_ass_subtitles(
+            content["title"], content["script_lines"], audio_sec, config.VIDEOS_DIR / ass_name
+        )
 
     background = None
     if background_url:
@@ -204,6 +366,22 @@ def create_video(
     if use_bgm:
         cmd += ["-stream_loop", "-1", "-i", str(bgm)]
 
+    # ランキング切り替え時の効果音。assets/se.mp3 があればそれを、
+    # 無ければ ffmpeg で短い電子音を合成して使う
+    se_times = []
+    if is_ranking:
+        cum = 0.0
+        for d in segment_durations[:-1]:
+            cum += d
+            se_times.append(cum)
+    se_file = Path(config.SE_PATH)
+    se_first_index = 3 if use_bgm else 2
+    for _ in se_times:
+        if se_file.exists():
+            cmd += ["-t", "1.2", "-i", str(se_file)]
+        else:
+            cmd += ["-f", "lavfi", "-t", "0.25", "-i", "sine=frequency=1480"]
+
     # 字幕ファイルはカレントディレクトリ相対で参照する(パスエスケープ問題の回避)
     ass_filter = f"ass={ass_name}"
     if Path(config.FONT_PATH).exists():
@@ -226,14 +404,28 @@ def create_video(
         )
     vchain = f"{vsrc},{ass_filter}[v]"
 
+    # 音声ミックス: ナレーションを主役に、BGM は必ず小さく、SE は切替時のみ
+    bgm_volume = min(config.BGM_VOLUME, 0.35)  # ナレーションより必ず小さく
+    parts = ["[1:a]volume=1.0[na]"]
+    mix_labels = ["[na]"]
     if use_bgm:
-        achain = (
-            f"[1:a]volume=1.0[na];"
-            f"[2:a]volume={config.BGM_VOLUME}[bgm];"
-            f"[na][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]"
+        parts.append(f"[2:a]volume={bgm_volume}[bgm]")
+        mix_labels.append("[bgm]")
+    for k, t in enumerate(se_times):
+        ms = int(t * 1000)
+        parts.append(
+            f"[{se_first_index + k}:a]volume={config.SE_VOLUME},"
+            f"afade=t=out:st=0.12:d=0.12,adelay={ms}|{ms}[se{k}]"
         )
-    else:
+        mix_labels.append(f"[se{k}]")
+    if len(mix_labels) == 1:
         achain = "[1:a]volume=1.0[a]"
+    else:
+        achain = (
+            ";".join(parts) + ";" + "".join(mix_labels)
+            + f"amix=inputs={len(mix_labels)}:duration=first:"
+              f"dropout_transition=2:normalize=0[a]"
+        )
 
     cmd += [
         "-filter_complex", f"{vchain};{achain}",

@@ -22,7 +22,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import config
-from modules import script_generator, voice_generator, video_editor, thumbnail_generator
+from modules import (
+    quality_checker,
+    script_generator,
+    thumbnail_generator,
+    video_editor,
+    voice_generator,
+)
 from modules.logger import append_uploaded_log, get_logger, is_already_uploaded, log_error
 from modules.platform_base import get_uploader
 
@@ -285,43 +291,99 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "") 
             mark_topic_done(topic, platform)
             return True
 
-        # --- 1. 台本 (シート持ち込み > 生成済み再利用 > 新規生成) ----------
+        # --- 1〜4. 台本→音声→動画→サムネ (品質チェック付きで最大N回) ------
         script_path = config.SCRIPTS_DIR / f"{stem}.json"
         user_script = (row.get("script") or "").strip()
-        if script_path.exists():
-            logger.info("生成済みの台本を再利用します: %s", script_path)
-            content = script_generator.load_script(script_path)
-        elif user_script:
-            logger.info("シートの script 列の台本をそのまま使用します")
-            content = script_generator.build_from_user_script(topic, user_script)
-            script_generator.save_script(content, script_path)
-        else:
-            content = script_generator.generate(topic)
-            script_generator.save_script(content, script_path)
-            logger.info("台本を保存しました: %s", script_path)
+        # 再生成で結果が変わるのは AI 生成台本のみ
+        can_regenerate = bool(config.ANTHROPIC_API_KEY) and not user_script
+        feedback = ""
 
-        # --- 2. ナレーション音声 ------------------------------------------
-        audio_path = voice_generator.find_existing_audio(stem)
-        if audio_path:
-            logger.info("生成済みの音声を再利用します: %s", audio_path)
-        else:
-            audio_path = voice_generator.generate(content["script_lines"], stem)
-            logger.info("音声を保存しました: %s", audio_path)
+        for attempt in range(1, config.QUALITY_MAX_RETRIES + 2):
+            # 台本 (シート持ち込み > 生成済み再利用 > 新規生成)
+            if script_path.exists():
+                logger.info("生成済みの台本を再利用します: %s", script_path)
+                content = script_generator.load_script(script_path)
+            elif user_script:
+                logger.info("シートの script 列の台本をそのまま使用します")
+                content = script_generator.build_from_user_script(topic, user_script)
+                script_generator.save_script(content, script_path)
+            else:
+                content = script_generator.generate(topic, feedback)
+                script_generator.save_script(content, script_path)
+                logger.info("台本を保存しました: %s", script_path)
 
-        # --- 3. 動画合成 ---------------------------------------------------
-        video_path = config.VIDEOS_DIR / f"{stem}.mp4"
-        if video_path.exists() and video_path.stat().st_size > 0:
-            logger.info("生成済みの動画を再利用します: %s", video_path)
-        else:
-            video_path = video_editor.create_video(
-                content["title"], content["script_lines"], audio_path, stem,
-                background_url=background_url,
+            is_ranking = content.get("format") == "ranking"
+
+            # ナレーション音声 (ランキングはセグメント分割で正確に同期)
+            audio_path = voice_generator.find_existing_audio(stem)
+            segment_durations = (
+                voice_generator.load_segment_timings(stem) if is_ranking else None
             )
+            if audio_path and (not is_ranking or segment_durations):
+                logger.info("生成済みの音声を再利用します: %s", audio_path)
+            elif is_ranking:
+                audio_path, segment_durations = voice_generator.generate_segments(
+                    content["segments"], stem
+                )
+                logger.info("音声を保存しました: %s", audio_path)
+            else:
+                audio_path = voice_generator.generate(content["script_lines"], stem)
+                logger.info("音声を保存しました: %s", audio_path)
 
-        # --- 4. サムネイル -------------------------------------------------
-        thumb_path = config.THUMBNAILS_DIR / f"{stem}.jpg"
-        if not thumb_path.exists():
-            thumb_path = thumbnail_generator.create_thumbnail(content["title"], stem)
+            # 動画合成
+            video_path = config.VIDEOS_DIR / f"{stem}.mp4"
+            if video_path.exists() and video_path.stat().st_size > 0:
+                logger.info("生成済みの動画を再利用します: %s", video_path)
+            else:
+                video_path = video_editor.create_video(
+                    content, audio_path, stem,
+                    background_url=background_url,
+                    segment_durations=segment_durations,
+                )
+
+            # サムネイル (固定テンプレート)
+            thumb_path = config.THUMBNAILS_DIR / f"{stem}.jpg"
+            if not thumb_path.exists():
+                badge = "狙い台TOP3" if is_ranking else "ジャグラー予想"
+                thumb_path = thumbnail_generator.create_thumbnail(
+                    content["title"], stem, badge=badge
+                )
+
+            # 自動品質チェック
+            total_sec = video_editor.get_audio_duration(audio_path)
+            score, breakdown, reasons = quality_checker.evaluate(
+                content, audio_path, total_sec, thumb_path, segment_durations
+            )
+            quality_checker.log_quality(stem, attempt, score, breakdown, reasons)
+
+            if score >= config.QUALITY_MIN_SCORE:
+                break
+            if attempt >= config.QUALITY_MAX_RETRIES + 1:
+                logger.warning(
+                    "品質スコア %d 点のまま再生成上限に達したため、このまま続行します", score
+                )
+                break
+            if not can_regenerate:
+                logger.warning(
+                    "品質スコア %d 点ですが、台本を作り直せない構成のためこのまま続行します"
+                    " (AI台本生成を有効にすると自動改善できます)", score
+                )
+                break
+
+            # 再生成: 課題をフィードバックして作り直す
+            logger.info("品質スコア %d 点 (<%d)。課題を反映して再生成します",
+                        score, config.QUALITY_MIN_SCORE)
+            feedback = "\n".join(f"- {r}" for r in reasons)
+            for path in (
+                script_path,
+                video_path,
+                thumb_path,
+                config.SCRIPTS_DIR / f"{stem}.timings.json",
+            ):
+                Path(path).unlink(missing_ok=True)
+            existing_audio = voice_generator.find_existing_audio(stem)
+            if existing_audio:
+                existing_audio.unlink(missing_ok=True)
 
         # --- 5. アップロード -----------------------------------------------
         if no_upload:

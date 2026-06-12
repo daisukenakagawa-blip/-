@@ -57,21 +57,179 @@ PROMPT_TEMPLATE = """\
 注意: 店名・台番号などはテーマに含まれる範囲で扱い、断定ではなく予想・考察の表現を使うこと。
 """
 
+# ---------------------------------------------------------------------------
+# ランキング構成 (YouTube Shorts 向け)
+#   0-2秒: フック / 3-8秒: 第3位 / 9-15秒: 第2位 / 16-25秒: 第1位 /
+#   26-35秒: 注意台 / 36-45秒: まとめ
+# ---------------------------------------------------------------------------
 
-def _generate_with_claude(topic: str) -> dict:
+RANKING_ROLES = ["hook", "rank3", "rank2", "rank1", "caution", "summary"]
+
+RANKING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "segments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "enum": ["hook", "rank3", "rank2", "rank1", "caution", "summary"],
+                    },
+                    "lines": {"type": "array", "items": {"type": "string"}},
+                    "machine_no": {"type": "string"},
+                    "reg": {"type": "string"},
+                    "total": {"type": "string"},
+                    "verdict": {
+                        "type": "string",
+                        "enum": ["本命", "対抗", "見送り", "注意", ""],
+                    },
+                },
+                "required": ["role", "lines", "machine_no", "reg", "total", "verdict"],
+                "additionalProperties": False,
+            },
+        },
+        "description": {"type": "string"},
+        "hashtags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["title", "segments", "description", "hashtags"],
+    "additionalProperties": False,
+}
+
+RANKING_PROMPT = """\
+あなたはパチスロ・ジャグラー予想系YouTube Shortsの放送作家です。
+次のテーマで、ランキング構成の縦型ショート動画(40〜45秒)の台本を作ってください。
+
+テーマ: {topic}
+
+動画構成(この順で segments を6個作る):
+1. role=hook    (約2秒)  強いフック1行のみ。14文字以内。数字か「!?」を含めて引きを作る
+2. role=rank3   (約6秒)  第3位の台。lines は2〜3行
+3. role=rank2   (約7秒)  第2位の台。lines は2〜3行
+4. role=rank1   (約9秒)  第1位の台。lines は3〜4行。一番熱く語る
+5. role=caution (約9秒)  打ってはいけない注意台。lines は2〜3行
+6. role=summary (約9秒)  まとめ + チャンネル登録のお願い。lines は2〜3行
+
+各 lines の条件(テロップ最適化):
+- 1行 = 13文字以内。短く・大きく・数字中心に
+- 「REG 1/240」「合算 1/115」のような数字を積極的に入れる
+
+rank3/rank2/rank1/caution には台データを入れる:
+- machine_no: 台番の予想 (例 "1038番台")
+- reg: REG確率 (例 "1/240")
+- total: 合算確率 (例 "1/115")
+- verdict: rank1=本命, rank2=対抗, rank3=対抗, caution=見送り
+hook と summary は machine_no/reg/total/verdict をすべて空文字にする。
+
+その他:
+- title: タップしたくなるタイトル。数字を含める。28文字以内
+- description: 要約 + 「※本動画は予想・考察であり、結果を保証するものではありません。」を含める
+- hashtags: #Shorts を必ず含む5〜8個
+- 断定ではなく予想・考察の表現を使うこと
+"""
+
+
+def _call_claude(prompt: str, schema: dict) -> dict:
     import anthropic
 
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
     response = client.messages.create(
         model=config.CLAUDE_MODEL,
         max_tokens=4096,
-        output_config={"format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
-        messages=[{"role": "user", "content": PROMPT_TEMPLATE.format(topic=topic)}],
+        output_config={"format": {"type": "json_schema", "schema": schema}},
+        messages=[{"role": "user", "content": prompt}],
     )
     if response.stop_reason == "refusal":
         raise RuntimeError("Claude API がリクエストを拒否しました")
     text = next(b.text for b in response.content if b.type == "text")
     return json.loads(text)
+
+
+def _generate_with_claude(topic: str) -> dict:
+    return _call_claude(PROMPT_TEMPLATE.format(topic=topic), OUTPUT_SCHEMA)
+
+
+def _generate_ranking_with_claude(topic: str, feedback: str = "") -> dict:
+    prompt = RANKING_PROMPT.format(topic=topic)
+    if feedback:
+        prompt += f"\n前回生成した台本の品質チェックで以下の課題が出ました。必ず改善してください:\n{feedback}\n"
+    return _call_claude(prompt, RANKING_SCHEMA)
+
+
+def _generate_ranking_template(topic: str) -> dict:
+    """APIなしで動くランキング構成のテンプレート台本。"""
+    short = topic if len(topic) <= 18 else topic[:14] + "…"
+    return {
+        "title": f"狙い台TOP3!{short}"[:28],
+        "segments": [
+            {"role": "hook", "lines": [f"狙い台TOP3発表!"],
+             "machine_no": "", "reg": "", "total": "", "verdict": ""},
+            {"role": "rank3", "lines": ["第3位は角台", "出玉の波に注目"],
+             "machine_no": "末尾3の台", "reg": "1/270", "total": "1/130", "verdict": "対抗"},
+            {"role": "rank2", "lines": ["第2位は末尾7", "前日高設定の可能性"],
+             "machine_no": "末尾7の台", "reg": "1/250", "total": "1/125", "verdict": "対抗"},
+            {"role": "rank1", "lines": ["第1位はこれ", "REGが強い台", "朝一から狙う価値あり"],
+             "machine_no": "角2の台", "reg": "1/230", "total": "1/110", "verdict": "本命"},
+            {"role": "caution", "lines": ["逆に危険な台", "前日大量出玉は", "リセット警戒"],
+             "machine_no": "前日万枚の台", "reg": "1/350", "total": "1/160", "verdict": "見送り"},
+            {"role": "summary", "lines": ["あくまで予想です", "無理は禁物",
+                                          "登録して明日の予想もチェック"],
+             "machine_no": "", "reg": "", "total": "", "verdict": ""},
+        ],
+        "description": (
+            f"{topic} の狙い台をランキング形式で紹介。\n\n"
+            "※本動画は予想・考察であり、結果を保証するものではありません。"
+        ),
+        "hashtags": ["#Shorts", "#ジャグラー", "#パチスロ", "#狙い台", "#設定狙い"],
+    }
+
+
+def _validate_ranking(content: dict, topic: str) -> dict:
+    """ランキング台本を整形・検証する。"""
+    base = _validate(
+        {
+            "title": content.get("title"),
+            "script_lines": ["dummy"],  # 後で差し替える
+            "description": content.get("description"),
+            "hashtags": content.get("hashtags"),
+        },
+        topic,
+    )
+
+    segments = []
+    by_role = {s.get("role"): s for s in content.get("segments") or []}
+    for role in RANKING_ROLES:
+        seg = by_role.get(role)
+        if not seg:
+            continue
+        lines = []
+        for raw in seg.get("lines") or []:
+            raw = str(raw).strip()
+            if raw:
+                lines.extend(_chunk_by_touten(raw, 13))
+        if not lines:
+            continue
+        if role == "hook":
+            lines = lines[:1]  # フックは1行・約2秒
+        segments.append(
+            {
+                "role": role,
+                "lines": lines,
+                "machine_no": str(seg.get("machine_no") or "").strip(),
+                "reg": str(seg.get("reg") or "").strip(),
+                "total": str(seg.get("total") or "").strip(),
+                "verdict": str(seg.get("verdict") or "").strip(),
+            }
+        )
+    if len(segments) < 3:
+        raise ValueError("ランキング構成のセグメントが不足しています")
+
+    base["format"] = "ranking"
+    base["segments"] = segments
+    base["script_lines"] = [l for s in segments for l in s["lines"]]
+    return base
 
 
 def _generate_with_template(topic: str) -> dict:
@@ -206,8 +364,23 @@ def build_from_user_script(topic: str, script_text: str) -> dict:
     return _validate(content, topic)
 
 
-def generate(topic: str) -> dict:
-    """テーマから台本一式を生成して dict で返す。"""
+def generate(topic: str, feedback: str = "") -> dict:
+    """テーマから台本一式を生成して dict で返す。
+
+    RANKING_MODE が有効ならランキング構成 (format=ranking) で生成する。
+    feedback には品質チェックで出た課題を渡すと再生成時に反映される。
+    """
+    if config.RANKING_MODE:
+        if config.ANTHROPIC_API_KEY:
+            try:
+                _log().info("Claude API (%s) でランキング台本を生成します", config.CLAUDE_MODEL)
+                return _validate_ranking(_generate_ranking_with_claude(topic, feedback), topic)
+            except Exception as e:
+                log_error(f"Claude API でのランキング台本生成に失敗。テンプレートで継続します: {e}")
+        else:
+            _log().info("ANTHROPIC_API_KEY 未設定のためテンプレートでランキング台本を生成します")
+        return _validate_ranking(_generate_ranking_template(topic), topic)
+
     if config.ANTHROPIC_API_KEY:
         try:
             _log().info("Claude API (%s) で台本を生成します", config.CLAUDE_MODEL)
