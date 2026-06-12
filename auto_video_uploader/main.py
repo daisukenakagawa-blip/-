@@ -294,6 +294,12 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "",
         # --- 1〜4. 台本→音声→動画→サムネ (品質チェック付きで最大N回) ------
         script_path = config.SCRIPTS_DIR / f"{stem}.json"
         user_script = (row.get("script") or "").strip()
+        if user_script and len(user_script) < 60:
+            logger.warning(
+                "台本が短すぎるため (%d文字 < 60)、テーマから自動生成に切り替えます",
+                len(user_script),
+            )
+            user_script = ""
         # 再生成で結果が変わるのは AI 生成台本のみ
         can_regenerate = bool(config.ANTHROPIC_API_KEY) and not user_script
         feedback = ""
