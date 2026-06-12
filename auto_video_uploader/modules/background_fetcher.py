@@ -28,17 +28,32 @@ def _to_direct_url(url: str) -> str:
     return url
 
 
+def _guess_extension(content_type: str, data: bytes) -> str:
+    """Content-Type と先頭バイトから拡張子を推定する(写真にも対応)。"""
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if data[8:12] == b"WEBP":
+        return ".webp"
+    mapping = {
+        "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+        "video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm",
+    }
+    return mapping.get(content_type.split(";")[0].strip().lower(), ".mp4")
+
+
 def download_custom(url: str) -> Path | None:
-    """シートで指定された背景動画 URL をダウンロードしてパスを返す。失敗時は None。"""
+    """シートで指定された背景 (動画 or 写真) の URL を取得してパスを返す。失敗時は None。"""
     logger = get_logger()
     url = url.strip()
     if not url:
         return None
 
     cache_key = hashlib.md5(url.encode("utf-8")).hexdigest()[:8]
-    out_path = config.ASSETS_DIR / f"background_custom_{cache_key}.mp4"
-    if out_path.exists() and out_path.stat().st_size > 0:
-        return out_path
+    cached = list(config.ASSETS_DIR.glob(f"background_custom_{cache_key}.*"))
+    if cached and cached[0].stat().st_size > 0:
+        return cached[0]
 
     try:
         resp = requests.get(_to_direct_url(url), timeout=300, allow_redirects=True)
@@ -46,12 +61,17 @@ def download_custom(url: str) -> Path | None:
         ctype = resp.headers.get("content-type", "")
         if "text/html" in ctype:
             logger.warning(
-                "背景URLが動画ではなくWebページを返しました。Google ドライブの場合は"
+                "背景URLが動画/写真ではなくWebページを返しました。Google ドライブの場合は"
                 "共有設定を「リンクを知っている全員」にしてください: %s", url,
             )
             return None
+        ext = _guess_extension(ctype, resp.content[:16])
+        out_path = config.ASSETS_DIR / f"background_custom_{cache_key}{ext}"
         out_path.write_bytes(resp.content)
-        logger.info("指定された背景動画を取得しました (%d KB)", out_path.stat().st_size // 1024)
+        logger.info(
+            "指定された背景素材を取得しました (%s, %d KB)",
+            ext, out_path.stat().st_size // 1024,
+        )
         return out_path
     except Exception as e:
         logger.warning("背景URLの取得に失敗。既定の背景で続行します: %s", e)

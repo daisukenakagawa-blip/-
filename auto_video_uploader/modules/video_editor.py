@@ -188,7 +188,7 @@ def create_video(
         background = download_custom(background_url)
     if background is None:
         background = _find_or_create_background()
-    is_video_bg = background.suffix.lower() in (".mp4", ".mov", ".mkv")
+    is_video_bg = background.suffix.lower() in (".mp4", ".mov", ".mkv", ".webm")
 
     w, h, fps = config.VIDEO_WIDTH, config.VIDEO_HEIGHT, config.VIDEO_FPS
 
