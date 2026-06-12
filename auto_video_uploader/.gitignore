@@ -1,0 +1,24 @@
+# 認証情報・秘密情報は絶対にコミットしない
+.env
+client_secret.json
+client_secret*.json
+token.json
+
+# 生成物
+videos/*
+!videos/.gitkeep
+thumbnails/*
+!thumbnails/.gitkeep
+audio/*
+!audio/.gitkeep
+scripts/*
+!scripts/.gitkeep
+logs/*
+!logs/.gitkeep
+assets/background_auto.png
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
