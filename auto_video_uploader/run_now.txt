@@ -1,1 +1,1 @@
-trigger: 2026-06-12 (3) pro-content-check
+trigger: 2026-06-13 (1) pro-spec-full-check
