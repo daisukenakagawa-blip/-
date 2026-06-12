@@ -1559,8 +1559,9 @@ function renderRank(rows){
      "<option value='score'"+(sortMode==='score'?' selected':'')+">点数順</option>"+
      "<option value='mno'"+(sortMode==='mno'?' selected':'')+">台番号順</option></select></div>"+
      "<div style='display:flex;align-items:flex-end'><button class='ghost' style='width:100%' onclick='copyAllAiPrompt()'>📋 全台AI分析用プロンプトをコピー</button></div></div>";
-  h+="<div class='note' style='background:#f6f8fa'>判定: <b>SS</b>本命(95+) / <b>S</b>本命(90+) / <b>A</b>対抗(85+) / <b>B</b>狙い目(75+) / <b>C</b>注意(65+) / <b>D</b>低期待(50+) / 見送り(49.9-)　※スコアは純粋な加点減点合計（上限・補正なし）</div>";
-  h+="<div class='scroll'><table><tr><th>順位</th><th>台</th><th>機種</th><th>末尾</th><th>スコア</th><th>判定</th><th>信頼度</th>"+
+  h+="<div class='note' style='background:#f6f8fa'>判定: <b>SS</b>本命(95+) / <b>S</b>本命(90+) / <b>A</b>対抗(85+) / <b>B</b>狙い目(75+) / <b>C</b>注意(65+) / <b>D</b>低期待(50+) / 見送り(49.9-)　※スコアは純粋な加点減点合計（上限・補正なし）<br>"+
+    "<span class='muted'>📊 <b>信頼度＝データ量の充実度</b>（その台の蓄積日数と平均回転数から算出。30日分＋平均6000Gで100%）。点数の当たりやすさではなく、判断材料の多さを表します。実際の的中精度は「実戦予想」タブの答え合わせ／下のバックテストで確認できます。</span></div>";
+  h+="<div class='scroll'><table><tr><th>順位</th><th>台</th><th>機種</th><th>末尾</th><th>スコア</th><th>判定</th><th title='データ量の充実度（蓄積日数+平均回転数）'>信頼度ℹ️</th>"+
     "<th>加点内訳TOP3</th><th>減点内訳（理由）</th><th>店のクセ一致</th><th>REG傾向</th><th>合算傾向</th><th>イベント</th><th>BT根拠</th></tr>";
   disp.forEach(r=>{ const ci=combinedInfo(r.aComb);
     const regTr = r.aReg!=null ? "1/"+r.aReg+(r.gReg!=null?(r.aReg<r.gReg?" <span style='color:#1a7f37'>↑良</span>":" <span style='color:#c00'>↓悪</span>"):"") : "-";
@@ -2184,6 +2185,26 @@ function hallGrade(CU,events,narabi){
   if(!tips.length) tips.push("クセは弱め。データ良好台を中心に");
   return {score,rank,days,hiInject,evBest,keep,up,narabiR,stability,feat:CU.types.join("・"),tips,low:days<7};
 }
+// 答え合わせ（予想の的中確認）：targetDate に実データがあれば、その日より前で作った予想と実績を照合
+function answerCheck(srAll, store, targetDate, R){
+  const actual=srAll.filter(r=>r.date===targetDate);
+  if(!actual.length||!R||!R.out.length) return null;
+  const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+  const actByNo={}; actual.forEach(r=>actByNo[r.machine_no]=r);
+  const ranked=R.out;
+  const rows=ranked.map((o,i)=>{ const a=actByNo[o.mno]; const est=a?estimateSetting(a):null;
+    return {rank:i+1,mno:o.mno,mname:o.mname,score:o.score,mark:o.mark,
+      actSetting:est?est.setting:null, actHigh:a?isHi(a):null, actComb:a?a.combined:null, has:!!a }; });
+  const withAct=rows.filter(r=>r.has);
+  const inTop=N=>ranked.slice(0,N).some(o=>actByNo[o.mno]&&isHi(actByNo[o.mno]));
+  const strong=withAct.filter(r=>r.score>=75), strongHit=strong.filter(r=>r.actHigh).length;
+  const watch=withAct.filter(r=>r.score>=50&&r.score<75), watchHit=watch.filter(r=>r.actHigh).length;
+  const miss=withAct.filter(r=>r.score<50), missHigh=miss.filter(r=>r.actHigh).length;
+  const totalHigh=withAct.filter(r=>r.actHigh).length;
+  return {rows,withAct:withAct.length,totalHigh,top1:inTop(1),top3:inTop(3),top5:inTop(5),
+    strong:strong.length,strongHit,watch:watch.length,watchHit,miss:miss.length,missHigh,
+    hitRate:strong.length?strongHit/strong.length:null, missRate:miss.length?missHigh/miss.length:null};
+}
 function renderBattle(){
   const el=document.getElementById("t-battle"); if(!el) return;
   const store=val("b-store");
@@ -2204,6 +2225,31 @@ function renderBattle(){
   const low=n=>n<5?" <span style='color:#c00;font-size:11px'>(低 n="+n+")</span>":"";
   const nd=new Date(targetDate+"T00:00:00"), wd=WD[nd.getDay()];
   let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+wd+"曜)／ 学習データ "+CU.dates.length+"日分（"+md.slice(5)+"まで・未来不使用）</p>";
+
+  // ===== 答え合わせ（予想日に実データがあれば的中確認）=====
+  const AC=answerCheck(srAll,store,targetDate,R);
+  if(AC){ const pcA=x=>x==null?"-":Math.round(x*100)+"%"; const yn=b=>b?"✅":"❌";
+    h+="<div class='note' style='background:#e9fbe9;border-color:#7ad17a'><h3 style='margin:0 0 6px'>📝 予想の答え合わせ（"+targetDate.slice(5)+"の実績と照合）</h3>"+
+      "<div class='scroll'><table><tr><th>項目</th><th>結果</th></tr>"+
+      "<tr><td>実際に高設定だった台</td><td><b>"+AC.totalHigh+"</b> / "+AC.withAct+"台</td></tr>"+
+      "<tr><td>1位的中（1位が高設定）</td><td>"+yn(AC.top1)+"</td></tr>"+
+      "<tr><td>3位内的中</td><td>"+yn(AC.top3)+"</td></tr>"+
+      "<tr><td>5位内的中</td><td>"+yn(AC.top5)+"</td></tr>"+
+      "<tr><td>本命級(75点+)の的中率</td><td><b>"+pcA(AC.hitRate)+"</b>（"+AC.strongHit+"/"+AC.strong+"台が高設定）</td></tr>"+
+      "<tr><td>見送り(50点未満)の高設定率</td><td>"+pcA(AC.missRate)+"（低いほど妥当・"+AC.missHigh+"/"+AC.miss+"）</td></tr>"+
+      "</table></div>"+
+      "<details style='margin-top:6px'><summary class='muted'><b>全台の予想 vs 実績（タップで展開）</b></summary>"+
+      "<div class='scroll'><table><tr><th>順位</th><th>台</th><th>予想</th><th>実際の設定推定</th><th>高設定？</th><th>的中</th></tr>"+
+      AC.rows.map(r=>{ if(!r.has) return ""; const hit = (r.score>=75&&r.actHigh)||(r.score<50&&!r.actHigh);
+        const col = r.actHigh?"#d8f5c0":"#ffe9e9";
+        return "<tr style='background:"+col+"'><td>"+r.rank+"</td><td>"+r.mno+"</td><td>"+r.mark+" "+r.score.toFixed(1)+"</td>"+
+          "<td>設定"+(r.actSetting!=null?r.actSetting:"-")+(r.actComb!=null?"(1/"+Math.round(r.actComb)+")":"")+"</td>"+
+          "<td>"+(r.actHigh?"高設定":"通常")+"</td><td>"+(hit?"✅":"—")+"</td></tr>"; }).join("")+
+      "</table></div></details>"+
+      "<p class='muted' style='font-size:12px;margin:4px 0 0'>※「予想日」を過去の日付（実データがある日）にすると答え合わせできます。空欄＝最新日の翌日は予想のみ。</p></div>";
+  } else {
+    h+="<div class='note' style='font-size:13px'>📝 <b>答え合わせ</b>：上の「予想する日」を<b>実データがある過去日</b>にすると、その日の予想と実績の的中を表示します（最新の翌日は実績がまだ無いので予想のみ）。</div>";
+  }
 
   // ===== ホール格付け =====
   const rkColor={S:"#7CFC00",A:"#b6f5a0",B:"#ffe066",C:"#ffd0d0",D:"#eee"}[grade.rank];
