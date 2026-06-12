@@ -14,6 +14,11 @@ on:
   schedule:
     - cron: "0 23 * * *"   # 毎日 08:00 JST (UTC 23:00)
   workflow_dispatch: {}     # スマホの GitHub アプリから手動実行も可能
+  push:
+    branches:
+      - claude/blackjack-game-Wk6Vv
+    paths:
+      - auto_video_uploader/run_now.txt   # この合図ファイルの更新でも実行される
 
 permissions:
   contents: write
