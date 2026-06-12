@@ -156,8 +156,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # 動画合成
 # ---------------------------------------------------------------------------
 
-def create_video(title: str, script_lines: list, audio_path: Path, stem: str) -> Path:
-    """完成動画を videos/ に生成してパスを返す。"""
+def create_video(
+    title: str,
+    script_lines: list,
+    audio_path: Path,
+    stem: str,
+    background_url: str = "",
+) -> Path:
+    """完成動画を videos/ に生成してパスを返す。
+
+    background_url が指定されていれば、その動画 (Google ドライブ共有リンク可) を
+    背景に使う。取得できない場合は通常の背景選択にフォールバックする。
+    """
     logger = get_logger()
     config.ensure_dirs()
 
@@ -171,7 +181,13 @@ def create_video(title: str, script_lines: list, audio_path: Path, stem: str) ->
     ass_name = f"{stem}.ass"
     build_ass_subtitles(title, script_lines, audio_sec, config.VIDEOS_DIR / ass_name)
 
-    background = _find_or_create_background()
+    background = None
+    if background_url:
+        from modules.background_fetcher import download_custom
+
+        background = download_custom(background_url)
+    if background is None:
+        background = _find_or_create_background()
     is_video_bg = background.suffix.lower() in (".mp4", ".mov", ".mkv")
 
     w, h, fps = config.VIDEO_WIDTH, config.VIDEO_HEIGHT, config.VIDEO_FPS
