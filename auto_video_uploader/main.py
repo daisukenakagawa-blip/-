@@ -25,7 +25,7 @@ from modules import script_generator, voice_generator, video_editor, thumbnail_g
 from modules.logger import append_uploaded_log, get_logger, is_already_uploaded, log_error
 from modules.platform_base import get_uploader
 
-TOPIC_FIELDS = ["date", "topic", "platform", "status"]
+TOPIC_FIELDS = ["date", "topic", "platform", "status", "background"]
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +96,7 @@ def sync_topics_from_sheet() -> None:
                     "topic": topic,
                     "platform": (row.get("platform") or "youtube").lower(),
                     "status": (row.get("status") or "pending").lower(),
+                    "background": row.get("background", ""),
                 }
             )
     except Exception as e:
@@ -103,21 +104,41 @@ def sync_topics_from_sheet() -> None:
         return
 
     rows = load_topics() if config.TOPICS_CSV.exists() else []
-    existing = {
-        (r.get("topic", "").strip(), (r.get("platform") or "youtube").strip().lower())
+    by_key = {
+        (r.get("topic", "").strip(), (r.get("platform") or "youtube").strip().lower()): r
         for r in rows
     }
-    added = 0
+    added = updated = 0
     for s in sheet_rows:
         key = (s["topic"], s["platform"])
-        if key in existing:
+        if key in by_key:
+            # 既存行でも、シート側で background が追記・変更されたら反映する
+            r = by_key[key]
+            if s["background"] and (r.get("background") or "") != s["background"]:
+                r["background"] = s["background"]
+                updated += 1
             continue
         rows.append(s)
-        existing.add(key)
+        by_key[key] = s
         added += 1
-    if added:
+    if added or updated:
         save_topics(rows)
-        logger.info("スプレッドシートから %d 件のテーマを取り込みました", added)
+        logger.info("スプレッドシートから取り込み: 追加 %d 件 / 背景更新 %d 件", added, updated)
+
+
+def resolve_background(rows: list, target_row: dict) -> str:
+    """対象行に適用する背景URLを決める。
+
+    シートの background 列は「一度貼ればそれ以降の行にも適用」される仕様。
+    対象行までの行を順に見て、最後に指定された URL を引き継ぐ。
+    """
+    bg = ""
+    for r in rows:
+        if (r.get("background") or "").strip():
+            bg = r["background"].strip()
+        if r is target_row:
+            break
+    return bg
 
 
 def pending_topics(rows: list) -> list:
@@ -185,7 +206,7 @@ def make_stem(date_str: str, topic: str) -> str:
     return f"{date_part}_{digest}"
 
 
-def process_topic(row: dict, no_upload: bool = False) -> bool:
+def process_topic(row: dict, no_upload: bool = False, background_url: str = "") -> bool:
     """1テーマを 台本→音声→動画→サムネ→アップロード まで処理する。
 
     成功時 True。失敗時は error_log.txt に記録して False(status は pending のまま
@@ -231,7 +252,8 @@ def process_topic(row: dict, no_upload: bool = False) -> bool:
             logger.info("生成済みの動画を再利用します: %s", video_path)
         else:
             video_path = video_editor.create_video(
-                content["title"], content["script_lines"], audio_path, stem
+                content["title"], content["script_lines"], audio_path, stem,
+                background_url=background_url,
             )
 
         # --- 4. サムネイル -------------------------------------------------
@@ -313,7 +335,8 @@ def main() -> int:
     # スプレッドシート連携が設定されていれば、最新テーマを取り込んでから処理する
     sync_topics_from_sheet()
 
-    targets = pending_topics(load_topics())
+    all_rows = load_topics()
+    targets = pending_topics(all_rows)
     if not targets:
         logger.info("処理対象 (status=pending) のテーマがありません")
         return 0
@@ -323,7 +346,8 @@ def main() -> int:
 
     failed = 0
     for row in targets:
-        if not process_topic(row, no_upload=args.no_upload):
+        background_url = resolve_background(all_rows, row)
+        if not process_topic(row, no_upload=args.no_upload, background_url=background_url):
             failed += 1
 
     logger.info("完了: %d 件処理 / %d 件失敗", len(targets), failed)

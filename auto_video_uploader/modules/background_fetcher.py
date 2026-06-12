@@ -1,10 +1,12 @@
-"""Pexels (無料素材サイト) から縦型の背景動画を自動取得する。
+"""背景動画の自動取得。
 
-PEXELS_API_KEY が設定されている場合のみ動作する。
-取得済みファイルがあれば再利用し、API を無駄に叩かない。
+- download_custom: ユーザーが指定した URL (Google ドライブ共有リンク対応) から取得
+- fetch_background: Pexels API から自動取得 (PEXELS_API_KEY 設定時のみ)
 """
 
+import hashlib
 import random
+import re
 from pathlib import Path
 
 import requests
@@ -13,6 +15,47 @@ import config
 from modules.logger import get_logger
 
 SEARCH_URL = "https://api.pexels.com/videos/search"
+
+
+def _to_direct_url(url: str) -> str:
+    """Google ドライブの共有リンクを直接ダウンロード URL に変換する。"""
+    m = re.search(r"drive\.google\.com/file/d/([\w-]+)", url)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    m = re.search(r"drive\.google\.com/open\?id=([\w-]+)", url)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url
+
+
+def download_custom(url: str) -> Path | None:
+    """シートで指定された背景動画 URL をダウンロードしてパスを返す。失敗時は None。"""
+    logger = get_logger()
+    url = url.strip()
+    if not url:
+        return None
+
+    cache_key = hashlib.md5(url.encode("utf-8")).hexdigest()[:8]
+    out_path = config.ASSETS_DIR / f"background_custom_{cache_key}.mp4"
+    if out_path.exists() and out_path.stat().st_size > 0:
+        return out_path
+
+    try:
+        resp = requests.get(_to_direct_url(url), timeout=300, allow_redirects=True)
+        resp.raise_for_status()
+        ctype = resp.headers.get("content-type", "")
+        if "text/html" in ctype:
+            logger.warning(
+                "背景URLが動画ではなくWebページを返しました。Google ドライブの場合は"
+                "共有設定を「リンクを知っている全員」にしてください: %s", url,
+            )
+            return None
+        out_path.write_bytes(resp.content)
+        logger.info("指定された背景動画を取得しました (%d KB)", out_path.stat().st_size // 1024)
+        return out_path
+    except Exception as e:
+        logger.warning("背景URLの取得に失敗。既定の背景で続行します: %s", e)
+        return None
 
 
 def fetch_background() -> Path | None:
