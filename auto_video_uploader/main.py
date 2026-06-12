@@ -184,6 +184,15 @@ def resolve_background(rows: list, target_row: dict) -> str:
     return bg
 
 
+def _parse_date(date_str: str):
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            return datetime.strptime((date_str or "").strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def pending_topics(rows: list) -> list:
     result = []
     for row in rows:
@@ -192,6 +201,9 @@ def pending_topics(rows: list) -> list:
         if not (row.get("topic") or "").strip():
             continue
         result.append(row)
+    # 公開日が近いものから処理する(日付なしは「今すぐ」扱いで最優先)。
+    # 同じ日付の場合は元の並び順を保つ。
+    result.sort(key=lambda r: _parse_date(r.get("date", "")) or date.min)
     return result
 
 
