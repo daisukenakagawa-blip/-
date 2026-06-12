@@ -80,9 +80,17 @@ def _score_info(content: dict) -> tuple:
             if s.get("machine_no") and s.get("reg") and s.get("total") and s.get("verdict")
         )
         ratio = filled / len(data_segs)
-        score = round(12 * ratio)
-        if ratio < 1:
-            reasons.append(f"台データ(台番/REG/合算/判定)が欠けている ({filled}/{len(data_segs)}件)")
+        if filled > 0:
+            score = round(12 * ratio)
+            if ratio < 1:
+                reasons.append(f"台データ(台番/REG/合算/判定)が欠けている ({filled}/{len(data_segs)}件)")
+        else:
+            # あるある・診断・クイズ等のデータ無しジャンルは「なるほど密度」で評価:
+            # 各セグメントに2行以上の説明(理由・オチ)があるか
+            lines_ok = sum(1 for s in data_segs if len(s.get("lines") or []) >= 2)
+            score = round(12 * lines_ok / len(data_segs))
+            if lines_ok < len(data_segs):
+                reasons.append("理由・オチの薄いセグメントがある (各2行以上が目安)")
         # コメント誘導 (まとめにコメントを促す一言があるか)
         summary = next((s for s in content["segments"] if s["role"] == "summary"), None)
         if summary and any("コメント" in l for l in summary["lines"]):
