@@ -14,6 +14,7 @@
 import argparse
 import csv
 import hashlib
+import re
 import sys
 import traceback
 from datetime import date, datetime, timedelta, timezone
@@ -63,6 +64,21 @@ def mark_topic_done(topic: str, platform: str) -> None:
     save_topics(rows)
 
 
+def _sheet_csv_url(url: str) -> str:
+    """スプレッドシートの URL を CSV 取得用 URL に正規化する。
+
+    「ウェブに公開(CSV)」の URL はそのまま、普通の共有リンク
+    (…/spreadsheets/d/<ID>/edit?usp=sharing) は export?format=csv に変換する。
+    共有リンクの場合、シートの共有設定が「リンクを知っている全員」である必要がある。
+    """
+    url = url.strip()
+    # 公開済みURL (…/d/e/2PACX-…/pub?output=csv) はそのまま使う
+    m = re.search(r"docs\.google\.com/spreadsheets/d/(?!e/)([\w-]+)", url)
+    if m and "/export" not in url and "output=csv" not in url:
+        return f"https://docs.google.com/spreadsheets/d/{m.group(1)}/export?format=csv"
+    return url
+
+
 def sync_topics_from_sheet() -> None:
     """Google スプレッドシート(ウェブに公開した CSV)から topics.csv へ取り込む。
 
@@ -78,7 +94,7 @@ def sync_topics_from_sheet() -> None:
 
         import requests
 
-        resp = requests.get(config.TOPICS_SHEET_URL, timeout=30)
+        resp = requests.get(_sheet_csv_url(config.TOPICS_SHEET_URL), timeout=30)
         resp.raise_for_status()
         resp.encoding = "utf-8"
         sheet_rows = []
