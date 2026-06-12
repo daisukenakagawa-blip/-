@@ -134,17 +134,15 @@ def sync_topics_from_sheet() -> None:
             topic = row.get("topic", "")
             if not topic:
                 continue
-            # フォームのファイル添付は URL がカンマ区切りで複数入ることがある
-            background = row.get("background", "")
-            if "," in background:
-                background = background.split(",")[0].strip()
+            # フォームのファイル添付はカンマ区切りで複数URLが入ることがある。
+            # 複数写真はスライドショー背景に使うため、そのまま全部保持する
             sheet_rows.append(
                 {
                     "date": row.get("date", ""),
                     "topic": topic,
                     "platform": (row.get("platform") or "youtube").lower(),
                     "status": (row.get("status") or "pending").lower(),
-                    "background": background,
+                    "background": row.get("background", ""),
                     "script": row.get("script", ""),
                     "bgm": row.get("bgm", ""),
                 }

@@ -382,6 +382,89 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # 動画合成
 # ---------------------------------------------------------------------------
 
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".webm")
+
+
+def _build_slideshow(images: list, segment_durations: list | None,
+                     total_sec: float, stem: str) -> Path:
+    """複数写真からセグメント同期のスライドショー背景動画を作る。
+
+    写真はランキングのセグメントごとに切り替わり(足りなければ循環)、
+    ズームイン/ズームアウトを交互にかけて単調さを防ぐ。
+    """
+    w, h, fps = config.VIDEO_WIDTH, config.VIDEO_HEIGHT, config.VIDEO_FPS
+    durs = list(segment_durations) if segment_durations else [total_sec]
+    durs[-1] += 1.0  # 末尾の余韻ぶん
+
+    clips = [(images[i % len(images)], d) for i, d in enumerate(durs)]
+    out_path = config.ASSETS_DIR / f"slideshow_{stem}.mp4"
+
+    cmd = ["ffmpeg", "-y"]
+    filters = []
+    for i, (img, d) in enumerate(clips):
+        cmd += ["-loop", "1", "-t", f"{d + 0.2:.2f}", "-i", str(img)]
+        frames = int(d * fps) + 2
+        # ズームイン / ズームアウトを交互に (Ken Burns)
+        if i % 2 == 0:
+            zexpr = f"1+0.10*on/{frames}"
+        else:
+            zexpr = f"max(1.10-0.10*on/{frames}\\,1.0)"
+        filters.append(
+            f"[{i}:v]scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,"
+            f"crop={w * 2}:{h * 2},zoompan=z='{zexpr}':d=1:"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={fps},"
+            f"trim=duration={d:.2f},setsar=1[v{i}]"
+        )
+    concat = "".join(f"[v{i}]" for i in range(len(clips))) + \
+             f"concat=n={len(clips)}:v=1:a=0[v]"
+    cmd += [
+        "-filter_complex", ";".join(filters) + ";" + concat,
+        "-map", "[v]", "-r", str(fps),
+        "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+        str(out_path),
+    ]
+    _run(cmd)
+    get_logger().info("写真%d枚からスライドショー背景を生成しました", len(images))
+    return out_path
+
+
+def _resolve_custom_background(background_url: str, segment_durations: list | None,
+                               total_sec: float, stem: str) -> Path | None:
+    """background 列のURL(複数可)から背景素材を決める。
+
+    - 写真が2枚以上 → セグメント同期スライドショー
+    - 動画 or 写真1枚 → そのまま使用
+    """
+    from modules.background_fetcher import download_custom
+
+    urls = [u.strip() for u in (background_url or "").split(",") if u.strip()]
+    if not urls:
+        return None
+
+    photos, first_video = [], None
+    for url in urls:
+        p = download_custom(url)
+        if p is None:
+            continue
+        if p.suffix.lower() in IMAGE_EXTS:
+            photos.append(p)
+        elif p.suffix.lower() in VIDEO_EXTS and first_video is None:
+            first_video = p
+
+    if len(photos) >= 2:
+        try:
+            return _build_slideshow(photos, segment_durations, total_sec, stem)
+        except Exception as e:
+            get_logger().warning("スライドショー生成に失敗。1枚目を使用します: %s", e)
+            return photos[0]
+    if first_video:
+        return first_video
+    if photos:
+        return photos[0]
+    return None
+
+
 def create_video(
     content: dict,
     audio_path: Path,
@@ -418,14 +501,12 @@ def create_video(
             content["title"], content["script_lines"], audio_sec, config.VIDEOS_DIR / ass_name
         )
 
-    background = None
-    if background_url:
-        from modules.background_fetcher import download_custom
-
-        background = download_custom(background_url)
+    background = _resolve_custom_background(
+        background_url, segment_durations, total_sec, stem
+    )
     if background is None:
         background = _find_or_create_background()
-    is_video_bg = background.suffix.lower() in (".mp4", ".mov", ".mkv", ".webm")
+    is_video_bg = background.suffix.lower() in VIDEO_EXTS
 
     w, h, fps = config.VIDEO_WIDTH, config.VIDEO_HEIGHT, config.VIDEO_FPS
 
