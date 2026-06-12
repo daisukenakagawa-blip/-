@@ -1,0 +1,187 @@
+"""動画完成後の自動品質チェック。
+
+6つの基準を 100 点満点で採点し、QUALITY_MIN_SCORE (既定 80) 未満なら
+原因を logs/quality_log.txt に残して再生成の対象にする。
+
+配点:
+  冒頭2秒の強さ        20点
+  テロップの見やすさ    20点
+  情報の分かりやすさ    15点
+  画面変化の多さ        15点
+  音声の自然さ          15点
+  サムネの強さ          15点
+"""
+
+import re
+from datetime import datetime
+from pathlib import Path
+
+import config
+from modules.logger import get_logger
+from modules.video_editor import plan_line_schedule
+
+_HOOK_PUNCH = re.compile(r"[0-9!?!?]")
+_DIGIT = re.compile(r"[0-9]")
+
+
+def _score_hook(content: dict) -> tuple:
+    """冒頭2秒の強さ (20点)。"""
+    reasons = []
+    score = 0
+    lines = content.get("script_lines") or []
+    first = lines[0] if lines else ""
+    if content.get("format") == "ranking" and content["segments"][0]["role"] == "hook":
+        score += 8
+    else:
+        reasons.append("冒頭がフック構成になっていない")
+    if first and len(first) <= 14:
+        score += 6
+    else:
+        reasons.append(f"フックが長すぎる ({len(first)}文字 > 14文字)")
+    if _HOOK_PUNCH.search(first):
+        score += 6
+    else:
+        reasons.append("フックに数字や「!?」などの引きがない")
+    return score, reasons
+
+
+def _score_telop(content: dict) -> tuple:
+    """テロップの見やすさ (20点)。短い行 = 大きく表示できる。"""
+    reasons = []
+    lines = content.get("script_lines") or []
+    if not lines:
+        return 0, ["テロップが存在しない"]
+    max_len = max(len(l) for l in lines)
+    avg_len = sum(len(l) for l in lines) / len(lines)
+    score = 10
+    if max_len > 14:
+        over = max_len - 14
+        score -= min(10, over * 2)
+        reasons.append(f"長すぎるテロップがある (最長{max_len}文字)")
+    if avg_len <= 12:
+        score += 10
+    elif avg_len <= 15:
+        score += 6
+        reasons.append(f"テロップの平均文字数が多め ({avg_len:.1f}文字)")
+    else:
+        reasons.append(f"テロップ全体が長文寄り (平均{avg_len:.1f}文字)")
+    return max(0, score), reasons
+
+
+def _score_info(content: dict) -> tuple:
+    """情報の分かりやすさ (15点)。台データの充実度・数字の密度。"""
+    reasons = []
+    if content.get("format") == "ranking":
+        data_segs = [s for s in content["segments"] if s["role"] in ("rank1", "rank2", "rank3", "caution")]
+        if not data_segs:
+            return 0, ["ランキングセグメントが無い"]
+        filled = sum(
+            1 for s in data_segs
+            if s.get("machine_no") and s.get("reg") and s.get("total") and s.get("verdict")
+        )
+        ratio = filled / len(data_segs)
+        score = round(15 * ratio)
+        if ratio < 1:
+            reasons.append(f"台データ(台番/REG/合算/判定)が欠けている ({filled}/{len(data_segs)}件)")
+        return score, reasons
+    lines = content.get("script_lines") or []
+    digit_lines = sum(1 for l in lines if _DIGIT.search(l))
+    ratio = digit_lines / len(lines) if lines else 0
+    if ratio >= 0.3:
+        return 15, reasons
+    reasons.append(f"数字を含むテロップが少ない ({digit_lines}/{len(lines)}行)")
+    return round(15 * ratio / 0.3), reasons
+
+
+def _score_motion(content: dict, total_sec: float, segment_durations: list | None) -> tuple:
+    """画面変化の多さ (15点)。テロップ・バナーの切り替え間隔で評価。"""
+    reasons = []
+    schedule = plan_line_schedule(content, total_sec, segment_durations)
+    if not schedule:
+        return 0, ["表示要素が無い"]
+    changes = len(schedule) + (len(content.get("segments", [])) if content.get("format") == "ranking" else 0)
+    interval = total_sec / max(1, changes)
+    if interval <= 1.5:
+        return 15, reasons
+    if interval <= 2.0:
+        reasons.append(f"画面変化がやや少ない (平均{interval:.1f}秒間隔)")
+        return 12, reasons
+    if interval <= 2.5:
+        reasons.append(f"画面変化が少ない (平均{interval:.1f}秒間隔)")
+        return 8, reasons
+    reasons.append(f"画面変化が大幅に不足 (平均{interval:.1f}秒間隔)")
+    return 4, reasons
+
+
+def _score_voice(content: dict, audio_path: Path, total_sec: float) -> tuple:
+    """音声の自然さ (15点)。エンジン品質と読み上げ速度で評価。"""
+    reasons = []
+    score = 0
+    if Path(audio_path).suffix.lower() == ".wav":  # VOICEVOX
+        score += 10
+    else:
+        score += 5
+        reasons.append("gTTS音声のため自然さが劣る (VOICEVOXを推奨)")
+    chars = sum(len(l) for l in content.get("script_lines") or [])
+    speed = chars / total_sec if total_sec else 0
+    if 5.0 <= speed <= 9.0:
+        score += 5
+    else:
+        reasons.append(f"読み上げ速度が不自然 ({speed:.1f}文字/秒)")
+        score += 2
+    return score, reasons
+
+
+def _score_thumbnail(title: str, thumb_path: Path) -> tuple:
+    """サムネの強さ (15点)。"""
+    reasons = []
+    score = 0
+    if Path(thumb_path).exists() and Path(thumb_path).stat().st_size > 10_000:
+        score += 5
+    else:
+        reasons.append("サムネイルが生成されていない")
+    if len(title) <= 28:
+        score += 5
+    else:
+        reasons.append(f"タイトルが長くサムネで読みにくい ({len(title)}文字)")
+    if _DIGIT.search(title):
+        score += 5
+    else:
+        reasons.append("タイトルに数字が無くサムネの引きが弱い")
+    return score, reasons
+
+
+def evaluate(
+    content: dict,
+    audio_path: Path,
+    total_sec: float,
+    thumb_path: Path,
+    segment_durations: list | None = None,
+) -> tuple:
+    """品質を採点する。戻り値: (score, breakdown dict, reasons list)。"""
+    checks = {
+        "冒頭2秒の強さ": _score_hook(content),
+        "テロップの見やすさ": _score_telop(content),
+        "情報の分かりやすさ": _score_info(content),
+        "画面変化の多さ": _score_motion(content, total_sec, segment_durations),
+        "音声の自然さ": _score_voice(content, audio_path, total_sec),
+        "サムネの強さ": _score_thumbnail(content.get("title", ""), thumb_path),
+    }
+    breakdown = {name: s for name, (s, _) in checks.items()}
+    reasons = [r for _, (_, rs) in checks.items() for r in rs]
+    return sum(breakdown.values()), breakdown, reasons
+
+
+def log_quality(stem: str, attempt: int, score: int, breakdown: dict, reasons: list) -> None:
+    """品質チェック結果を logs/quality_log.txt に記録する。"""
+    config.ensure_dirs()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        f"[{timestamp}] stem={stem} attempt={attempt} score={score} "
+        + " ".join(f"{k}:{v}" for k, v in breakdown.items())
+    ]
+    for r in reasons:
+        lines.append(f"  - {r}")
+    with open(config.QUALITY_LOG_TXT, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    get_logger().info("品質スコア: %d点 (attempt=%d)", score, attempt)
