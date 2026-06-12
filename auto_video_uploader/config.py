@@ -21,6 +21,9 @@ ASSETS_DIR = BASE_DIR / "assets"
 LOGS_DIR = BASE_DIR / "logs"
 
 TOPICS_CSV = BASE_DIR / "topics.csv"
+# Google スプレッドシートの「ウェブに公開 (CSV)」URL。設定すると実行時に
+# シートの内容を topics.csv へ自動で取り込む(スマホからのテーマ追加用)
+TOPICS_SHEET_URL = os.getenv("TOPICS_SHEET_URL", "").strip()
 UPLOADED_LOG_CSV = BASE_DIR / "uploaded_log.csv"
 ERROR_LOG_TXT = LOGS_DIR / "error_log.txt"
 APP_LOG_TXT = LOGS_DIR / "app.log"
@@ -68,7 +71,7 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
 #   TTS_ENGINE: "voicevox" | "gtts"
 #   voicevox はローカルで VOICEVOX エンジンが起動している必要あり
 # ---------------------------------------------------------------------------
-TTS_ENGINE = os.getenv("TTS_ENGINE", "gtts").lower()
+TTS_ENGINE = os.getenv("TTS_ENGINE", "auto").lower()
 VOICEVOX_URL = os.getenv("VOICEVOX_URL", "http://127.0.0.1:50021")
 VOICEVOX_SPEAKER = int(os.getenv("VOICEVOX_SPEAKER", "3"))  # 3 = ずんだもん(ノーマル)
 GTTS_LANG = os.getenv("GTTS_LANG", "ja")

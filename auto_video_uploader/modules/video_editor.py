@@ -84,6 +84,16 @@ def _escape_ass(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "(").replace("}", ")")
 
 
+def _wrap_jp(text: str, chars_per_line: int) -> str:
+    """日本語は自動折り返しが効かないことがあるため文字数で強制改行する。"""
+    escaped = _escape_ass(text)
+    lines = [
+        escaped[i : i + chars_per_line]
+        for i in range(0, len(escaped), chars_per_line)
+    ]
+    return r"\N".join(lines)
+
+
 def build_ass_subtitles(title: str, script_lines: list, total_sec: float, out_path: Path) -> Path:
     """タイトル(上部固定) + 台本行(下部・読み上げに同期)の ASS 字幕を作る。
 
@@ -101,28 +111,34 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Title,{font},60,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,8,60,60,140,1
-Style: Sub,{font},68,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,6,2,2,60,60,420,1
+Style: Title,{font},58,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,3,8,60,60,140,1
+Style: Hook,{font},84,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,3,5,60,60,0,1
+Style: Sub,{font},74,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,3,2,60,60,420,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     events = []
-    # タイトルは全編表示
+    # タイトルは全編表示(文字数で強制改行して画面内に収める)
     events.append(
-        f"Dialogue: 0,{_ass_time(0)},{_ass_time(total_sec)},Title,,0,0,0,,{_escape_ass(title)}"
+        f"Dialogue: 0,{_ass_time(0)},{_ass_time(total_sec)},Title,,0,0,0,,{_wrap_jp(title, 15)}"
     )
 
     # 文字数比で各行に時間を配分(短い行が一瞬で消えないよう +4 の下駄)
     weights = [len(line) + 4 for line in script_lines]
     total_weight = sum(weights)
     cursor = 0.0
-    for line, weight in zip(script_lines, weights):
+    for i, (line, weight) in enumerate(zip(script_lines, weights)):
         dur = total_sec * weight / total_weight
         start, end = cursor, min(cursor + dur, total_sec)
+        # 1行目はフック: 画面中央に大きく表示。以降は下部に表示
+        style = "Hook" if i == 0 else "Sub"
+        wrapped = _wrap_jp(line, 10 if style == "Hook" else 12)
+        # フェードイン/アウトと軽いポップ演出で見栄えを上げる
+        fx = r"{\fad(150,100)\t(0,120,\fscx108\fscy108)\t(120,240,\fscx100\fscy100)}"
         events.append(
-            f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Sub,,0,0,0,,{_escape_ass(line)}"
+            f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},{style},,0,0,0,,{fx}{wrapped}"
         )
         cursor = end
 
@@ -140,6 +156,8 @@ def create_video(title: str, script_lines: list, audio_path: Path, stem: str) ->
     config.ensure_dirs()
 
     out_path = config.VIDEOS_DIR / f"{stem}.mp4"
+    # ffmpeg は字幕パス対策で videos/ をカレントにして実行するため絶対パスに揃える
+    audio_path = Path(audio_path).resolve()
     audio_sec = get_audio_duration(audio_path)
     total_sec = audio_sec + 0.5
     logger.info("ナレーション %.1f 秒 / 動画 %.1f 秒で合成します", audio_sec, total_sec)
@@ -170,10 +188,21 @@ def create_video(title: str, script_lines: list, audio_path: Path, stem: str) ->
         fonts_dir = str(Path(config.FONT_PATH).parent).replace("\\", "/").replace(":", "\\:")
         ass_filter += f":fontsdir='{fonts_dir}'"
 
-    vchain = (
-        f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
-        f"crop={w}:{h},setsar=1,fps={fps},{ass_filter}[v]"
-    )
+    if is_video_bg:
+        vsrc = (
+            f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+            f"crop={w}:{h},setsar=1,fps={fps}"
+        )
+    else:
+        # 静止画背景はゆっくりズームイン(Ken Burns 効果)で単調さを軽減
+        frames = int(total_sec * fps) + fps
+        vsrc = (
+            f"[0:v]scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,"
+            f"crop={w * 2}:{h * 2},"
+            f"zoompan=z='1+0.12*on/{frames}':d=1:"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={fps},setsar=1"
+        )
+    vchain = f"{vsrc},{ass_filter}[v]"
 
     if use_bgm:
         achain = (

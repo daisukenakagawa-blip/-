@@ -63,6 +63,63 @@ def mark_topic_done(topic: str, platform: str) -> None:
     save_topics(rows)
 
 
+def sync_topics_from_sheet() -> None:
+    """Google スプレッドシート(ウェブに公開した CSV)から topics.csv へ取り込む。
+
+    スマホでシートに行を足すだけでテーマ追加できるようにする仕組み。
+    既存の (topic, platform) は上書きせず、新しい行だけ pending で追加する。
+    取得に失敗してもローカルの topics.csv だけで処理を続行する。
+    """
+    if not config.TOPICS_SHEET_URL:
+        return
+    logger = get_logger()
+    try:
+        import io
+
+        import requests
+
+        resp = requests.get(config.TOPICS_SHEET_URL, timeout=30)
+        resp.raise_for_status()
+        resp.encoding = "utf-8"
+        sheet_rows = []
+        for row in csv.DictReader(io.StringIO(resp.text)):
+            row = {
+                (k or "").strip().lower().lstrip("\ufeff"): (v or "").strip()
+                for k, v in row.items()
+            }
+            topic = row.get("topic", "")
+            if not topic:
+                continue
+            sheet_rows.append(
+                {
+                    "date": row.get("date", ""),
+                    "topic": topic,
+                    "platform": (row.get("platform") or "youtube").lower(),
+                    "status": (row.get("status") or "pending").lower(),
+                }
+            )
+    except Exception as e:
+        logger.warning("スプレッドシートの取得に失敗。topics.csv のみで続行します: %s", e)
+        return
+
+    rows = load_topics() if config.TOPICS_CSV.exists() else []
+    existing = {
+        (r.get("topic", "").strip(), (r.get("platform") or "youtube").strip().lower())
+        for r in rows
+    }
+    added = 0
+    for s in sheet_rows:
+        key = (s["topic"], s["platform"])
+        if key in existing:
+            continue
+        rows.append(s)
+        existing.add(key)
+        added += 1
+    if added:
+        save_topics(rows)
+        logger.info("スプレッドシートから %d 件のテーマを取り込みました", added)
+
+
 def pending_topics(rows: list) -> list:
     result = []
     for row in rows:
@@ -99,9 +156,15 @@ def compute_publish_at(date_str: str) -> str | None:
     date_str = (date_str or "").strip()
     if not date_str:
         return None
-    try:
-        target = datetime.strptime(date_str, "%Y-%m-%d").date()
-    except ValueError:
+    # スプレッドシートからは 2026/06/18 形式で来ることもあるため両対応
+    target = None
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            target = datetime.strptime(date_str, fmt).date()
+            break
+        except ValueError:
+            continue
+    if target is None:
         get_logger().warning("date のパースに失敗したため即時投稿します: %s", date_str)
         return None
     if target <= date.today():
@@ -246,6 +309,9 @@ def main() -> int:
             "status": "pending",
         }
         return 0 if process_topic(row, no_upload=args.no_upload) else 1
+
+    # スプレッドシート連携が設定されていれば、最新テーマを取り込んでから処理する
+    sync_topics_from_sheet()
 
     targets = pending_topics(load_topics())
     if not targets:

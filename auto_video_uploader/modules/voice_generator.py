@@ -73,12 +73,16 @@ def generate(script_lines: list, stem: str) -> Path:
     text = _narration_text(script_lines)
     out_base = config.AUDIO_DIR / stem
 
-    if config.TTS_ENGINE == "voicevox":
+    # auto: VOICEVOX が起動していれば自動で使い、無ければ gTTS にフォールバック
+    if config.TTS_ENGINE in ("voicevox", "auto"):
         try:
             logger.info("VOICEVOX で音声を生成します (speaker=%s)", config.VOICEVOX_SPEAKER)
             return _generate_voicevox(text, out_base)
         except Exception as e:
-            logger.warning("VOICEVOX での生成に失敗 (%s)。gTTS にフォールバックします", e)
+            if config.TTS_ENGINE == "voicevox":
+                logger.warning("VOICEVOX での生成に失敗 (%s)。gTTS にフォールバックします", e)
+            else:
+                logger.info("VOICEVOX が起動していないため gTTS を使用します")
 
     logger.info("gTTS で音声を生成します")
     return _generate_gtts(text, out_base)
