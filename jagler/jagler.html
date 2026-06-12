@@ -86,7 +86,9 @@
     <p class="muted">ペカセンのページを開き、台データを<b>機種の見出しごと全部まとめてコピー</b>して
       貼り付けてください。複数機種が混ざっていても、機種名・台数を自動で振り分けます。</p>
     <div class="row">
-      <div><label>店舗名</label><input id="in-store" value="ビッグディッパー新橋1号店"></div>
+      <div><label>店舗名</label>
+        <select id="in-store-sel" onchange="if(this.value)document.getElementById('in-store').value=this.value;" style="margin-bottom:4px"><option value="">（入力済みの店から選ぶ）</option></select>
+        <input id="in-store" value="ビッグディッパー新橋1号店" placeholder="新しい店名を入力もOK"></div>
       <div><label>日付</label><input id="in-date" type="date"></div>
     </div>
     <p class="muted">機種名・台数は貼り付けデータから自動判別します（「○○ジャグラーN台」の見出しを認識）。</p>
@@ -117,7 +119,9 @@
       <b>BB数・RB数・総スタートだけ使い、持ちメダルは無視</b>します。
       OCRは完璧ではないので、読み取り後に必ず内容を確認・修正してください。</p>
     <div class="row">
-      <div><label>店舗名</label><input id="ph-store" value="papimo店舗"></div>
+      <div><label>店舗名</label>
+        <select id="ph-store-sel" onchange="if(this.value)document.getElementById('ph-store').value=this.value;" style="margin-bottom:4px"><option value="">（入力済みの店から選ぶ）</option></select>
+        <input id="ph-store" value="papimo店舗" placeholder="新しい店名を入力もOK"></div>
       <div><label>機種名</label><input id="ph-machine" value="マイジャグラー"></div>
     </div>
     <div class="row">
@@ -1120,6 +1124,8 @@ function refreshAll(){
   fillSelect("s-date",dates.length?dates:["（データなし）"]);
   fillSelect("ea-store",stores.length?stores:["（データなし）"]);
   fillSelect("b-store",stores.length?stores:["（データなし）"]);
+  fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
+  fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
   renderEvents(); render();
 }
 function fillSelect(id,opts){ const el=document.getElementById(id); if(!el)return; const cur=el.value;
@@ -2193,8 +2199,10 @@ function answerCheck(srAll, store, targetDate, R){
   const actByNo={}; actual.forEach(r=>actByNo[r.machine_no]=r);
   const ranked=R.out;
   const rows=ranked.map((o,i)=>{ const a=actByNo[o.mno]; const est=a?estimateSetting(a):null;
-    return {rank:i+1,mno:o.mno,mname:o.mname,score:o.score,mark:o.mark,
-      actSetting:est?est.setting:null, actHigh:a?isHi(a):null, actComb:a?a.combined:null, has:!!a }; });
+    return {rank:i+1,mno:o.mno,mname:o.mname,tail:o.tail,score:o.score,mark:o.mark,conf:o.conf,
+      plusTop:o.plusTop||[], minusTop:o.minusTop||[], cons:o.cons||[],
+      actSetting:est?est.setting:null, actProb:est?est.prob:null,
+      actHigh:a?isHi(a):null, actComb:a?a.combined:null, actReg:a?a.reg_prob:null, actBig:a?a.big:null, actRb:a?a.reg:null, actTot:a?a.total:null, has:!!a }; });
   const withAct=rows.filter(r=>r.has);
   const inTop=N=>ranked.slice(0,N).some(o=>actByNo[o.mno]&&isHi(actByNo[o.mno]));
   const strong=withAct.filter(r=>r.score>=75), strongHit=strong.filter(r=>r.actHigh).length;
@@ -2229,24 +2237,36 @@ function renderBattle(){
   // ===== 答え合わせ（予想日に実データがあれば的中確認）=====
   const AC=answerCheck(srAll,store,targetDate,R);
   if(AC){ const pcA=x=>x==null?"-":Math.round(x*100)+"%"; const yn=b=>b?"✅":"❌";
-    h+="<div class='note' style='background:#e9fbe9;border-color:#7ad17a'><h3 style='margin:0 0 6px'>📝 予想の答え合わせ（"+targetDate.slice(5)+"の実績と照合）</h3>"+
+    // 的中判定：本命級(75+)→高設定で◯、見送り(50未満)→通常で◯、中間は高設定なら◯
+    const isHitRow=r=> r.score>=75? r.actHigh : r.score<50? !r.actHigh : r.actHigh;
+    const hitCount=AC.rows.filter(r=>r.has&&isHitRow(r)).length;
+    h+="<div class='note' style='background:#e9fbe9;border-color:#7ad17a'><h3 style='margin:0 0 6px'>📝 予想の答え合わせ（"+targetDate.slice(5)+"("+wd+"曜)の実績と照合）</h3>"+
       "<div class='scroll'><table><tr><th>項目</th><th>結果</th></tr>"+
       "<tr><td>実際に高設定だった台</td><td><b>"+AC.totalHigh+"</b> / "+AC.withAct+"台</td></tr>"+
-      "<tr><td>1位的中（1位が高設定）</td><td>"+yn(AC.top1)+"</td></tr>"+
-      "<tr><td>3位内的中</td><td>"+yn(AC.top3)+"</td></tr>"+
-      "<tr><td>5位内的中</td><td>"+yn(AC.top5)+"</td></tr>"+
+      "<tr><td>予想と実績の一致</td><td><b>"+hitCount+"</b> / "+AC.withAct+"台 ("+pcA(AC.withAct?hitCount/AC.withAct:null)+")</td></tr>"+
+      "<tr><td>1位的中 / 3位内 / 5位内</td><td>"+yn(AC.top1)+" / "+yn(AC.top3)+" / "+yn(AC.top5)+"</td></tr>"+
       "<tr><td>本命級(75点+)の的中率</td><td><b>"+pcA(AC.hitRate)+"</b>（"+AC.strongHit+"/"+AC.strong+"台が高設定）</td></tr>"+
+      "<tr><td>様子見(50-74)の高設定率</td><td>"+pcA(AC.watch?AC.watchHit/AC.watch:null)+"（"+AC.watchHit+"/"+AC.watch+"）</td></tr>"+
       "<tr><td>見送り(50点未満)の高設定率</td><td>"+pcA(AC.missRate)+"（低いほど妥当・"+AC.missHigh+"/"+AC.miss+"）</td></tr>"+
       "</table></div>"+
-      "<details style='margin-top:6px'><summary class='muted'><b>全台の予想 vs 実績（タップで展開）</b></summary>"+
-      "<div class='scroll'><table><tr><th>順位</th><th>台</th><th>予想</th><th>実際の設定推定</th><th>高設定？</th><th>的中</th></tr>"+
-      AC.rows.map(r=>{ if(!r.has) return ""; const hit = (r.score>=75&&r.actHigh)||(r.score<50&&!r.actHigh);
-        const col = r.actHigh?"#d8f5c0":"#ffe9e9";
-        return "<tr style='background:"+col+"'><td>"+r.rank+"</td><td>"+r.mno+"</td><td>"+r.mark+" "+r.score.toFixed(1)+"</td>"+
-          "<td>設定"+(r.actSetting!=null?r.actSetting:"-")+(r.actComb!=null?"(1/"+Math.round(r.actComb)+")":"")+"</td>"+
-          "<td>"+(r.actHigh?"高設定":"通常")+"</td><td>"+(hit?"✅":"—")+"</td></tr>"; }).join("")+
-      "</table></div></details>"+
-      "<p class='muted' style='font-size:12px;margin:4px 0 0'>※「予想日」を過去の日付（実データがある日）にすると答え合わせできます。空欄＝最新日の翌日は予想のみ。</p></div>";
+      "<h4 style='margin:10px 0 4px'>全台：予想 vs 実績（詳細）</h4>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>予想スコア</th><th>判定</th><th>主な加点</th><th>主な減点</th>"+
+      "<th>実BIG/REG</th><th>実REG</th><th>実合算</th><th>実設定推定</th><th>結果</th><th>的中</th></tr>"+
+      AC.rows.map(r=>{ const hit=r.has&&isHitRow(r);
+        const col = !r.has?"#f5f5f5": r.actHigh?"#d8f5c0":"#ffe9e9";
+        return "<tr style='background:"+col+"'><td>"+r.rank+"</td><td>"+r.mno+"</td><td>"+r.mname+"</td>"+
+          "<td><b>"+r.score.toFixed(1)+"</b></td><td>"+r.mark+"</td>"+
+          "<td style='text-align:left;color:#1a7f37'>"+(r.plusTop.length?r.plusTop.join("<br>"):"—")+"</td>"+
+          "<td style='text-align:left;color:#b35900'>"+(r.minusTop.length?r.minusTop.join("<br>"):"—")+"</td>"+
+          (r.has?
+            "<td>"+r.actBig+"/"+r.actRb+"</td><td>"+(r.actReg!=null?"1/"+Math.round(r.actReg):"-")+"</td><td>"+(r.actComb!=null?"1/"+Math.round(r.actComb):"-")+"</td>"+
+            "<td>設定"+(r.actSetting!=null?r.actSetting:"-")+(r.actProb!=null?"("+Math.round(r.actProb*100)+"%)":"")+"</td>"+
+            "<td><b>"+(r.actHigh?"🔥高設定":"通常")+"</b></td><td style='font-size:15px'>"+(hit?"✅":"❌")+"</td>"
+            :"<td colspan='5' class='muted'>この日のデータなし</td><td>—</td>")+
+          "</tr>"; }).join("")+
+      "</table></div>"+
+      "<p class='muted' style='font-size:12px;margin:6px 0 0'>緑=実際に高設定／赤=通常。✅=予想と実績が一致（本命級が高設定／見送りが通常）。"+
+      "「予想日」を過去日にするとその日の答え合わせ、空欄＝最新の翌日は予想のみ。</p></div>";
   } else {
     h+="<div class='note' style='font-size:13px'>📝 <b>答え合わせ</b>：上の「予想する日」を<b>実データがある過去日</b>にすると、その日の予想と実績の的中を表示します（最新の翌日は実績がまだ無いので予想のみ）。</div>";
   }
