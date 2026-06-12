@@ -1,1 +1,1 @@
-trigger: 2026-06-12 (2) quality-v2
+trigger: 2026-06-12 (3) pro-content-check
