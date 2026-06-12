@@ -158,7 +158,9 @@ def _generate_with_claude(topic: str) -> dict:
 
 
 def _generate_ranking_with_claude(topic: str, feedback: str = "") -> dict:
-    prompt = RANKING_PROMPT.format(topic=topic)
+    from modules.juggler_knowledge import spec_prompt
+
+    prompt = RANKING_PROMPT.format(topic=topic) + spec_prompt()
     if feedback:
         prompt += f"\n前回生成した台本の品質チェックで以下の課題が出ました。必ず改善してください:\n{feedback}\n"
     return _call_claude(prompt, RANKING_SCHEMA)
