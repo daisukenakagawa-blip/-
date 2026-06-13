@@ -389,10 +389,22 @@ const WD_ORDER=["月","火","水","木","金","土","日"];
 const REG_COLORS=[[200,255,"#ff5b5b"],[256,290,"#ffae42"],[291,330,"#ffe066"]];
 
 // ---------- 保存 ----------
-function load(){ try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return[];} }
-function save(r){ localStorage.setItem(KEY,JSON.stringify(r)); }
-function loadEvents(){ try{return JSON.parse(localStorage.getItem(EKEY))||[];}catch(e){return[];} }
-function saveEvents(e){ localStorage.setItem(EKEY,JSON.stringify(e)); }
+// localStorageが使えない端末（プライベートモード等）でも当面動くようメモリに退避する
+let _mem=null, _memEv=null, _warned=false;
+function storageWarn(){ if(_warned)return; _warned=true;
+  try{ const d=document.createElement("div"); d.id="storage-warn";
+    d.style.cssText="background:#c0392b;color:#fff;padding:8px 10px;font-size:13px;line-height:1.4";
+    d.innerHTML="⚠ この端末・ブラウザではデータを<b>保存できません</b>（プライベート/シークレットモードの可能性）。"+
+      "今は一時的に使えますが<b>ページを閉じると消えます</b>。<br>"+
+      "対策：①ブラウザを<b>通常モード</b>で開く（Safariのプライベート解除）②「CSV/管理」から<b>CSVを書き出して保管</b>。";
+    document.body.insertBefore(d, document.body.firstChild); }catch(e){}
+}
+function load(){ if(_mem!==null) return _mem.slice(); try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return _mem?_mem.slice():[];} }
+function save(r){ if(_mem!==null){ _mem=r.slice(); return; }
+  try{ localStorage.setItem(KEY,JSON.stringify(r)); }catch(e){ _mem=r.slice(); storageWarn(); } }
+function loadEvents(){ if(_memEv!==null) return _memEv.slice(); try{return JSON.parse(localStorage.getItem(EKEY))||[];}catch(e){return _memEv?_memEv.slice():[];} }
+function saveEvents(e){ if(_memEv!==null){ _memEv=e.slice(); return; }
+  try{ localStorage.setItem(EKEY,JSON.stringify(e)); }catch(x){ _memEv=e.slice(); storageWarn(); } }
 
 // ---------- 色分け（合算確率）----------
 // 140〜130:黄(設定4示唆) 129〜120:橙(設定5示唆) 119〜100:赤(設定6示唆) 99〜70:レインボー(設定6確定級)
@@ -2729,6 +2741,8 @@ document.getElementById("tabs").addEventListener("click",e=>{
 });
 
 // ---------- 初期化 ----------
+// 保存可否を起動時に確認（プライベートモード等なら警告）
+try{ localStorage.setItem("__jagtest","1"); localStorage.removeItem("__jagtest"); }catch(e){ storageWarn(); }
 const _t=fmtDate(new Date());
 ["in-date","ph-date","ev-date","an-date"].forEach(id=>{const el=document.getElementById(id); if(el)el.value=_t;});
 {const by=document.getElementById("bulk-year"); if(by)by.value=new Date().getFullYear();}
