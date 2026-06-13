@@ -78,6 +78,7 @@
     <button data-t="rank">🎯 狙い台予想</button>
     <button data-t="ranknew">🆕 狙い台予想・新</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
+    <button data-t="andetail">🔍 答え合わせ詳細</button>
     <button data-t="csv">💾 CSV/管理</button>
   </div>
 
@@ -343,6 +344,20 @@
     </div>
     <button class="primary" onclick="render()">🥇 総合分析する</button>
     <div id="t-battle"></div>
+  </div>
+
+  <!-- 答え合わせ詳細 -->
+  <div class="panel" id="p-andetail">
+    <h2>🔍 答え合わせ詳細（高設定が入った理由）</h2>
+    <p class="muted">指定日の全台について「予想 vs 実績」を表示し、<b>低スコアなのに高設定だった台（取りこぼし）を上位に</b>並べ、
+      「予想が低かった理由」と「実際に高設定だった理由」を両方表示します。なぜ低スコア台に設定が入ったのかを分析できます。
+      <b>予想日より前のデータのみ使用（未来不使用）。</b></p>
+    <div class="row">
+      <div><label>店舗</label><select id="ad-store" onchange="render()"></select></div>
+      <div><label>答え合わせする日（実データがある日）</label><input id="ad-date" type="date" onchange="render()"></div>
+    </div>
+    <button class="primary" onclick="render()">🔍 答え合わせする</button>
+    <div id="t-andetail"></div>
   </div>
 
   <!-- CSV / 管理 -->
@@ -1217,6 +1232,7 @@ function refreshAll(){
   fillSelect("ea-store",stores.length?stores:["（データなし）"]);
   fillSelect("b-store",stores.length?stores:["（データなし）"]);
   fillSelect("b2-store",stores.length?stores:["（データなし）"]);
+  fillSelect("ad-store",stores.length?stores:["（データなし）"]);
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
   renderEvents(); render();
@@ -1234,7 +1250,7 @@ function render(){
     "<span style='background:#ffae42'>1/129-120 設定5示唆</span>"+
     "<span style='background:#ff5b5b'>1/119-100 設定6示唆</span>"+
     "<span class='rainbow'>1/99-70 設定6確定級</span>";
-  renderList(rows); renderStore(rows); renderTail(rows); renderWeek(rows); renderRank(rows); renderStoreReport(rows); renderEventAnalysis(); renderBattle(); renderRankNew(rows);
+  renderList(rows); renderStore(rows); renderTail(rows); renderWeek(rows); renderRank(rows); renderStoreReport(rows); renderEventAnalysis(); renderBattle(); renderRankNew(rows); renderAnswerDetail();
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -2328,6 +2344,119 @@ function renderRankNewInner(rows){
   el.innerHTML=h;
 }
 
+// ========== 答え合わせ詳細（高設定が入った理由）==========
+let _adCache=null;
+function renderAnswerDetail(){
+  const el=document.getElementById("t-andetail"); if(!el) return;
+  const panel=document.getElementById("p-andetail");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと答え合わせを計算します（重い処理のため）。</p>"; return; }
+  try{ renderAnswerDetailInner(); }
+  catch(e){ el.innerHTML="<div class='warn'>計算でエラー: "+(e&&e.message||e)+"</div>"; }
+}
+// その台が高設定だった理由（予想日より前で分かり得た手がかり＋当日実数値）
+function highReasons(a, hist, CU, evToday, isHi){
+  const sig=[]; const mno=a.machine_no;
+  if(evToday) sig.push("イベント日だった");
+  const prev=hist.length?hist[hist.length-1]:null;
+  if(prev&&isHi(prev)) sig.push("前日も高設定（据え置き）");
+  else { let st=0; for(let i=hist.length-1;i>=0;i--){ if(!isHi(hist[i]))st++; else break; } if(st>=1) sig.push(st+"日不発明けで投入"); }
+  if(CU.cornerSet.has(mno)) sig.push("角台"); else if(CU.c2Set.has(mno)) sig.push("角2"); else if(CU.c3Set.has(mno)) sig.push("角3");
+  const mh=CU.machHi[mno]; if(mh&&mh.n>=3&&mh.hi>CU.overallHi+0.05) sig.push("この台番号は実績高（過去"+mh.n+"回中"+Math.round(mh.hi*100)+"%）");
+  const th=CU.tailHiMap[mno%10]; if(th&&th.n>=3&&th.hi>CU.overallHi+0.05) sig.push("末尾"+(mno%10)+"が実績高（"+Math.round(th.hi*100)+"%）");
+  const ih=CU.islHiMap[Math.floor(mno/10)]; if(ih&&ih.n>=3&&ih.hi>CU.overallHi+0.05) sig.push("島"+Math.floor(mno/10)+"が実績高（"+Math.round(ih.hi*100)+"%）");
+  const ro=CU.rotate[a.machine_name]; if(ro&&ro.due) sig.push("機種ローテ的に投入時期");
+  if(!sig.length) sig.push("⚠ 前日まで手がかりなし＝当日いきなり投入で事前予測は困難");
+  return sig;
+}
+function renderAnswerDetailInner(){
+  const el=document.getElementById("t-andetail");
+  const store=val("ad-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  const datesAll=[...new Set(srAll.map(r=>r.date))].sort();
+  if(datesAll.length<2){ el.innerHTML="<p class='muted'>複数日分のデータが必要です。</p>"; return; }
+  const D=val("ad-date")|| datesAll[datesAll.length-1];
+  if(!srAll.some(r=>r.date===D)){ el.innerHTML="<p class='muted'>その日の実データがありません。実データのある日を選んでください（最新："+datesAll[datesAll.length-1].slice(5)+"）。</p>"; return; }
+  const sr=srAll.filter(r=>r.date<D);
+  if(sr.length<2){ el.innerHTML="<p class='muted'>その日より前のデータが不足しています。</p>"; return; }
+  const md=maxDate(sr); const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+  const CU=learnCusp(sr,d=>isEventDate(d,store),md);
+  const mAvgs=machineAverages(recent(sr,30));
+  const R=computeRanking(srAll,store,D,false,null);
+  const scoreBy={}; if(R) R.out.forEach(o=>scoreBy[o.mno]=o);
+  const byMhist={}; sr.forEach(r=>{(byMhist[r.machine_no]=byMhist[r.machine_no]||[]).push(r);}); for(const k in byMhist)byMhist[k].sort((a,b)=>a.date<b.date?-1:1);
+  const evToday=isEventDate(D,store);
+  const actual=srAll.filter(r=>r.date===D);
+  const pc=x=>x==null?"-":Math.round(x*100)+"%";
+  // 各台
+  const rows=actual.map(a=>{ const mno=a.machine_no, est=estimateSetting(a), hi=isHi(a), o=scoreBy[mno];
+    const hist=byMhist[mno]||[]; const ma=mAvgs[a.machine_name];
+    const score=o?o.score:null;
+    const klass = hi ? (score!=null&&score>=65?"🎯 的中":"❗取りこぼし") : (score!=null&&score<50?"✅ 正しく回避":(score!=null&&score>=65?"⚠ ハズレ":"－"));
+    return {mno,mname:a.machine_name,tail:mno%10,score,mark:o?o.mark:"-",hi,klass,
+      setting:est?est.setting:null,p4:est?est.high:null, reg:a.reg_prob,comb:a.combined,big:a.big,rb:a.reg,tot:a.total,
+      maReg:ma?ma.reg:null, why: hi?highReasons(a,hist,CU,evToday,isHi):[], predCons:o?o.cons.slice(0,3):[] };
+  });
+  // 取りこぼし（低スコア高設定）を最優先に
+  const rank={"❗取りこぼし":0,"🎯 的中":1,"⚠ ハズレ":2,"－":3,"✅ 正しく回避":4};
+  rows.sort((x,y)=>{ const r=(rank[x.klass]??9)-(rank[y.klass]??9); if(r)return r; return (y.score||0)-(x.score||0); });
+  const miss=rows.filter(r=>r.klass==="❗取りこぼし"), totalHi=rows.filter(r=>r.hi).length;
+
+  let h="<p class='muted'>"+store+" ／ 答え合わせ日="+D.slice(5)+(evToday?"（イベント日）":"")+" ／ 前日まで"+CU.dates.length+"日で予想</p>";
+  h+="<div class='note' style='background:#fff4f4;border-color:#f3a'>"+
+    "<b>❗取りこぼし（低スコアだが高設定）："+miss.length+"台</b> ／ 実際の高設定 "+totalHi+"台中。<br>"+
+    "<span class='muted'>↓この台たちが「なぜ予想で低かったか」と「なぜ実際に高設定だったか」を並べています。</span></div>";
+
+  // メインテーブル
+  h+="<div class='scroll'><table style='font-size:12px'><tr><th>分類</th><th>台</th><th>機種</th><th>予想<br>スコア</th><th>判定</th>"+
+    "<th>当日<br>設定</th><th>当日REG<br>(機種平均)</th><th>当日<br>合算</th><th>予想が低かった理由</th><th>実際に高設定だった理由</th></tr>";
+  rows.forEach(r=>{ const bg = r.klass==="❗取りこぼし"?"#ffe0e0": r.klass==="🎯 的中"?"#d8f5c0": r.klass==="⚠ ハズレ"?"#fff0d0": r.klass==="✅ 正しく回避"?"#eef7ff":"#fff";
+    h+="<tr style='background:"+bg+"'><td style='white-space:nowrap'>"+r.klass+"</td><td>"+r.mno+"</td><td>"+r.mname+"</td>"+
+      "<td><b>"+(r.score!=null?r.score.toFixed(1):"-")+"</b></td><td>"+r.mark+"</td>"+
+      "<td>設定"+(r.setting||"-")+"<br><span class='muted'>P4+"+pc(r.p4)+"</span></td>"+
+      "<td>1/"+(r.reg?Math.round(r.reg):"-")+(r.maReg?"<br><span class='muted'>機種1/"+Math.round(r.maReg)+"</span>":"")+"</td>"+
+      "<td>1/"+(r.comb?Math.round(r.comb):"-")+"<br><span class='muted'>"+(r.tot?Math.round(r.tot)+"G":"")+"</span></td>"+
+      "<td style='text-align:left;color:#b35900'>"+(r.predCons.length?r.predCons.join("<br>"):"—")+"</td>"+
+      "<td style='text-align:left;color:#1a7f37'>"+(r.why.length?r.why.join("<br>"):"—")+"</td></tr>";
+  });
+  h+="</table></div>";
+
+  // 取りこぼしの共通点（過去複数日の集計）
+  const aggKey=store+"|"+srAll.length+"|"+D;
+  if(!_adCache||_adCache.key!==aggKey){
+    const sigCount={}; let missN=0, hiN=0;
+    const di=datesAll.indexOf(D); const start=Math.max(1,di-30);   // 直近30日まで
+    for(let i=start;i<=di;i++){ const DD=datesAll[i]; const srr=srAll.filter(r=>r.date<DD); if(srr.length<2)continue;
+      const RR=computeRanking(srAll,store,DD,false,null); if(!RR)continue; const sB={}; RR.out.forEach(o=>sB[o.mno]=o);
+      const bh={}; srr.forEach(r=>{(bh[r.machine_no]=bh[r.machine_no]||[]).push(r);}); for(const k in bh)bh[k].sort((a,b)=>a.date<b.date?-1:1);
+      const ev=isEventDate(DD,store);
+      srAll.filter(r=>r.date===DD).forEach(a=>{ if(!isHi(a))return; hiN++; const o=sB[a.machine_no]; if(!o||o.score>=65)return; missN++;
+        const hist=bh[a.machine_no]||[]; const prev=hist.length?hist[hist.length-1]:null; const add=k=>sigCount[k]=(sigCount[k]||0)+1;
+        if(ev)add("イベント日");
+        if(prev&&isHi(prev))add("前日据え置き");
+        else { let st=0;for(let j=hist.length-1;j>=0;j--){if(!isHi(hist[j]))st++;else break;} if(st>=1)add("不発明け（新規投入）"); }
+        const r0=hist.filter(isHi).length; if(hist.length>=3&&r0/hist.length>=0.4)add("台番号実績は高め");
+        if(prev&&prev.total<5000)add("前日が低回転で実態不明だった");
+        if(!ev&&!(prev&&isHi(prev))&&hist.length>=1){ let st=0;for(let j=hist.length-1;j>=0;j--){if(!isHi(hist[j]))st++;else break;} if(st>=Math.min(hist.length,3))add("完全に前兆なし（読むのが困難）"); }
+      });
+    }
+    _adCache={key:aggKey, sigCount, missN, hiN};
+  }
+  const agg=_adCache;
+  h+="<details class='note' open style='margin-top:8px'><summary><b>🧭 取りこぼしの共通点（直近最大30日の集計）</b></summary>"+
+    "<p class='muted' style='font-size:12px'>低スコア(65点未満)だったのに高設定だった台 <b>"+agg.missN+"件</b>（高設定 計"+agg.hiN+"件）に共通していた手がかりです。"+
+    "ここが多い項目ほど、その店のクセを反映しきれていない＝強化すべきポイントです。</p>";
+  const sigs=Object.entries(agg.sigCount).sort((a,b)=>b[1]-a[1]);
+  if(sigs.length){ h+="<div class='scroll'><table style='font-size:12px'><tr><th>取りこぼしに共通した手がかり</th><th>件数</th><th>取りこぼし中の割合</th></tr>";
+    sigs.forEach(([k,v])=>{ h+="<tr><td style='text-align:left'>"+k+"</td><td>"+v+"件</td><td>"+(agg.missN?Math.round(v/agg.missN*100):0)+"%</td></tr>"; });
+    h+="</table></div>";
+    const newInj=(agg.sigCount["完全に前兆なし（読むのが困難）"]||0);
+    if(agg.missN&&newInj/agg.missN>=0.4) h+="<p class='muted' style='font-size:12px'>※取りこぼしの多くは前兆なしの当日新規投入です。台データだけでは予測困難で、イベント情報・店長告知の活用やデータ蓄積が有効です。</p>";
+  } else h+="<p class='muted'>集計対象の取りこぼしがありません（データが少ないか、的中が多い）。</p>";
+  h+="</details>";
+  el.innerHTML=h;
+}
+
 // ========== 実戦予想（総合）==========
 // 並び分析（未来不使用・CUはsrのみで学習済み）
 function analyzeNarabi(CU){
@@ -2588,6 +2717,7 @@ document.getElementById("tabs").addEventListener("click",e=>{
   const t=e.target.dataset.t;
   if(t==="ranknew") renderRankNew(load());
   else if(t==="battle") renderBattle();
+  else if(t==="andetail") renderAnswerDetail();
 });
 
 // ---------- 初期化 ----------
