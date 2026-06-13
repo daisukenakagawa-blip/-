@@ -509,7 +509,7 @@ function saveRecs(recs, store, machine, date){
     if(keys.has(k)){skip++;continue;} keys.add(k);
     rows.push(enrich({date,store,machine_name:machine,machine_no:r.machine_no,big:r.big,reg:r.reg,
       total:r.total,sabe:(r.sabe!=null?r.sabe:null),budou:(r.budou||"")})); ins++; }
-  save(rows); refreshAll(); return {ins,skip};
+  save(rows); try{ refreshAll(); }catch(e){ console.error("画面更新でエラー（取り込みは成功）:",e); } return {ins,skip};
 }
 
 // 符号付き整数（差枚 +2,212 / -1,800 / 0）
@@ -590,6 +590,7 @@ function doImport(){
   }
 
   // それ以外は列指定モード（他サイト・手入力用）
+  if(!text||!text.trim()){ msg.innerHTML='<div class="warn">貼り付け欄が空です。台データを貼り付けてください。</div>'; return; }
   const order=val("in-order").split(",");
   const ex=extractMachineName(text); const machine=ex.name||"ジャグラー";
   const {recs,warns}=parseRows(ex.text,order,1);
@@ -597,6 +598,10 @@ function doImport(){
   if(recs.length){ const {ins,skip}=saveRecs(recs,store,machine,date);
     html+='<div class="ok">取り込み完了: '+store+' '+date+'（機種: '+machine+'） → 新規'+ins+'件 / 重複'+skip+'件</div>';
     document.getElementById("in-text").value=""; }
+  else { const first=(text.split(/\r?\n/).find(l=>l.trim())||"").slice(0,70);
+    html+='<div class="warn">データを読み取れませんでした。ペカセンは「台データ表を見出しごと全部コピー」して貼ってください。'+
+      'それ以外の形式なら下の「列の並びを指定」を開いて並び順を選んでください。<br>'+
+      '貼り付けの最初の行：<code>'+first.replace(/</g,"&lt;")+'</code></div>'; }
   msg.innerHTML=html;
 }
 
@@ -1250,7 +1255,10 @@ function render(){
     "<span style='background:#ffae42'>1/129-120 設定5示唆</span>"+
     "<span style='background:#ff5b5b'>1/119-100 設定6示唆</span>"+
     "<span class='rainbow'>1/99-70 設定6確定級</span>";
-  renderList(rows); renderStore(rows); renderTail(rows); renderWeek(rows); renderRank(rows); renderStoreReport(rows); renderEventAnalysis(); renderBattle(); renderRankNew(rows); renderAnswerDetail();
+  // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
+  const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
+  [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
