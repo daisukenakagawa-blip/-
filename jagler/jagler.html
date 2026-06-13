@@ -1213,17 +1213,32 @@ function trapPatterns(sr, mAvgs){
   }
   return out;
 }
-// 加点項目の有効性（バックテスト：項目が出た台のその後の高設定率を集計・未来不使用）
+// 加点項目の有効性＋取りこぼしパターンをバックテストで同時学習（未来不使用・1パス）
 function factorEffectiveness(srAll, store, targetDate){
   const sr=srAll.filter(r=>r.date<targetDate);
   const dates=[...new Set(sr.map(r=>r.date))].sort();
   const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
   const F={}; let totalN=0, totalHi=0;
-  for(let i=1;i<dates.length;i++){ const D=dates[i];
+  const missSig={}; let missN=0, hiN=0;                         // 取りこぼし（低スコア65未満だが高設定）の共通点
+  const start=Math.max(1, dates.length-40);                     // 直近40日まで
+  for(let i=start;i<dates.length;i++){ const D=dates[i];
     const R=computeRanking(srAll,store,D,false,null,{mode:"new"}); if(!R||!R.out.length) continue;
     const actByNo={}; srAll.filter(r=>r.date===D).forEach(r=>actByNo[r.machine_no]=r);
     R.out.forEach(o=>{ const a=actByNo[o.mno]; if(!a)return; const hi=isHi(a); totalN++; if(hi)totalHi++;
       for(const k in o.contrib){ if(o.contrib[k]>0){ (F[k]=F[k]||{n:0,hi:0}).n++; if(hi)F[k].hi++; } } });
+    // 取りこぼしパターン
+    const srr=srAll.filter(r=>r.date<D);
+    const bh={}; srr.forEach(r=>{(bh[r.machine_no]=bh[r.machine_no]||[]).push(r);}); for(const k in bh)bh[k].sort((a,b)=>a.date<b.date?-1:1);
+    const ev=isEventDate(D,store); const sB={}; R.out.forEach(o=>sB[o.mno]=o);
+    srAll.filter(r=>r.date===D).forEach(a=>{ if(!isHi(a))return; hiN++; const o=sB[a.machine_no]; if(!o||o.score>=65)return; missN++;
+      const hist=bh[a.machine_no]||[]; const prev=hist.length?hist[hist.length-1]:null; const ad=k=>missSig[k]=(missSig[k]||0)+1;
+      if(ev)ad("event");
+      if(prev&&prev.total<5000)ad("prevLowSpin");
+      if(prev&&isHi(prev))ad("prevKeep");
+      const r0=hist.filter(isHi).length; if(hist.length>=3&&r0/hist.length>=0.4)ad("machHi");
+      { let st=0;for(let j=hist.length-1;j>=0;j--){if(!isHi(hist[j]))st++;else break;} if(st>=3)ad("newInjection"); }
+      const ac=avg(hist.map(r=>r.combined)), ar=avg(hist.map(r=>r.reg_prob)); if(ac!=null&&ac<=150&&ar!=null&&ar>=400)ad("combOnly");
+    });
   }
   const base=totalN?totalHi/totalN:0; const out={};
   for(const k in F){ const r=F[k], rate=r.n?r.hi/r.n:0, diff=rate-base;
@@ -1233,8 +1248,11 @@ function factorEffectiveness(srAll, store, targetDate){
     else if(diff>=-0.03){ verdict="微妙"; weight=1.0; }
     else { verdict="無効"; weight=0.5; }
     out[k]={n:r.n,hi:r.hi,rate,diff,verdict,weight}; }
-  return {factors:out, base, totalN, days:dates.length};
+  const missRate={}; for(const k in missSig) missRate[k]=missN?missSig[k]/missN:0;
+  return {factors:out, base, totalN, days:dates.length, missN, hiN, missSig, missRate};
 }
+// 取りこぼしパターンの日本語ラベル
+const MISS_LABEL={event:"イベント日",prevLowSpin:"前日低回転で実態不明",prevKeep:"前日据え置き",machHi:"台番号実績が高い",newInjection:"新規投入（不発明け）",combOnly:"合算だけ良かった"};
 
 // ---------- 描画 ----------
 function refreshAll(){
@@ -1385,6 +1403,10 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
   const gComb=avg(rec.map(r=>r.combined)), gReg=avg(rec.map(r=>r.reg_prob));
   const mAvgs=machineAverages(rec);                   // 機種別平均（新モードの比較基準）
   const traps = NEW ? trapPatterns(sr,mAvgs) : null;  // 罠パターン
+  const MP = (opts&&opts.missPattern)||null;          // 取りこぼしパターン（新モード）
+  // 機種別の高設定率（機種が強いかの判定用）
+  const machineHi={}; { const mg=groupBy(rec,"machine_name");
+    for(const m in mg){ machineHi[m]=mg[m].filter(r=>{const e=estimateSetting(r);return e&&e.setting>=4;}).length/mg[m].length; } }
   const tailAvg={},gT=groupBy(rec,"tail"); for(const t in gT) tailAvg[t]=avg(gT[t].map(r=>r.combined));
   const wAvg={},gW=groupBy(rec,"weekday"); for(const w in gW) wAvg[w]=avg(gW[w].map(r=>r.combined));
   const md=maxDate(sr); const ndStr=targetDate;
@@ -1593,6 +1615,30 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
     let trapList=[];
     if(NEW && traps && traps[mno] && traps[mno].traps.length){ trapList=traps[mno].traps;
       trapList.forEach(tp=>sub(tp.key,tp.pen,tp.why)); }
+    // ■ 取りこぼし救済（新モード）：低スコアでも「過去に取りこぼした台の共通点」に一致すれば加点＋保留候補に
+    let holdSig=[], rescR=[], missMatch=0;
+    if(NEW){
+      const ld2=lastDay[mno]; const e2=ld2?estimateSetting(ld2):null;
+      const sigNow={};
+      if(eventTomorrow) sigNow.event=1;
+      if(ld2&&ld2.total<5000) sigNow.prevLowSpin=1;
+      if(e2&&e2.setting>=4) sigNow.prevKeep=1;
+      const mh2=CU.machHi[mno]; if(mh2&&mh2.n>=3&&mh2.hi>CU.overallHi+0.05) sigNow.machHi=1;
+      { const a2=byM[mno]||[]; let st=0; for(let i=a2.length-1;i>=0;i--){ if(!CU.isHi(a2[i]))st++; else break; } if(st>=3) sigNow.newInjection=1; }
+      if(aComb!=null&&aComb<=150&&aReg!=null&&aReg>=400) sigNow.combOnly=1;
+      const islk2=Math.floor(+mno/10); const ih2=CU.islHiMap[islk2]; const islStrong=ih2&&ih2.n>=3&&ih2.hi>CU.overallHi+0.05;
+      const machStrong = machineHi[mname]!=null && machineHi[mname]>CU.overallHi+0.05;
+      let rescue=0;
+      if(sigNow.event){ rescue+=5; rescR.push("イベント日(+5)"); holdSig.push("イベント日"); }
+      if(sigNow.prevLowSpin){ rescue+=5; rescR.push("前日低回転で実態不明(+5)"); holdSig.push("前日低回転"); }
+      if(sigNow.machHi){ const pt=Math.min(10,5+(mh2.hi-CU.overallHi)/0.10*5); rescue+=pt; rescR.push("台番号実績が高い(+"+pt.toFixed(0)+")"); holdSig.push("台番号実績"); }
+      if(islStrong){ rescue+=5; rescR.push("島が強い(+5)"); holdSig.push("島が強い"); }
+      if(machStrong){ rescue+=5; rescR.push("機種全体が強い(+5)"); holdSig.push("機種が強い"); }
+      // 過去の取りこぼしパターン一致（学習した共通点との一致度で +5〜15）
+      if(MP&&MP.missN>=3){ for(const k in sigNow){ if(MP.missRate[k]) missMatch+=MP.missRate[k]; }
+        if(missMatch>0){ const pt=Math.min(15,5+missMatch*10); rescue+=pt; rescR.push("過去の取りこぼしパターン一致(+"+pt.toFixed(0)+")"); holdSig.push("取りこぼしパターン一致"); } }
+      if(rescue>0){ add("取りこぼし救済",rescue); reasons.push("取りこぼし救済: "+rescR.join("・")); }
+    }
     // 同種イベントで過去に強い末尾/機種/台番号帯（段階）
     for(const lv of evLearn){ if(lv.recs<4) continue;
       if(lv.tailPct[t]!=null) kAdd("イベ実績:末尾",grad(lv.tailPct[t],8),"過去の"+lv.label+"で末尾"+t+"がREG店平均より"+(lv.tailPct[t]*100).toFixed(1)+"%良い");
@@ -1663,6 +1709,7 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
       gReg:gReg?Math.round(gReg):null,gComb:gComb?Math.round(gComb):null,
       mReg:ma.reg?Math.round(ma.reg):null,mComb:ma.comb?Math.round(ma.comb):null,
       pHigh,p5plus,p6,estConf,mlSet,yame,traps:trapList.slice(),
+      holdSig:holdSig.slice(),rescR:rescR.slice(),missMatch,
       pros:reasons.slice(),cons:cons.slice(),reasons:reasons.join(" / ")});
   }
   out.sort((a,b)=>b.score-a.score);
@@ -1674,16 +1721,22 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
     const s=o.score;
     // 純粋な点数のみで判定（スコア補正・本命数制限なし）
     let mark = s>=95?"SS 本命": s>=90?"S 本命": s>=85?"A 対抗": s>=75?"B 狙い目": s>=65?"C 注意": s>=50?"D 低期待":"見送り";
+    // 新モード：低スコア(見送り)でも取りこぼし共通点に一致する台は「保留」（完全には切らない）
+    o.hold=false;
+    if(NEW && s<50 && o.holdSig && o.holdSig.length){ mark="🅿 保留"; o.hold=true;
+      o.holdReason="過去の取りこぼし台と同じく "+o.holdSig.join("＋")+"。スコアは低いが完全には切れない。"; }
+    o.missRisk = (o.holdSig&&o.holdSig.length)? (o.holdSig.length>=3?"高":o.holdSig.length>=2?"中":"低-中") : "低";
     o.mark=mark;
     const ents=Object.entries(o.contrib||{});
     o.plusTop=ents.filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]+" +"+e[1].toFixed(1));
     o.minusTop=ents.filter(e=>e[1]<0).sort((a,b)=>a[1]-b[1]).slice(0,3).map(e=>e[0]+" "+e[1].toFixed(1));
-    o.comment = mark.indexOf("本命")>=0?("本命級。"+(o.pros[0]||"")):
+    o.comment = mark.indexOf("保留")>=0?("保留。"+(o.holdReason||"")):
+      mark.indexOf("本命")>=0?("本命級。"+(o.pros[0]||"")):
       mark.indexOf("対抗")>=0?"対抗。狙う価値あり":mark.indexOf("狙い目")>=0?"狙い目。積極的に":mark.indexOf("注意")>=0?"注意。様子見つつ":
       mark.indexOf("低期待")>=0?("低期待。"+(o.cons[0]||"")):("見送り。"+(o.cons.slice(0,2).join("、")||""));
-    // 新モード：実戦分類（朝イチ最優先／取れたら打つ／後ヅモ候補／様子見／触らない）
+    // 新モード：実戦分類（朝イチ最優先／取れたら打つ／後ヅモ候補／様子見／保留／触らない）
     if(NEW){ const up=(o.contrib["前日凹み上げ"]||0)+(o.contrib["連続不発+イベント"]||0)>0;  // 上げ狙い性
-      o.cls = s>=85?"🔴 朝イチ最優先": s>=70?"🟠 取れたら打つ": (s>=55&&up)?"🟣 後ヅモ候補": s>=50?"🟡 様子見":"⚪ 触らない"; }
+      o.cls = s>=85?"🔴 朝イチ最優先": s>=70?"🟠 取れたら打つ": (s>=55&&up)?"🟣 後ヅモ候補": s>=50?"🟡 様子見": o.hold?"🅿 保留":"⚪ 触らない"; }
   });
   return {md,ndStr,nextWd,autoEv,evLabelNext,keepRate,eventDay:autoEv.length>0,out,tailAvg,wAvg,gReg,gComb,mAvgs,NEW};
 }
@@ -2313,32 +2366,41 @@ function renderRankNewInner(rows){
   if(!_effCache||_effCache.key!==key){ _effCache={key,eff:factorEffectiveness(srAll,store,targetDate)}; }
   const eff=_effCache.eff;
   const weights={}; for(const k in eff.factors) weights[k]=eff.factors[k].weight;
-  const R=computeRanking(srAll,store,targetDate,document.getElementById("r-event")&&document.getElementById("r-event").checked,null,{mode:"new",weights});
+  const missPattern={missN:eff.missN,hiN:eff.hiN,missSig:eff.missSig,missRate:eff.missRate};
+  const R=computeRanking(srAll,store,targetDate,document.getElementById("r-event")&&document.getElementById("r-event").checked,null,{mode:"new",weights,missPattern});
   if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータ不足）。</p>"; return; }
   const sr=srAll.filter(r=>r.date<targetDate), md=maxDate(sr);
   const nd=new Date(targetDate+"T00:00:00"), wd=WD[nd.getDay()];
   const pc=x=>x==null?"-":Math.round(x*100)+"%";
   let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+wd+"曜)／ 学習"+(eff.days||0)+"日分（未来不使用）／ 基準=機種別平均</p>";
 
+  // 取りこぼし学習サマリー
+  if(eff.missN>=1){ const ms=Object.entries(eff.missSig).sort((a,b)=>b[1]-a[1]);
+    h+="<div class='note' style='background:#fff4f4;border-color:#f3a'><h3 style='margin:0 0 4px'>🧭 取りこぼし学習</h3>"+
+      "<span class='muted' style='font-size:12px'>過去、低スコア(65未満)だったのに高設定だった台 <b>"+eff.missN+"件</b>の共通点を学習し、該当台を救済加点＋「保留」にしています。</span><br>"+
+      ms.map(([k,v])=>(MISS_LABEL[k]||k)+" "+v+"件("+(eff.missN?Math.round(v/eff.missN*100):0)+"%)").join(" ／ ")+"</div>"; }
+
   // 実戦分類サマリー
-  const cats=["🔴 朝イチ最優先","🟠 取れたら打つ","🟣 後ヅモ候補","🟡 様子見","⚪ 触らない"];
+  const cats=["🔴 朝イチ最優先","🟠 取れたら打つ","🟣 後ヅモ候補","🟡 様子見","🅿 保留","⚪ 触らない"];
   h+="<div class='note' style='background:#eef7ff;border-color:#9cc8ff'><h3 style='margin:0 0 6px'>🎯 実戦分類</h3><div class='scroll'><table><tr><th>区分</th><th>台</th></tr>";
   cats.forEach(c=>{ const list=R.out.filter(o=>o.cls===c).map(o=>o.mno+"番").join("、")||"なし";
     h+="<tr><td style='white-space:nowrap'>"+c+"</td><td style='text-align:left'>"+list+"</td></tr>"; });
-  h+="</table></div></div>";
+  h+="</table></div><p class='muted' style='font-size:12px;margin:4px 0 0'>🅿保留＝スコアは低いが過去の取りこぼし共通点に一致するため完全には切らない台。</p></div>";
 
   // メインテーブル
   h+="<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>スコア</th><th>分類</th><th>判定</th>"+
-    "<th>最尤</th><th>P4+</th><th>P5+</th><th>P6</th><th>推定信頼</th><th>REG(機種平均)</th><th>合算</th><th>加点</th><th>減点</th><th>罠</th><th>ヤメ目安</th></tr>";
+    "<th>最尤</th><th>P4+</th><th>P5+</th><th>P6</th><th>取りこぼし<br>リスク</th><th>REG(機種平均)</th><th>合算</th><th>加点</th><th>減点</th><th>残す理由</th><th>ヤメ目安</th></tr>";
   R.out.map((o,i)=>({...o,rank:i+1})).forEach(o=>{
-    const sc=o.score>=85?"#7CFC00":o.score>=70?"#b6f5a0":o.score>=55?"#ffe066":o.score>=50?"#ffd0d0":"#eee";
+    const sc=o.hold?"#e0d0ff":o.score>=85?"#7CFC00":o.score>=70?"#b6f5a0":o.score>=55?"#ffe066":o.score>=50?"#ffd0d0":"#eee";
+    const risk=o.missRisk||"低"; const rc=risk==="高"?"#c00":risk==="中"?"#b35900":"#888";
     h+="<tr><td>"+o.rank+"</td><td>"+o.mno+"</td><td>"+o.mname+"</td>"+
       "<td style='background:"+sc+";font-weight:bold'>"+o.score.toFixed(1)+"</td><td style='white-space:nowrap'>"+(o.cls||"")+"</td><td>"+o.mark+"</td>"+
-      "<td>設定"+(o.mlSet||"-")+"</td><td>"+pc(o.pHigh)+"</td><td>"+pc(o.p5plus)+"</td><td>"+pc(o.p6)+"</td><td>"+(o.estConf!=null?Math.round(o.estConf)+"%":"-")+"</td>"+
+      "<td>設定"+(o.mlSet||"-")+"</td><td>"+pc(o.pHigh)+"</td><td>"+pc(o.p5plus)+"</td><td>"+pc(o.p6)+"</td>"+
+      "<td style='color:"+rc+";font-weight:bold'>"+risk+"</td>"+
       "<td>1/"+(o.aReg||"-")+(o.mReg?"<br><span class='muted'>機種1/"+o.mReg+"</span>":"")+"</td><td>1/"+(o.aComb||"-")+"</td>"+
       "<td style='text-align:left;color:#1a7f37'>"+(o.plusTop.length?o.plusTop.join("<br>"):"—")+"</td>"+
       "<td style='text-align:left;color:#b35900'>"+(o.cons&&o.cons.length?o.cons.slice(0,4).join("<br>"):"—")+"</td>"+
-      "<td style='color:#c00'>"+(o.traps&&o.traps.length?o.traps.map(t=>t.key.replace('罠:','')).join("<br>"):"—")+"</td>"+
+      "<td style='text-align:left;color:#6b46c1;font-size:11px'>"+(o.rescR&&o.rescR.length?o.rescR.join("<br>"):(o.holdReason||"—"))+"</td>"+
       "<td style='text-align:left;font-size:11px'>"+(o.yame?o.yame.join("<br>"):"-")+"</td></tr>";
   });
   h+="</table></div>";
