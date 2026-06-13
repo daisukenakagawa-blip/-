@@ -1469,6 +1469,15 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
     { const big5=g.filter(r=>r.total>=5000&&r.big>0);
       const sumT=big5.reduce((a,r)=>a+r.total,0), sumB=big5.reduce((a,r)=>a+r.big,0);
       const bigProb=(big5.length&&sumB>0)?sumT/sumB:null;
+      // ★ BIG先行救済ボーナス：5000G以上＋BIG1/220以下＋合算1/130以下なら、REGが弱くても合算優秀として高評価
+      let rescued=false;
+      if(big5.length>0 && bigProb!=null && bigProb<=220 && aComb!=null && aComb<=130){
+        rescued=true;
+        let bonus = aComb<=110?25: aComb<=115?20: aComb<=120?16: aComb<=125?12: 8;   // 合算が優秀なほど大
+        bonus += bigProb<=180?8: bigProb<=190?5: bigProb<=200?3: 0;                    // BIGも強ければ追加
+        add("BIG先行救済", bonus);
+        reasons.push("BIG強＋超優秀合算ボーナス(+"+bonus+") BIG1/"+Math.round(bigProb)+" REG1/"+(aReg!=null?Math.round(aReg):"-")+" 合算1/"+Math.round(aComb)+" → REGは弱いが合算が非常に優秀なため高評価");
+      }
       let p=bigScoreCalc(bigProb);
       if(p>0){ let note="";
         if(regWorse!=null){
@@ -1476,10 +1485,13 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
           else if(regWorse>0){ p*=0.5; note="（REGが"+baseLbl+"より悪く50%減衰）"; } }
         if(p>0){ add("BIG補助",p); reasons.push("BIG 1/"+Math.round(bigProb)+"(5000G以上)→+"+p.toFixed(1)+note); }
         else if(note) reasons.push("BIG良好だが"+note+"加点せず"); }
-      // ■ BIG先行ペナルティ：BIG 1/220以下なのにREGが店平均より大きく悪い引き強台
+      // ■ BIG先行ペナルティ：BIG 1/220以下なのにREGが大きく悪い引き強台（合算が優秀なら軽減/無効）
       if(bigProb!=null && bigProb<=220 && regWorse!=null && regWorse>=0.10){
-        const pen = regWorse>=0.30?20: regWorse>=0.20?10:5;
-        sub("BIG先行ペナルティ",pen,"BIG先行(1/"+Math.round(bigProb)+")だがREGが店平均比"+Math.round(regWorse*100)+"%悪い引き強台"); } }
+        let pen = regWorse>=0.30?20: regWorse>=0.20?10:5; let mit="";
+        if(aComb!=null && aComb<=120){ pen=0; mit="（合算1/"+Math.round(aComb)+"が優秀でペナルティ無効）"; }
+        else if(aComb!=null && aComb<=130){ pen*=0.5; mit="（合算1/"+Math.round(aComb)+"が優秀で50%軽減）"; }
+        if(pen>0) sub("BIG先行ペナルティ",pen,"BIG先行(1/"+Math.round(bigProb)+")だがREGが"+baseLbl+"比"+Math.round(regWorse*100)+"%悪い引き強台"+mit);
+        else if(mit) reasons.push("BIG先行ペナルティは"+mit); } }
     // ■ 回転不足減点（平均回転数が少ないほど大きく減点）
     if(aTot!=null){ if(aTot>=6000){ add("回転信頼度",3); reasons.push("平均"+Math.round(aTot)+"Gで信頼度高(+3)"); }
       else { const pen = aTot<1000?15: aTot<2000?10: aTot<3000?6: aTot<4000?4: aTot<5000?2:0;
