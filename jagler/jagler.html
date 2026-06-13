@@ -2247,6 +2247,13 @@ function loadDemo(){
 let _effCache=null;
 function renderRankNew(rows){
   const el=document.getElementById("t-ranknew"); if(!el) return;
+  const panel=document.getElementById("p-ranknew");          // 重い計算はこのタブを開いた時だけ
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと予想を計算します（重い処理のため）。</p>"; return; }
+  try{ renderRankNewInner(rows); }
+  catch(e){ el.innerHTML="<div class='warn'>計算でエラーが発生しました: "+(e&&e.message||e)+"</div>"; }
+}
+function renderRankNewInner(rows){
+  const el=document.getElementById("t-ranknew"); if(!el) return;
   const store=val("b2-store");
   if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
   const srAll=(rows||load()).filter(r=>r.store===store);
@@ -2416,6 +2423,13 @@ function answerCheck(srAll, store, targetDate, R){
 }
 function renderBattle(){
   const el=document.getElementById("t-battle"); if(!el) return;
+  const panel=document.getElementById("p-battle");           // 重い計算はこのタブを開いた時だけ
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと総合分析を計算します（重い処理のため）。</p>"; return; }
+  try{ renderBattleInner(); }
+  catch(e){ el.innerHTML="<div class='warn'>計算でエラーが発生しました: "+(e&&e.message||e)+"</div>"; }
+}
+function renderBattleInner(){
+  const el=document.getElementById("t-battle"); if(!el) return;
   const store=val("b-store");
   if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
   const srAll=load().filter(r=>r.store===store);
@@ -2570,6 +2584,10 @@ document.getElementById("tabs").addEventListener("click",e=>{
   document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
   e.target.classList.add("active");
   document.getElementById("p-"+e.target.dataset.t).classList.add("active");
+  // 重いタブ（予想・新／実戦予想）は開いた時に計算する
+  const t=e.target.dataset.t;
+  if(t==="ranknew") renderRankNew(load());
+  else if(t==="battle") renderBattle();
 });
 
 // ---------- 初期化 ----------
