@@ -1616,7 +1616,7 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
     if(NEW && traps && traps[mno] && traps[mno].traps.length){ trapList=traps[mno].traps;
       trapList.forEach(tp=>sub(tp.key,tp.pen,tp.why)); }
     // ■ 取りこぼし救済（新モード）：低スコアでも「過去に取りこぼした台の共通点」に一致すれば加点＋保留候補に
-    let holdSig=[], rescR=[], missMatch=0;
+    let holdSig=[], rescR=[], missMatch=0, missScore=0;   // missScore=取りこぼし候補専用スコア(0-100)
     if(NEW){
       const ld2=lastDay[mno]; const e2=ld2?estimateSetting(ld2):null;
       const sigNow={};
@@ -1629,15 +1629,21 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
       const islk2=Math.floor(+mno/10); const ih2=CU.islHiMap[islk2]; const islStrong=ih2&&ih2.n>=3&&ih2.hi>CU.overallHi+0.05;
       const machStrong = machineHi[mname]!=null && machineHi[mname]>CU.overallHi+0.05;
       let rescue=0;
-      if(sigNow.event){ rescue+=5; rescR.push("イベント日(+5)"); holdSig.push("イベント日"); }
-      if(sigNow.prevLowSpin){ rescue+=5; rescR.push("前日低回転で実態不明(+5)"); holdSig.push("前日低回転"); }
-      if(sigNow.machHi){ const pt=Math.min(10,5+(mh2.hi-CU.overallHi)/0.10*5); rescue+=pt; rescR.push("台番号実績が高い(+"+pt.toFixed(0)+")"); holdSig.push("台番号実績"); }
-      if(islStrong){ rescue+=5; rescR.push("島が強い(+5)"); holdSig.push("島が強い"); }
-      if(machStrong){ rescue+=5; rescR.push("機種全体が強い(+5)"); holdSig.push("機種が強い"); }
+      // 取りこぼし候補スコア：各手がかりを、過去の取りこぼし頻度(missRate)で重み付け
+      const mw=(k,b)=>{ const f=(MP&&MP.missRate&&MP.missRate[k]!=null)?(0.5+MP.missRate[k]):0.7; return b*f; };
+      if(sigNow.event){ rescue+=5; rescR.push("イベント日(+5)"); holdSig.push("イベント日"); missScore+=mw("event",16); }
+      if(sigNow.prevLowSpin){ rescue+=5; rescR.push("前日低回転で実態不明(+5)"); holdSig.push("前日低回転"); missScore+=mw("prevLowSpin",16); }
+      if(sigNow.machHi){ const pt=Math.min(10,5+(mh2.hi-CU.overallHi)/0.10*5); rescue+=pt; rescR.push("台番号実績が高い(+"+pt.toFixed(0)+")"); holdSig.push("台番号実績"); missScore+=mw("machHi",16); }
+      if(islStrong){ rescue+=5; rescR.push("島が強い(+5)"); holdSig.push("島が強い"); missScore+=8; }
+      if(machStrong){ rescue+=5; rescR.push("機種全体が強い(+5)"); holdSig.push("機種が強い"); missScore+=8; }
+      if(sigNow.newInjection){ holdSig.push("新規投入"); missScore+=mw("newInjection",12); }
+      if(sigNow.combOnly){ holdSig.push("合算だけ良い"); missScore+=mw("combOnly",14); }
+      if(sigNow.prevKeep){ holdSig.push("前日据え置き"); missScore+=mw("prevKeep",10); }
       // 過去の取りこぼしパターン一致（学習した共通点との一致度で +5〜15）
       if(MP&&MP.missN>=3){ for(const k in sigNow){ if(MP.missRate[k]) missMatch+=MP.missRate[k]; }
-        if(missMatch>0){ const pt=Math.min(15,5+missMatch*10); rescue+=pt; rescR.push("過去の取りこぼしパターン一致(+"+pt.toFixed(0)+")"); holdSig.push("取りこぼしパターン一致"); } }
+        if(missMatch>0){ const pt=Math.min(15,5+missMatch*10); rescue+=pt; rescR.push("過去の取りこぼしパターン一致(+"+pt.toFixed(0)+")"); holdSig.push("取りこぼしパターン一致"); missScore+=Math.min(20,missMatch*15); } }
       if(rescue>0){ add("取りこぼし救済",rescue); reasons.push("取りこぼし救済: "+rescR.join("・")); }
+      missScore=Math.min(100,+missScore.toFixed(1));
     }
     // 同種イベントで過去に強い末尾/機種/台番号帯（段階）
     for(const lv of evLearn){ if(lv.recs<4) continue;
@@ -1709,7 +1715,7 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
       gReg:gReg?Math.round(gReg):null,gComb:gComb?Math.round(gComb):null,
       mReg:ma.reg?Math.round(ma.reg):null,mComb:ma.comb?Math.round(ma.comb):null,
       pHigh,p5plus,p6,estConf,mlSet,yame,traps:trapList.slice(),
-      holdSig:holdSig.slice(),rescR:rescR.slice(),missMatch,
+      holdSig:holdSig.slice(),rescR:rescR.slice(),missMatch,missScore,
       pros:reasons.slice(),cons:cons.slice(),reasons:reasons.join(" / ")});
   }
   out.sort((a,b)=>b.score-a.score);
@@ -2379,6 +2385,27 @@ function renderRankNewInner(rows){
     h+="<div class='note' style='background:#fff4f4;border-color:#f3a'><h3 style='margin:0 0 4px'>🧭 取りこぼし学習</h3>"+
       "<span class='muted' style='font-size:12px'>過去、低スコア(65未満)だったのに高設定だった台 <b>"+eff.missN+"件</b>の共通点を学習し、該当台を救済加点＋「保留」にしています。</span><br>"+
       ms.map(([k,v])=>(MISS_LABEL[k]||k)+" "+v+"件("+(eff.missN?Math.round(v/eff.missN*100):0)+"%)").join(" ／ ")+"</div>"; }
+
+  // 🎯 取りこぼし候補スコア（専用）：通常スコアが低めでも、取りこぼし手がかりが強い台を別建てで採点
+  { const cand=R.out.map((o,i)=>({...o,rank:i+1})).filter(o=>(o.missScore||0)>0).sort((a,b)=>b.missScore-a.missScore);
+    h+="<div class='note' style='background:#fdf0ff;border-color:#cb6ce6'><h3 style='margin:0 0 4px'>🎯 取りこぼし候補スコア（専用採点）</h3>"+
+      "<p class='muted' style='font-size:12px'>通常スコアとは別に、過去の取りこぼし手がかりだけで0〜100点を付けた専用ランキング。"+
+      "<b>通常スコアが低いのに取りこぼしスコアが高い台</b>＝拾うべき隠れ高設定候補です。</p>";
+    if(!cand.length) h+="<p class='muted'>該当する取りこぼし候補はありません。</p>";
+    else { h+="<div class='scroll'><table style='font-size:12px'><tr><th>取りこぼし<br>順位</th><th>台</th><th>機種</th>"+
+        "<th>取りこぼし<br>スコア</th><th>通常<br>スコア</th><th>通常判定</th><th>注目度</th><th>該当した取りこぼし手がかり</th></tr>";
+      cand.slice(0,12).forEach((o,i)=>{ const ms=o.missScore;
+        const msc=ms>=60?"#c026d3":ms>=40?"#d946ef":ms>=20?"#f0abfc":"#eee";
+        // 通常スコア低×取りこぼしスコア高 を強調
+        const hidden = ms>=30 && o.score<60;
+        h+="<tr style='background:"+(hidden?"#fbe8ff":"#fff")+"'><td>"+(i+1)+"</td><td>"+o.mno+"</td><td>"+o.mname+"</td>"+
+          "<td style='background:"+msc+";font-weight:bold;font-size:14px'>"+ms.toFixed(0)+"</td>"+
+          "<td>"+o.score.toFixed(1)+"</td><td style='white-space:nowrap'>"+o.mark+"</td>"+
+          "<td style='white-space:nowrap'>"+(hidden?"⭐隠れ候補":(ms>=40?"要チェック":"参考"))+"</td>"+
+          "<td style='text-align:left;color:#a21caf'>"+(o.holdSig&&o.holdSig.length?o.holdSig.join("・"):"—")+"</td></tr>";
+      });
+      h+="</table></div><p class='muted' style='font-size:12px'>⭐隠れ候補＝通常スコアは低い(60未満)が取りこぼしスコアが高い、最も注意すべき台。</p>"; }
+    h+="</div>"; }
 
   // 実戦分類サマリー
   const cats=["🔴 朝イチ最優先","🟠 取れたら打つ","🟣 後ヅモ候補","🟡 様子見","🅿 保留","⚪ 触らない"];
