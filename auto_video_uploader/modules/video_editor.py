@@ -161,10 +161,11 @@ def _emphasize_numbers(text: str, base_color: str) -> str:
     reset = r"{\c" + base_color.replace("&H00", "&H") + r"&\fscx100\fscy100}"
 
     # 1) キーワードを退避しつつ色タグで包む (数字強調との二重適用を防ぐ)
+    #    プレースホルダには数字を使わない (数字強調の正規表現と衝突するため)
     tokens = {}
 
     def stash(m, tag):
-        key = f"\x00{len(tokens)}\x00"
+        key = f"\x00{chr(0xE000 + len(tokens))}\x00"
         tokens[key] = tag + m.group(0) + reset
         return key
 
@@ -192,7 +193,7 @@ def plan_line_schedule(content: dict, total_sec: float, segment_durations: list 
     戻り値: [{"start","end","text","role"}] 。品質チェック(画面変化の頻度)でも使う。
     """
     schedule = []
-    if content.get("format") == "ranking" and segment_durations:
+    if content.get("segments") and segment_durations:
         cursor = 0.0
         for seg, dur in zip(content["segments"], segment_durations):
             weights = [len(l) + 4 for l in seg["lines"]]
@@ -378,6 +379,61 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return out_path
 
 
+def build_monologue_ass(content: dict, segment_durations: list, out_path: Path) -> Path:
+    """ジャグラーマン(モノローグ型)用の ASS 字幕。
+
+    ランキングバナーやデータカードは一切出さない。画面中央に大きく短い
+    テロップ(最大2行)を読み上げに同期して見せる。話題の切り替わりで発光。
+    """
+    w, h = config.VIDEO_WIDTH, config.VIDEO_HEIGHT
+    font = config.FONT_NAME
+    total_sec = sum(segment_durations)
+
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {w}
+PlayResY: {h}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Hook,{font},96,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8,4,5,70,70,0,1
+Style: Talk,{font},86,&H00FFFFFF,&H00FFFFFF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,8,3,5,70,70,0,1
+Style: Flash,{font},20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    events = []
+
+    # 話題切替時の発光フラッシュ
+    flash_shape = rf"m 0 0 l {w} 0 l {w} {h} l 0 {h}"
+    boundary = 0.0
+    for dur in segment_durations[:-1]:
+        boundary += dur
+        events.append(
+            f"Dialogue: 5,{_ass_time(boundary - 0.04)},{_ass_time(boundary + 0.22)},Flash,,0,0,0,,"
+            + r"{\p1\bord0\shad0\1c&HFFFFFF&\1a&H64&\fad(40,180)}" + flash_shape + r"{\p0}"
+        )
+
+    # 読み上げ同期テロップ (中央・大きく・最大2行)
+    for item in plan_line_schedule(content, total_sec, segment_durations):
+        is_hook = item["role"] == "hook"
+        style = "Hook" if is_hook else "Talk"
+        wrapped = _wrap_jp(item["text"], 8 if is_hook else 9)
+        base = "&H0000E5FF" if is_hook else "&H00FFFFFF"
+        emphasized = _emphasize_numbers(wrapped, base)
+        fx = r"{\fad(110,90)\t(0,130,\fscx109\fscy109)\t(130,260,\fscx100\fscy100)}"
+        events.append(
+            f"Dialogue: 2,{_ass_time(item['start'])},{_ass_time(item['end'])},{style},,0,0,0,,{fx}{emphasized}"
+        )
+
+    out_path.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
+    return out_path
+
+
 # ---------------------------------------------------------------------------
 # 動画合成
 # ---------------------------------------------------------------------------
@@ -492,14 +548,19 @@ def create_video(
     audio_path = Path(audio_path).resolve()
     audio_sec = get_audio_duration(audio_path)
     total_sec = audio_sec + 0.5
-    is_ranking = content.get("format") == "ranking" and segment_durations
+    fmt = content.get("format")
+    is_ranking = fmt == "ranking" and segment_durations
+    is_monologue = fmt == "monologue" and segment_durations
+    style_name = "ジャグラーマン" if is_monologue else ("ランキング" if is_ranking else "通常")
     logger.info(
         "ナレーション %.1f 秒 / 動画 %.1f 秒で合成します (%s構成)",
-        audio_sec, total_sec, "ランキング" if is_ranking else "通常",
+        audio_sec, total_sec, style_name,
     )
 
     ass_name = f"{stem}.ass"
-    if is_ranking:
+    if is_monologue:
+        build_monologue_ass(content, segment_durations, config.VIDEOS_DIR / ass_name)
+    elif is_ranking:
         build_ranking_ass(content, segment_durations, config.VIDEOS_DIR / ass_name)
     else:
         build_ass_subtitles(

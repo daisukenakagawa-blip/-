@@ -266,6 +266,210 @@ def _validate_ranking(content: dict, topic: str) -> dict:
     return base
 
 
+# ---------------------------------------------------------------------------
+# モノローグ型 (ジャグラーマン): 都市伝説・あるある・検証を語るキャラクター動画
+#   ランキング/データカード禁止。3秒で強い疑問 → 仮説 → 検証 → 意外な事実 →
+#   視聴者に問う → 結論。数字は「意味」で見せる(生の確率は出さない)。
+# ---------------------------------------------------------------------------
+
+MONOLOGUE_ROLES = ["hook", "setup", "build", "twist", "challenge", "conclusion"]
+
+MONOLOGUE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "thumb_text": {"type": "string"},
+        "segments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "enum": ["hook", "setup", "build", "twist", "challenge", "conclusion"],
+                    },
+                    "lines": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["role", "lines"],
+                "additionalProperties": False,
+            },
+        },
+        "description": {"type": "string"},
+        "hashtags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["title", "thumb_text", "segments", "description", "hashtags"],
+    "additionalProperties": False,
+}
+
+MONOLOGUE_PROMPT = """\
+あなたは登録者50万人超えのパチスロ系YouTubeショート専門クリエイターです。
+「ジャグラーマン」というキャラクターになりきって台本を書きます。
+
+ジャグラーマンとは:
+ジャグラー界の都市伝説や疑問を追求するキャラクター。
+情報を読み上げる解説者ではない。仮説を立て、疑問を投げ、検証し、視聴者と議論する。
+
+テーマ: {topic}
+
+最優先事項: 情報量ではなく「視聴維持率・コメント率・保存率」を最大化すること。
+視聴者が「だから何?」と思う動画は失敗。
+視聴者が「知らなかった」「共感した」「反論したくなった」「試したくなった」と思う内容にする。
+
+【絶対禁止】
+- 第1位/第2位/第3位 などのランキング形式
+- 回転数・合算・BIG確率・REG確率などのデータを並べるだけの構成
+- スペック紹介、メーカーサイトのコピペ、数字の羅列
+
+【数字は意味で見せる(超重要)】
+- ✖「合算1/118.7」→ ○「高設定級の合算」
+- ✖「REG1/240」→ ○「REGが異常に強い」
+- 生の確率や台番は書かない。意味・体感・結論を言葉で伝える
+
+【構成(segmentsを6個、この順で)】
+1. role=hook       (約3秒) 最初の3秒で強烈な疑問。1行・14文字以内。
+   例「高設定だけ先ペカ多くない?」「実はREGより大事な数字がある」
+     「ジャグラーの闇に気づいた」「これやる人ほぼ負けます」「設定6でも普通に負ける」
+   視聴者が『え?』と思う一文から始める
+2. role=setup      (約7秒) 疑問の背景・あるある。共感を作る。lines 2〜3行
+3. role=build      (約9秒) 仮説を立てる。「俺はこう思う」と語る。lines 2〜3行
+4. role=twist      (約9秒) 意外な事実・ありがちな勘違いを暴く。「実は逆」。lines 2〜3行
+5. role=challenge  (約8秒) 視聴者に問いを投げ、反論・議論を誘発。lines 2〜3行
+6. role=conclusion (約8秒) 言い切りの結論 + コメント誘導。lines 2〜3行。
+   最後の1行は必ず「あなたはどう思う?コメントで」「賛成?反対?コメントで」等
+
+【テロップ条件】
+- 1行15文字以内。1画面は最大2行のイメージで短く
+- スマホ最優先。重要語は強い言葉で
+- ジャグラーマンの一人称・話し言葉で(「〜だよな」「〜と思わない?」「断言する」)
+
+その他:
+- title: タップせずにいられないタイトル。28文字以内
+- thumb_text: サムネ用の感情ワード。10文字以内・超強い言葉(例「実は逆」「9割が誤解」「闇」)
+- description: 要約 + 「※本動画は予想・考察であり、結果を保証するものではありません。」を含める
+- hashtags: #Shorts を必ず含む5〜8個
+"""
+
+
+def _generate_monologue_with_claude(topic: str, feedback: str = "") -> dict:
+    from modules.juggler_knowledge import spec_prompt
+
+    prompt = MONOLOGUE_PROMPT.format(topic=topic) + spec_prompt()
+    prompt += (
+        "\n(スペック表は背景知識として正確さの担保にのみ使い、"
+        "テロップには生の数字を出さず『意味』に翻訳すること)\n"
+    )
+    if feedback:
+        prompt += f"\nレビュー会議で以下の指摘が出ました。必ず直してください:\n{feedback}\n"
+    return _call_claude(prompt, MONOLOGUE_SCHEMA)
+
+
+# テーマ優先順位ごとのテンプレート(APIなしでも動く・ジャグラーマン voice)
+_MONOLOGUE_TEMPLATES = {
+    "urban": {  # 都市伝説
+        "title": "ジャグラーの先ペカ伝説は本当か",
+        "thumb_text": "先ペカの闇",
+        "segments": [
+            ("hook", ["高設定だけ先ペカ多くない?"]),
+            ("setup", ["打ってる時こう思った事ない?", "「今日、先ペカ多いな」って", "勝ってる日ほどそう感じる"]),
+            ("build", ["俺の仮説はこうだ", "高設定は当たりが軽いから", "結果的に先ペカも増えて見える"]),
+            ("twist", ["でも実はここがミソ", "先告知の割合に設定差はない", "増えてるのは当たりの数なんだ"]),
+            ("challenge", ["つまり先ペカ自体は無関係", "でも体感は嘘じゃない", "あなたはどっち派?"]),
+            ("conclusion", ["先ペカは原因じゃなく結果だ", "それでもロマンは消えない", "賛成?反対?コメントで!"]),
+        ],
+        "hashtags": ["#Shorts", "#ジャグラー", "#都市伝説", "#先ペカ", "#オカルト"],
+    },
+    "aruaru": {  # あるある
+        "title": "ジャグラーマンにしか分からない事",
+        "thumb_text": "9割が共感",
+        "segments": [
+            ("hook", ["これ分かる人、相当ジャグ廃だ"]),
+            ("setup", ["隣がペカった瞬間", "自分の台が急に重く感じる", "あの現象に名前を付けたい"]),
+            ("build", ["でも冷静に考えてくれ", "抽選は毎ゲーム独立してる", "隣は1ミリも関係ない"]),
+            ("twist", ["なのに席を立てない", "「次こそ来る」と思ってしまう", "これがジャグラーの魔力だ"]),
+            ("challenge", ["分かってても抜けられない", "あなたにも経験あるよな?", "一番ヤバい瞬間は?"]),
+            ("conclusion", ["共感したら立派なジャグラーマン", "今日も一緒にペカろう", "あなたのあるあるをコメントで!"]),
+        ],
+        "hashtags": ["#Shorts", "#ジャグラー", "#あるある", "#ジャグラーマン", "#共感"],
+    },
+    "begginer": {  # 初心者の勘違い
+        "title": "初心者がやりがちな勘違い",
+        "thumb_text": "9割が誤解",
+        "segments": [
+            ("hook", ["それ、ほぼ負ける打ち方です"]),
+            ("setup", ["ハマってる台を見つけて", "「そろそろ来る」で座る", "やった事ある人、多いはず"]),
+            ("build", ["気持ちは痛いほど分かる", "でもジャグラーに天井はない", "1000ハマりも次は同じ確率"]),
+            ("twist", ["見るべきは過去じゃない", "REGが強いかどうか、それだけ", "そこに設定の本音が出る"]),
+            ("challenge", ["ハマり狙いは卒業しよう", "でも夢を見たい日もある", "あなたは狙う?狙わない?"]),
+            ("conclusion", ["過去のハマりは反発しない", "確率は冷たいけど正直だ", "あなたの意見をコメントで!"]),
+        ],
+        "hashtags": ["#Shorts", "#ジャグラー", "#初心者", "#立ち回り", "#勘違い"],
+    },
+}
+
+
+def _pick_monologue_template(topic: str) -> dict:
+    t = topic
+    if any(k in t for k in ("初心者", "勘違い", "やりがち", "ハマり", "天井")):
+        key = "begginer"
+    elif any(k in t for k in ("あるある", "共感", "ジャグラーマン", "わかる")):
+        key = "aruaru"
+    else:
+        key = "urban"
+    tpl = _MONOLOGUE_TEMPLATES[key]
+    return {
+        "title": tpl["title"],
+        "thumb_text": tpl["thumb_text"],
+        "segments": [{"role": r, "lines": list(ls)} for r, ls in tpl["segments"]],
+        "description": (
+            f"{topic} をジャグラーマンが本気で考えてみた。\n\n"
+            "※本動画は予想・考察であり、結果を保証するものではありません。"
+        ),
+        "hashtags": tpl["hashtags"],
+    }
+
+
+_PROB_RE = re.compile(r"\d+\s*[/／]\s*\d+")
+
+
+def _validate_monologue(content: dict, topic: str) -> dict:
+    """モノローグ台本を整形・検証する。生の確率はテロップから除外する。"""
+    base = _validate(
+        {
+            "title": content.get("title"),
+            "script_lines": ["dummy"],
+            "description": content.get("description"),
+            "hashtags": content.get("hashtags"),
+        },
+        topic,
+    )
+
+    segments = []
+    by_role = {s.get("role"): s for s in content.get("segments") or []}
+    for role in MONOLOGUE_ROLES:
+        seg = by_role.get(role)
+        if not seg:
+            continue
+        lines = []
+        for raw in seg.get("lines") or []:
+            raw = str(raw).strip()
+            if not raw:
+                continue
+            lines.extend(_chunk_by_touten(raw, 15))
+        if not lines:
+            continue
+        if role == "hook":
+            lines = lines[:1]
+        segments.append({"role": role, "lines": lines})
+    if len(segments) < 4:
+        raise ValueError("モノローグ構成のセグメントが不足しています")
+
+    base["format"] = "monologue"
+    base["segments"] = segments
+    base["script_lines"] = [l for s in segments for l in s["lines"]]
+    base["thumb_text"] = str(content.get("thumb_text") or "").strip()[:10]
+    return base
+
+
 def _generate_with_template(topic: str) -> dict:
     """APIなしで動くテンプレート台本。"""
     short_topic = topic if len(topic) <= 40 else topic[:40] + "…"
@@ -377,7 +581,15 @@ def _chunk_by_touten(part: str, max_len: int) -> list:
             current = seg
     if current:
         out.append(current)
-    return [l.strip().rstrip("、") for l in out if l.strip()]
+    out = [l.strip().rstrip("、") for l in out if l.strip()]
+    # 末尾に1〜2文字だけ取り残された行は前の行に結合する(「い」だけ等を防ぐ)
+    merged = []
+    for chunk in out:
+        if merged and len(chunk) <= 2 and len(merged[-1]) + len(chunk) <= max_len + 3:
+            merged[-1] += chunk
+        else:
+            merged.append(chunk)
+    return merged
 
 
 def build_from_user_script(topic: str, script_text: str) -> dict:
@@ -401,10 +613,23 @@ def build_from_user_script(topic: str, script_text: str) -> dict:
 def generate(topic: str, feedback: str = "") -> dict:
     """テーマから台本一式を生成して dict で返す。
 
-    RANKING_MODE が有効ならランキング構成 (format=ranking) で生成する。
-    feedback には品質チェックで出た課題を渡すと再生成時に反映される。
+    CONTENT_STYLE で構成を切り替える:
+      monologue (既定) … ジャグラーマンの都市伝説・検証トーク (data/ランキング禁止)
+      ranking          … 従来のランキング構成
+    feedback には品質チェック/レビュー会議で出た課題を渡すと再生成時に反映される。
     """
-    if config.RANKING_MODE:
+    if config.CONTENT_STYLE == "monologue":
+        if config.ANTHROPIC_API_KEY:
+            try:
+                _log().info("Claude API (%s) でジャグラーマン台本を生成します", config.CLAUDE_MODEL)
+                return _validate_monologue(_generate_monologue_with_claude(topic, feedback), topic)
+            except Exception as e:
+                log_error(f"Claude API でのジャグラーマン台本生成に失敗。テンプレートで継続します: {e}")
+        else:
+            _log().info("ANTHROPIC_API_KEY 未設定のためテンプレートでジャグラーマン台本を生成します")
+        return _validate_monologue(_pick_monologue_template(topic), topic)
+
+    if config.CONTENT_STYLE == "ranking":
         if config.ANTHROPIC_API_KEY:
             try:
                 _log().info("Claude API (%s) でランキング台本を生成します", config.CLAUDE_MODEL)

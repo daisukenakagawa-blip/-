@@ -61,8 +61,13 @@ BGM_VOLUME = float(os.getenv("BGM_VOLUME", "0.12"))
 SE_PATH = os.getenv("SE_PATH", str(ASSETS_DIR / "se.mp3"))
 SE_VOLUME = float(os.getenv("SE_VOLUME", "0.45"))
 
-# ランキング構成モード (1=有効)。生成台本を Shorts 向けランキング構成にする
-RANKING_MODE = os.getenv("RANKING_MODE", "1").lower() not in ("0", "false", "no")
+# コンテンツ構成スタイル:
+#   monologue (既定) … ジャグラーマンの都市伝説・検証トーク (データ/ランキング禁止)
+#   ranking          … 従来のランキング構成
+CONTENT_STYLE = os.getenv("CONTENT_STYLE", "monologue").strip().lower()
+
+# 完成前レビュー会議の合格ライン (各レビュアーが満点5)
+REVIEW_PASS_SCORE = int(os.getenv("REVIEW_PASS_SCORE", "4"))
 
 # ---------------------------------------------------------------------------
 # 品質チェック

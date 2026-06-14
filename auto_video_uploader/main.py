@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 import config
 from modules import (
     quality_checker,
+    review_board,
     script_generator,
     thumbnail_generator,
     video_editor,
@@ -318,16 +319,16 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "",
                 script_generator.save_script(content, script_path)
                 logger.info("台本を保存しました: %s", script_path)
 
-            is_ranking = content.get("format") == "ranking"
+            is_segmented = content.get("format") in ("ranking", "monologue") and content.get("segments")
 
-            # ナレーション音声 (ランキングはセグメント分割で正確に同期)
+            # ナレーション音声 (segment 構成はセグメント分割で正確に同期)
             audio_path = voice_generator.find_existing_audio(stem)
             segment_durations = (
-                voice_generator.load_segment_timings(stem) if is_ranking else None
+                voice_generator.load_segment_timings(stem) if is_segmented else None
             )
-            if audio_path and (not is_ranking or segment_durations):
+            if audio_path and (not is_segmented or segment_durations):
                 logger.info("生成済みの音声を再利用します: %s", audio_path)
-            elif is_ranking:
+            elif is_segmented:
                 audio_path, segment_durations = voice_generator.generate_segments(
                     content["segments"], stem
                 )
@@ -349,9 +350,12 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "",
                 )
 
             # サムネイル (固定テンプレート)
+            fmt = content.get("format")
             thumb_path = config.THUMBNAILS_DIR / f"{stem}.jpg"
             if not thumb_path.exists():
-                badge = "狙い台TOP3" if is_ranking else "ジャグラー予想"
+                badge = {"ranking": "狙い台TOP3", "monologue": "ジャグラーマン"}.get(
+                    fmt, "ジャグラー予想"
+                )
                 punch = (content.get("thumb_text") or "").strip()
                 thumb_path = thumbnail_generator.create_thumbnail(
                     content["title"], stem, badge=badge, punch=punch
@@ -364,7 +368,14 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "",
             )
             quality_checker.log_quality(stem, attempt, score, breakdown, reasons)
 
-            if score >= config.QUALITY_MIN_SCORE:
+            # 完成前レビュー会議 (4人が全員合格して初めて「最後まで見てしまう」判定)
+            review_ok, review_summary, review_notes = review_board.review(content)
+            logger.info("レビュー会議: %s -> %s", review_summary,
+                        "全員合格" if review_ok else "差し戻し")
+            if review_notes:
+                reasons = reasons + review_notes
+
+            if score >= config.QUALITY_MIN_SCORE and review_ok:
                 break
             if attempt >= config.QUALITY_MAX_RETRIES + 1:
                 logger.warning(
