@@ -490,7 +490,7 @@ function aimInfo(hist){
 function aimCellHTML(aim){
   if(!aim||aim.mode==="-") return "—";
   if(aim.mode==="据え置き"){ const data=aim.carry.map(r=>{const e=estimateSetting(r);
-      return r.date.slice(5)+" 設定"+(e?e.setting:"?")+" 1/"+(r.combined!=null?Math.round(r.combined):"?")+(r.reg_prob!=null?" R1/"+Math.round(r.reg_prob):"")+(r.total!=null?" "+Math.round(r.total)+"G":"");}).join("<br>");
+      return r.date.slice(5)+" 設定"+(e?e.setting:"?")+" 合算1/"+(r.combined!=null?Math.round(r.combined):"?")+(r.big_prob!=null?" B1/"+Math.round(r.big_prob):"")+(r.reg_prob!=null?" R1/"+Math.round(r.reg_prob):"")+(r.total!=null?" "+Math.round(r.total)+"G":"");}).join("<br>");
     return "<b style='color:#1a7f37'>据え置き狙い</b><br>据え置き"+aim.days+"日目<br><span class='muted' style='font-size:11px'>"+data+"</span>"; }
   return "<b style='color:#b35900'>上げ狙い</b><br>"+aim.days+"日不発後";
 }
