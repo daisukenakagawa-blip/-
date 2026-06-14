@@ -22,6 +22,11 @@ from modules.video_editor import plan_line_schedule
 
 _HOOK_PUNCH = re.compile(r"[0-9!?!?]")
 _DIGIT = re.compile(r"[0-9]")
+# フックの引きの強さ: 疑問 / 断言パンチ / 意外性ワードのいずれか
+_HOOK_STRONG = re.compile(
+    r"[0-9!?！？]|ない\?|よな|ません|ほぼ|実は|逆|闇|ヤバ|9割|知らな|気づ|"
+    r"負け|勝て|嘘|間違|やりがち|やってる|大事|だけ"
+)
 
 
 def _score_hook(content: dict) -> tuple:
@@ -30,18 +35,19 @@ def _score_hook(content: dict) -> tuple:
     score = 0
     lines = content.get("script_lines") or []
     first = lines[0] if lines else ""
-    if content.get("format") == "ranking" and content["segments"][0]["role"] == "hook":
+    segs = content.get("segments") or []
+    if segs and segs[0].get("role") == "hook":
         score += 8
     else:
         reasons.append("冒頭がフック構成になっていない")
-    if first and len(first) <= 14:
+    if first and len(first) <= 15:
         score += 6
     else:
-        reasons.append(f"フックが長すぎる ({len(first)}文字 > 14文字)")
-    if _HOOK_PUNCH.search(first):
+        reasons.append(f"フックが長すぎる ({len(first)}文字 > 15文字)")
+    if _HOOK_STRONG.search(first):
         score += 6
     else:
-        reasons.append("フックに数字や「!?」などの引きがない")
+        reasons.append("フックの引きが弱い (疑問・断言・意外性を入れる)")
     return score, reasons
 
 
@@ -54,10 +60,10 @@ def _score_telop(content: dict) -> tuple:
     max_len = max(len(l) for l in lines)
     avg_len = sum(len(l) for l in lines) / len(lines)
     score = 10
-    if max_len > 14:
-        over = max_len - 14
+    if max_len > 15:
+        over = max_len - 15
         score -= min(10, over * 2)
-        reasons.append(f"長すぎるテロップがある (最長{max_len}文字)")
+        reasons.append(f"長すぎるテロップがある (最長{max_len}文字 > 15)")
     if avg_len <= 12:
         score += 10
     elif avg_len <= 15:
@@ -68,9 +74,37 @@ def _score_telop(content: dict) -> tuple:
     return max(0, score), reasons
 
 
+_PROB_RE = re.compile(r"\d+\s*[/／]\s*\d+")
+_RANK_RE = re.compile(r"第[0-9一二三]位|ランキング")
+_COMMENT_RE = re.compile(r"コメント|どう思|賛成|反対|あなたは")
+
+
 def _score_info(content: dict) -> tuple:
-    """情報の分かりやすさ (15点)。台データの充実度・数字の密度。"""
+    """情報の分かりやすさ / 引き込み (15点)。構成ごとに評価軸を変える。"""
     reasons = []
+    if content.get("format") == "monologue":
+        segs = content.get("segments") or []
+        text = " ".join(content.get("script_lines") or [])
+        score = 9
+        # 各話題が2行以上の中身を持つ (薄い展開を減点)
+        thin = sum(1 for s in segs if len(s.get("lines") or []) < 2 and s.get("role") != "hook")
+        if thin:
+            score -= min(4, thin)
+            reasons.append(f"中身の薄い展開が{thin}個ある")
+        # 生の確率・ランキングが残っていたら大幅減点 (データ羅列禁止)
+        if _PROB_RE.search(text):
+            score -= 5
+            reasons.append("テロップに生の確率がある。意味に翻訳すること")
+        if _RANK_RE.search(text):
+            score -= 5
+            reasons.append("ランキング表現が残っている")
+        # コメント誘導
+        last = " ".join(segs[-1].get("lines") or []) if segs else text
+        if _COMMENT_RE.search(last):
+            score += 6
+        else:
+            reasons.append("まとめにコメント誘導が無い")
+        return max(0, min(15, score)), reasons
     if content.get("format") == "ranking":
         data_segs = [s for s in content["segments"] if s["role"] in ("rank1", "rank2", "rank3", "caution")]
         if not data_segs:
@@ -160,7 +194,13 @@ def _score_thumbnail(content: dict, thumb_path: Path) -> tuple:
         score += 5
     else:
         reasons.append("サムネ用パンチワード(10文字以内)が無い")
-    if _DIGIT.search(title) and len(title) <= 28:
+    if content.get("format") == "monologue":
+        # ジャグラーマンは感情ワード重視。数字は必須にしない
+        if len(title) <= 28:
+            score += 5
+        else:
+            reasons.append(f"タイトルが長い ({len(title)}文字>28)")
+    elif _DIGIT.search(title) and len(title) <= 28:
         score += 5
     else:
         reasons.append("タイトルが28文字超か数字を含まない")
