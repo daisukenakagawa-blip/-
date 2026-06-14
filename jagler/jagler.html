@@ -377,6 +377,14 @@
   <!-- CSV / 管理 -->
   <div class="panel" id="p-csv">
     <h2>CSV / データ管理</h2>
+    <div class="note" style="background:#fffbe6;border-color:#f0d000">
+      <b>💾 データを守る（消える前に推奨）</b>
+      <div id="data-count" class="muted" style="margin:4px 0"></div>
+      <button class="primary" style="width:100%" onclick="exportJson()">⬇️ バックアップ保存（ファイルに書き出し）</button>
+      <label style="margin-top:8px;display:block">📂 バックアップから復元（保存したファイルを選択）</label>
+      <input type="file" id="imp-file2" accept="application/json" onchange="importJson(event)">
+      <p class="muted" style="font-size:12px;margin:6px 0 0">※端末のデータが消えても、このファイルから完全復元できます。定期的に保存してください。データは自動でIndexedDBにも二重保存し、localStorageが消えても自動復元します。</p>
+    </div>
     <button class="ghost" onclick="downloadCsv()">📥 全データをCSVでダウンロード</button>
     <button class="ghost" onclick="copyCsv()">📋 CSVをコピー（送信用）</button>
     <p class="muted" style="margin-top:6px;">コピーがうまくいかない端末は、下の枠を長押し→全選択→コピーしてください。</p>
@@ -403,24 +411,49 @@ const WD_ORDER=["月","火","水","木","金","土","日"];
 const REG_COLORS=[[200,255,"#ff5b5b"],[256,290,"#ffae42"],[291,330,"#ffe066"]];
 
 // ---------- 保存 ----------
-// localStorageが使えない端末（プライベートモード等）でも当面動くようメモリに退避する
+// localStorageが消える端末対策：IndexedDB（大容量・消えにくい）に二重保存し、消えたら自動復元する
 let _mem=null, _memEv=null, _warned=false;
 function storageWarn(){ if(_warned)return; _warned=true;
   try{ const d=document.createElement("div"); d.id="storage-warn";
     d.style.cssText="background:#c0392b;color:#fff;padding:8px 10px;font-size:13px;line-height:1.4";
-    d.innerHTML="⚠ この端末・ブラウザではデータを<b>保存できません</b>（プライベート/シークレットモードの可能性）。"+
-      "今は一時的に使えますが<b>ページを閉じると消えます</b>。<br>"+
-      "対策：①ブラウザを<b>通常モード</b>で開く（Safariのプライベート解除）②「CSV/管理」から<b>CSVを書き出して保管</b>。";
+    d.innerHTML="⚠ この端末・ブラウザではデータが<b>消えやすい設定</b>です（プライベートモード等）。"+
+      "<b>「CSV/管理」タブの『バックアップ保存』でファイルに保存</b>し、消えたら『復元』してください。";
     document.body.insertBefore(d, document.body.firstChild); }catch(e){}
 }
-function load(){ if(_mem!==null) return _mem.slice(); try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return _mem?_mem.slice():[];} }
-// 保存時は内部キャッシュ(__est等)を除外して容量を節約（保存できない不具合の対策）
+// ---- IndexedDB（第2の保存先・localStorageが消えても残る／容量も大きい）----
+function _idbDo(mode,fn){ return new Promise(res=>{ try{ if(typeof indexedDB==="undefined")return res(null);
+  const rq=indexedDB.open("jaglerDB",1);
+  rq.onupgradeneeded=e=>{ try{e.target.result.createObjectStore("kv");}catch(_){} };
+  rq.onsuccess=e=>{ try{ const db=e.target.result; const tx=db.transaction("kv",mode); const st=tx.objectStore("kv"); fn(st,tx,res); }catch(_){res(null);} };
+  rq.onerror=()=>res(null);
+ }catch(_){res(null);} }); }
+function idbSet(k,v){ return _idbDo("readwrite",(st,tx,res)=>{ st.put(v,k); tx.oncomplete=()=>res(true); tx.onerror=()=>res(false); }); }
+function idbGet(k){ return _idbDo("readonly",(st,tx,res)=>{ const g=st.get(k); g.onsuccess=()=>res(g.result); g.onerror=()=>res(null); }); }
+// 保存時は内部キャッシュ(__est等)を除外して容量を節約
 const _noInternal=(k,v)=> (k && k.indexOf("__")===0) ? undefined : v;
-function save(r){ if(_mem!==null){ _mem=r.slice(); return; }
-  try{ localStorage.setItem(KEY,JSON.stringify(r,_noInternal)); }catch(e){ _mem=r.slice(); storageWarn(); } }
+function load(){ if(_mem!==null) return _mem.slice(); try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return _mem?_mem.slice():[];} }
+function save(r){ const json=JSON.stringify(r,_noInternal);
+  if(_mem!==null){ _mem=r.slice(); } else { try{ localStorage.setItem(KEY,json); }catch(e){ _mem=r.slice(); storageWarn(); } }
+  idbSet("records",json); if(r&&r.length) idbSet("records_bak",json);   // 非空のときだけバックアップ（誤消去対策）
+}
 function loadEvents(){ if(_memEv!==null) return _memEv.slice(); try{return JSON.parse(localStorage.getItem(EKEY))||[];}catch(e){return _memEv?_memEv.slice():[];} }
-function saveEvents(e){ if(_memEv!==null){ _memEv=e.slice(); return; }
-  try{ localStorage.setItem(EKEY,JSON.stringify(e,_noInternal)); }catch(x){ _memEv=e.slice(); storageWarn(); } }
+function saveEvents(e){ const json=JSON.stringify(e,_noInternal);
+  if(_memEv!==null){ _memEv=e.slice(); } else { try{ localStorage.setItem(EKEY,json); }catch(x){ _memEv=e.slice(); storageWarn(); } }
+  idbSet("events",json); if(e&&e.length) idbSet("events_bak",json);
+}
+// 起動時：localStorageが空ならIndexedDBから復元する
+async function restoreFromIdb(){
+  try{
+    if(!load().length){ let j=await idbGet("records"); let arr=null; try{arr=j?JSON.parse(j):null;}catch(_){}
+      if(!arr||!arr.length){ j=await idbGet("records_bak"); try{arr=j?JSON.parse(j):null;}catch(_){} }
+      if(arr&&arr.length){ try{ localStorage.setItem(KEY,JSON.stringify(arr,_noInternal)); }catch(_){ _mem=arr; }
+        if(typeof refreshAll==="function") refreshAll(); } }
+    if(!loadEvents().length){ let j=await idbGet("events"); let arr=null; try{arr=j?JSON.parse(j):null;}catch(_){}
+      if(!arr||!arr.length){ j=await idbGet("events_bak"); try{arr=j?JSON.parse(j):null;}catch(_){} }
+      if(arr&&arr.length){ try{ localStorage.setItem(EKEY,JSON.stringify(arr)); }catch(_){ _memEv=arr; }
+        if(typeof renderEvents==="function") renderEvents(); } }
+  }catch(_){}
+}
 
 // ---------- 色分け（合算確率）----------
 // 140〜130:黄(設定4示唆) 129〜120:橙(設定5示唆) 119〜100:赤(設定6示唆) 99〜70:レインボー(設定6確定級)
@@ -1310,6 +1343,7 @@ function render(){
     metric(rows.length,"レコード")+metric(new Set(rows.map(r=>r.store)).size,"店舗")+
     metric(new Set(rows.map(r=>r.date)).size,"収集日数")+metric(loadEvents().length,"イベント")+
     metric(rows.length?maxDate(rows):"-","最新");
+  { const dc=document.getElementById("data-count"); if(dc) dc.innerHTML="現在 <b>"+rows.length+"</b> 件 / "+new Set(rows.map(r=>r.store)).size+"店舗 / 最新 "+(rows.length?maxDate(rows):"-")+(_mem!==null?" <span style='color:#c00'>（保存不可モード：必ずバックアップ保存を）</span>":""); }
   document.getElementById("legend").innerHTML=
     "<span style='background:#ffe066'>1/140-130 設定4示唆</span>"+
     "<span style='background:#ffae42'>1/129-120 設定5示唆</span>"+
@@ -3044,6 +3078,7 @@ const _t=fmtDate(new Date());
 {const by=document.getElementById("bulk-year"); if(by)by.value=new Date().getFullYear();}
 aiLoad();
 refreshAll();
+restoreFromIdb();   // localStorageが消えていてもIndexedDBから自動復元
 </script>
 </body>
 </html>
