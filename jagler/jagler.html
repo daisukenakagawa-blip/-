@@ -451,9 +451,19 @@ function idbSet(k,v){ return _idbDo("readwrite",(st,tx,res)=>{ st.put(v,k); tx.o
 function idbGet(k){ return _idbDo("readonly",(st,tx,res)=>{ const g=st.get(k); g.onsuccess=()=>res(g.result); g.onerror=()=>res(null); }); }
 // 保存時は内部キャッシュ(__est等)を除外して容量を節約
 const _noInternal=(k,v)=> (k && k.indexOf("__")===0) ? undefined : v;
-function load(){ if(_mem!==null) return _mem.slice(); try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return _mem?_mem.slice():[];} }
+// 容量節約用の最小レコード（派生項目はload時にenrichで再計算するので保存不要）
+const _MINK=["date","store","machine_no","machine_name","big","reg","total","sabe","budou"];
+function _minRec(r){ const o={}; for(const k of _MINK){ if(r[k]!==undefined&&r[k]!==null) o[k]=r[k]; } return o; }
+function load(){ if(_mem!==null) return _mem.slice();
+  try{ const a=JSON.parse(localStorage.getItem(KEY))||[];
+    return (a.length && a[0].combined===undefined) ? a.map(enrich) : a;   // 最小形式なら読み込み時に補完
+  }catch(e){ return _mem?_mem.slice():[]; } }
 function save(r){ const json=JSON.stringify(r,_noInternal);
-  if(_mem!==null){ _mem=r.slice(); } else { try{ localStorage.setItem(KEY,json); }catch(e){ _mem=r.slice(); storageWarn(); } }
+  if(_mem!==null){ _mem=r.slice(); }
+  else { try{ localStorage.setItem(KEY,json); }
+    catch(e){ // 容量超過：生データだけの最小形式で再挑戦（最新分が消えない様に）
+      try{ localStorage.setItem(KEY, JSON.stringify(r.map(_minRec))); }
+      catch(e2){ _mem=r.slice(); storageWarn(); } } }
   idbSet("records",json); if(r&&r.length) idbSet("records_bak",json);   // 非空のときだけバックアップ（誤消去対策）
 }
 function loadEvents(){ if(_memEv!==null) return _memEv.slice(); try{return JSON.parse(localStorage.getItem(EKEY))||[];}catch(e){return _memEv?_memEv.slice():[];} }
@@ -461,17 +471,26 @@ function saveEvents(e){ const json=JSON.stringify(e,_noInternal);
   if(_memEv!==null){ _memEv=e.slice(); } else { try{ localStorage.setItem(EKEY,json); }catch(x){ _memEv=e.slice(); storageWarn(); } }
   idbSet("events",json); if(e&&e.length) idbSet("events_bak",json);
 }
-// 起動時：localStorageが空ならIndexedDBから復元する
+// 起動時：localStorageとIndexedDBで「件数が多い方（＝最新）」を採用する
+// （容量超過でlocalStorageへの保存が失敗し、最新分だけ消える不具合の対策）
 async function restoreFromIdb(){
   try{
-    if(!load().length){ let j=await idbGet("records"); let arr=null; try{arr=j?JSON.parse(j):null;}catch(_){}
-      if(!arr||!arr.length){ j=await idbGet("records_bak"); try{arr=j?JSON.parse(j):null;}catch(_){} }
-      if(arr&&arr.length){ try{ localStorage.setItem(KEY,JSON.stringify(arr,_noInternal)); }catch(_){ _mem=arr; }
-        if(typeof refreshAll==="function") refreshAll(); } }
-    if(!loadEvents().length){ let j=await idbGet("events"); let arr=null; try{arr=j?JSON.parse(j):null;}catch(_){}
-      if(!arr||!arr.length){ j=await idbGet("events_bak"); try{arr=j?JSON.parse(j):null;}catch(_){} }
-      if(arr&&arr.length){ try{ localStorage.setItem(EKEY,JSON.stringify(arr)); }catch(_){ _memEv=arr; }
-        if(typeof renderEvents==="function") renderEvents(); } }
+    const cur=load();
+    let a1=null,a2=null; { let j=await idbGet("records"); try{a1=j?JSON.parse(j):null;}catch(_){}
+      let jb=await idbGet("records_bak"); try{a2=jb?JSON.parse(jb):null;}catch(_){} }
+    let best=cur;
+    if(a1&&a1.length>best.length) best=a1;          // IDBの方が件数が多ければ採用（最新が消えた状態を救出）
+    if(best.length===0 && a2&&a2.length) best=a2;   // 全部空の時だけバックアップを使う
+    if(best!==cur && best.length){ _mem=null;
+      try{ localStorage.setItem(KEY,JSON.stringify(best,_noInternal)); }catch(_){ _mem=best.slice(); }
+      if(typeof refreshAll==="function") refreshAll(); }
+    // events
+    const ce=loadEvents(); let e1=null,e2=null;
+    { let j=await idbGet("events"); try{e1=j?JSON.parse(j):null;}catch(_){}
+      let jb=await idbGet("events_bak"); try{e2=jb?JSON.parse(jb):null;}catch(_){} }
+    let be=ce; if(e1&&e1.length>be.length) be=e1; if(be.length===0&&e2&&e2.length) be=e2;
+    if(be!==ce && be.length){ _memEv=null; try{ localStorage.setItem(EKEY,JSON.stringify(be)); }catch(_){ _memEv=be.slice(); }
+      if(typeof renderEvents==="function") renderEvents(); }
   }catch(_){}
 }
 
