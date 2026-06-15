@@ -336,6 +336,7 @@
     <div class="row">
       <div><label>店舗</label><select id="b2-store" onchange="render()"></select></div>
       <div><label>予想する日（空欄＝最新の翌日）</label><input id="b2-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
     </div>
     <button class="primary" onclick="render()">🆕 新ロジックで予想する</button>
     <div id="t-ranknew"></div>
@@ -349,6 +350,7 @@
     <div class="row">
       <div><label>店舗</label><select id="inj-store" onchange="render()"></select></div>
       <div><label>予想する日（空欄＝最新の翌日）</label><input id="inj-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
     </div>
     <button class="primary" onclick="render()">💉 投入期待を計算する</button>
     <div id="t-inject"></div>
@@ -452,6 +454,13 @@ function idbSet(k,v){ return _idbDo("readwrite",(st,tx,res)=>{ st.put(v,k); tx.o
 function idbGet(k){ return _idbDo("readonly",(st,tx,res)=>{ const g=st.get(k); g.onsuccess=()=>res(g.result); g.onerror=()=>res(null); }); }
 // 保存時は内部キャッシュ(__est等)を除外して容量を節約
 const _noInternal=(k,v)=> (k && k.indexOf("__")===0) ? undefined : v;
+// バックテスト期間（日数）。ユーザー設定。デフォルト90日、"all"で全期間
+function btDays(){ try{ const v=localStorage.getItem("jag_btdays"); if(!v) return 90; return v==="all"?99999:(parseInt(v,10)||90); }catch(e){ return 90; } }
+function setBtDays(v){ try{ localStorage.setItem("jag_btdays",v); }catch(e){} _effCache=null; _injBt=null; _adCache=null; render(); }
+function fillBtDays(){ try{ const cur=localStorage.getItem("jag_btdays")||"90";
+  const opts=[["40","40日"],["60","60日"],["90","90日"],["120","120日"],["180","180日"],["all","全期間"]];
+  document.querySelectorAll(".btdays-sel").forEach(sel=>{ sel.innerHTML=opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===cur?' selected':'')+'>'+o[1]+'</option>').join(""); });
+}catch(e){} }
 // 容量節約用の最小レコード（派生項目はload時にenrichで再計算するので保存不要）
 const _MINK=["date","store","machine_no","machine_name","big","reg","total","sabe","budou"];
 function _minRec(r){ const o={}; for(const k of _MINK){ if(r[k]!==undefined&&r[k]!==null) o[k]=r[k]; } return o; }
@@ -1327,7 +1336,7 @@ function factorEffectiveness(srAll, store, targetDate){
   const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
   const F={}; let totalN=0, totalHi=0;
   const missSig={}; let missN=0, hiN=0;                         // 取りこぼし（低スコア65未満だが高設定）の共通点
-  const start=Math.max(1, dates.length-40);                     // 直近40日まで
+  const start=Math.max(1, dates.length-btDays());   // バックテスト期間（設定可）
   for(let i=start;i<dates.length;i++){ const D=dates[i];
     const R=computeRanking(srAll,store,D,false,null,{mode:"new"}); if(!R||!R.out.length) continue;
     const actByNo={}; srAll.filter(r=>r.date===D).forEach(r=>actByNo[r.machine_no]=r);
@@ -1371,6 +1380,7 @@ function refreshAll(){
   fillSelect("b2-store",stores.length?stores:["（データなし）"]);
   fillSelect("ad-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj-store",stores.length?stores:["（データなし）"]);
+  fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
   renderEvents(); render();
@@ -2494,7 +2504,7 @@ function renderRankNewInner(rows){
   const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
   const targetDate=val("b2-date")||fmtDate(ndDef);
   // 項目別有効性（バックテスト・キャッシュ）
-  const key=store+"|"+srAll.length+"|"+targetDate+"|"+loadEvents().length;
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+loadEvents().length+"|"+btDays();
   if(!_effCache||_effCache.key!==key){ _effCache={key,eff:factorEffectiveness(srAll,store,targetDate)}; }
   const eff=_effCache.eff;
   const weights={}; for(const k in eff.factors) weights[k]=eff.factors[k].weight;
@@ -2669,10 +2679,10 @@ function renderAnswerDetailInner(){
   h+="</table></div>";
 
   // 取りこぼしの共通点（過去複数日の集計）
-  const aggKey=store+"|"+srAll.length+"|"+D;
+  const aggKey=store+"|"+srAll.length+"|"+D+"|"+btDays();
   if(!_adCache||_adCache.key!==aggKey){
     const sigCount={}; let missN=0, hiN=0;
-    const di=datesAll.indexOf(D); const start=Math.max(1,di-30);   // 直近30日まで
+    const di=datesAll.indexOf(D); const start=Math.max(1,di-btDays());   // バックテスト期間（設定可）
     for(let i=start;i<=di;i++){ const DD=datesAll[i]; const srr=srAll.filter(r=>r.date<DD); if(srr.length<2)continue;
       const RR=computeRanking(srAll,store,DD,false,null); if(!RR)continue; const sB={}; RR.out.forEach(o=>sB[o.mno]=o);
       const bh={}; srr.forEach(r=>{(bh[r.machine_no]=bh[r.machine_no]||[]).push(r);}); for(const k in bh)bh[k].sort((a,b)=>a.date<b.date?-1:1);
@@ -2808,7 +2818,7 @@ function computeInjection(srAll, store, targetDate){
 function injectionBacktest(srAll, store, targetDate){
   const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
   const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
-  const start=Math.max(1,dates.length-40); let n=0,t1=0,t3=0,t5=0, missLow=0,missLowHi=0;
+  const start=Math.max(1,dates.length-btDays()); let n=0,t1=0,t3=0,t5=0, missLow=0,missLowHi=0;
   for(let i=start;i<dates.length;i++){ const D=dates[i];
     const R=computeInjection(srAll,store,D); if(!R||!R.out.length)continue;
     const act={}; srAll.filter(r=>r.date===D).forEach(r=>act[r.machine_no]=r);
@@ -2836,7 +2846,7 @@ function renderInjectionInner(){
   const targetDate=val("inj-date")||fmtDate(ndDef);
   const R=computeInjection(srAll,store,targetDate);
   if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータ不足）。</p>"; return; }
-  const key=store+"|"+srAll.length+"|"+targetDate;
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
   if(!_injBt||_injBt.key!==key){ _injBt={key,bt:injectionBacktest(srAll,store,targetDate)}; }
   const bt=_injBt.bt; const pc=x=>x==null?"-":Math.round(x*100)+"%";
   let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+R.nextWd+"曜)"+(R.eventDay?" 🎉"+R.evLabel:"")+
