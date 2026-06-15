@@ -387,14 +387,23 @@
     <div class="note" style="background:#fffbe6;border-color:#f0d000">
       <b>💾 データを守る（消える前に推奨）</b>
       <div id="data-count" class="muted" style="margin:4px 0"></div>
-      <button class="primary" style="width:100%" onclick="exportJson()">⬇️ バックアップ保存（ファイルに書き出し）</button>
+      <button class="primary" style="width:100%" onclick="exportJson()">⬇️ バックアップ保存（共有→ファイルに保存）</button>
       <label style="margin-top:8px;display:flex;gap:6px;align-items:center;font-size:13px">
         <input type="checkbox" id="auto-backup" style="width:auto" onchange="localStorage.setItem('jag_autobk',this.checked?'1':'')">
         取り込みのたびに自動でバックアップ保存（推奨）
       </label>
       <label style="margin-top:8px;display:block">📂 バックアップから復元（保存したファイルを選択）</label>
       <input type="file" id="imp-file2" accept="application/json" onchange="importJson(event)">
-      <p class="muted" style="font-size:12px;margin:6px 0 0">※端末のデータが消えても、このファイルから完全復元できます。定期的に保存してください。データは自動でIndexedDBにも二重保存し、localStorageが消えても自動復元します。</p>
+      <div style="border-top:1px dashed #ccc;margin-top:10px;padding-top:8px">
+        <b style="font-size:13px">📋 ファイルが扱いにくい時：テキストでバックアップ／復元</b>
+        <button class="ghost" style="width:100%;margin-top:6px" onclick="exportJsonText()">📋 バックアップをテキスト表示（コピーして保管）</button>
+        <textarea id="bk-text" readonly style="display:none;min-height:90px;white-space:pre;font-size:11px" placeholder="ここにバックアップ文字列が出ます"></textarea>
+        <div id="bk-msg"></div>
+        <label style="margin-top:6px;display:block;font-size:13px">↓ 保管したテキストを貼り付けて復元</label>
+        <textarea id="bk-in" style="min-height:70px;white-space:pre;font-size:11px" placeholder="コピーしておいたバックアップ文字列を貼り付け"></textarea>
+        <button class="primary" style="width:100%" onclick="importJsonText()">📥 貼り付けたテキストから復元</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">※データは自動でIndexedDBにも二重保存し、localStorageが消えても自動復元します。それでも消える環境では、上のテキストをメモ等に貼って保管してください。</p>
     </div>
     <button class="ghost" onclick="downloadCsv()">📥 全データをCSVでダウンロード</button>
     <button class="ghost" onclick="copyCsv()">📋 CSVをコピー（送信用）</button>
@@ -2381,13 +2390,28 @@ function importCsv(){
   msg.innerHTML='<div class="ok">CSV取り込み完了: 新規'+ins+'件 / 重複スキップ'+skip+'件</div>';
   if(ins) document.getElementById("csv-in").value="";
 }
-function exportJson(){ const today=fmtDate(new Date()); dl(JSON.stringify({records:load(),events:loadEvents()}),"jagler_backup_"+today+".json","application/json"); }
+async function exportJson(){ const today=fmtDate(new Date()); const name="jagler_backup_"+today+".json";
+  // 内部キャッシュ(__est)を除いて軽量化（重い・固まる対策）
+  const json=JSON.stringify({records:load(),events:loadEvents()}, _noInternal);
+  // iOS等は共有シート経由のファイル保存が確実（中身を描画せず保存できる）
+  try{ if(navigator.canShare){ const file=new File([json],name,{type:"application/json"});
+      if(navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:name}); return; } } }catch(e){}
+  dl(json,name,"application/json");   // フォールバック（通常ダウンロード）
+}
+// 画面上にコピー用テキストとしてバックアップを出す（ファイルが扱いにくい端末向け）
+function exportJsonText(){ const json=JSON.stringify({records:load(),events:loadEvents()}, _noInternal);
+  const el=document.getElementById("bk-text"); if(el){ el.value=json; el.style.display="block";
+    try{ el.focus(); el.select(); document.execCommand&&document.execCommand("copy"); }catch(e){}
+    const m=document.getElementById("bk-msg"); if(m) m.innerHTML='<div class="ok">下の枠にバックアップを表示しました（約'+Math.round(json.length/1024)+'KB）。長押し→全選択→コピーして、メモやメールに貼って保管できます。</div>'; } }
 function maybeAutoBackup(){ try{ if(localStorage.getItem("jag_autobk")==="1") exportJson(); }catch(e){} }
+function _applyBackup(text){ const d=JSON.parse(text);
+  const recs=Array.isArray(d)?d:(d.records||[]); save(recs.map(enrich));
+  if(d.events) saveEvents(d.events); refreshAll(); return recs.length; }
 function importJson(e){ const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
-  rd.onload=()=>{ try{ const d=JSON.parse(rd.result);
-    const recs=Array.isArray(d)?d:(d.records||[]); save(recs.map(enrich));
-    if(d.events) saveEvents(d.events); refreshAll(); alert("読み込みました："+recs.length+"件");
-  }catch(x){ alert("読み込み失敗"); } }; rd.readAsText(f); }
+  rd.onload=()=>{ try{ const n=_applyBackup(rd.result); alert("復元しました："+n+"件"); }catch(x){ alert("読み込み失敗（ファイルが壊れている可能性）"); } }; rd.readAsText(f); }
+function importJsonText(){ const el=document.getElementById("bk-in"); const t=el?el.value.trim():"";
+  if(!t){ alert("復元したいバックアップ文字列を貼り付けてください"); return; }
+  try{ const n=_applyBackup(t); el.value=""; alert("復元しました："+n+"件"); }catch(x){ alert("文字列を読み込めませんでした（コピー漏れがないか確認してください）"); } }
 // ---------- 個別削除 ----------
 function deleteOne(enc){
   const key=decodeURIComponent(enc); const [date,store,mno]=key.split("|");
