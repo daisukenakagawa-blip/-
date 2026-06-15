@@ -381,6 +381,10 @@
       <b>💾 データを守る（消える前に推奨）</b>
       <div id="data-count" class="muted" style="margin:4px 0"></div>
       <button class="primary" style="width:100%" onclick="exportJson()">⬇️ バックアップ保存（ファイルに書き出し）</button>
+      <label style="margin-top:8px;display:flex;gap:6px;align-items:center;font-size:13px">
+        <input type="checkbox" id="auto-backup" style="width:auto" onchange="localStorage.setItem('jag_autobk',this.checked?'1':'')">
+        取り込みのたびに自動でバックアップ保存（推奨）
+      </label>
       <label style="margin-top:8px;display:block">📂 バックアップから復元（保存したファイルを選択）</label>
       <input type="file" id="imp-file2" accept="application/json" onchange="importJson(event)">
       <p class="muted" style="font-size:12px;margin:6px 0 0">※端末のデータが消えても、このファイルから完全復元できます。定期的に保存してください。データは自動でIndexedDBにも二重保存し、localStorageが消えても自動復元します。</p>
@@ -665,7 +669,7 @@ function doImport(){
       ins+=r.ins; skip+=r.skip; parts.push(s.machine+"("+s.recs.length+"台)"); }
     msg.innerHTML='<div class="ok">取り込み完了: '+store+' '+date+'<br>'+sections.length+
       '機種 → 新規'+ins+'件 / 重複'+skip+'件<br><span class="muted">'+parts.join(" ／ ")+'</span></div>';
-    document.getElementById("in-text").value=""; return;
+    document.getElementById("in-text").value=""; maybeAutoBackup(); return;
   }
 
   // それ以外は列指定モード（他サイト・手入力用）
@@ -676,7 +680,7 @@ function doImport(){
   let html=warns.map(w=>'<div class="warn">'+w+'</div>').join("");
   if(recs.length){ const {ins,skip}=saveRecs(recs,store,machine,date);
     html+='<div class="ok">取り込み完了: '+store+' '+date+'（機種: '+machine+'） → 新規'+ins+'件 / 重複'+skip+'件</div>';
-    document.getElementById("in-text").value=""; }
+    document.getElementById("in-text").value=""; maybeAutoBackup(); }
   else { const first=(text.split(/\r?\n/).find(l=>l.trim())||"").slice(0,70);
     html+='<div class="warn">データを読み取れませんでした。ペカセンは「台データ表を見出しごと全部コピー」して貼ってください。'+
       'それ以外の形式なら下の「列の並びを指定」を開いて並び順を選んでください。<br>'+
@@ -778,7 +782,7 @@ function doPhotoImport(){
   const {recs,warns}=parseRows(val("ph-text"),order,start);
   let html=warns.map(w=>'<div class="warn">'+w+'</div>').join("");
   if(recs.length){ const {ins,skip}=saveRecs(recs,store,machine,date);
-    html+='<div class="ok">取り込み完了: '+store+' '+date+' → 新規'+ins+'件 / 重複'+skip+'件'+(hasNo?'（台番号は写真から）':'（台番'+start+'から連番）')+'</div>'; }
+    html+='<div class="ok">取り込み完了: '+store+' '+date+' → 新規'+ins+'件 / 重複'+skip+'件'+(hasNo?'（台番号は写真から）':'（台番'+start+'から連番）')+'</div>'; maybeAutoBackup(); }
   msg.innerHTML=html;
 }
 
@@ -2370,7 +2374,8 @@ function importCsv(){
   msg.innerHTML='<div class="ok">CSV取り込み完了: 新規'+ins+'件 / 重複スキップ'+skip+'件</div>';
   if(ins) document.getElementById("csv-in").value="";
 }
-function exportJson(){ dl(JSON.stringify({records:load(),events:loadEvents()}),"jagler_backup.json","application/json"); }
+function exportJson(){ const today=fmtDate(new Date()); dl(JSON.stringify({records:load(),events:loadEvents()}),"jagler_backup_"+today+".json","application/json"); }
+function maybeAutoBackup(){ try{ if(localStorage.getItem("jag_autobk")==="1") exportJson(); }catch(e){} }
 function importJson(e){ const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
   rd.onload=()=>{ try{ const d=JSON.parse(rd.result);
     const recs=Array.isArray(d)?d:(d.records||[]); save(recs.map(enrich));
@@ -3071,12 +3076,15 @@ document.getElementById("tabs").addEventListener("click",e=>{
 // ---------- 初期化 ----------
 // 保存可否を起動時に確認（プライベートモード等なら警告）
 try{ localStorage.setItem("__jagtest","1"); localStorage.removeItem("__jagtest"); }catch(e){ storageWarn(); }
+// ストレージを消えにくくする（ブラウザに永続化を要求）
+try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
 // 旧バージョンが保存した内部キャッシュ(__est)で肥大化したデータを一度だけ掃除して容量を回復
 try{ const raw=localStorage.getItem(KEY); if(raw&&raw.indexOf("__est")>=0){ save(load()); } }catch(e){}
 const _t=fmtDate(new Date());
 ["in-date","ph-date","ev-date","an-date"].forEach(id=>{const el=document.getElementById(id); if(el)el.value=_t;});
 {const by=document.getElementById("bulk-year"); if(by)by.value=new Date().getFullYear();}
 aiLoad();
+try{ const ab=document.getElementById("auto-backup"); if(ab&&localStorage.getItem("jag_autobk")==="1") ab.checked=true; }catch(e){}
 refreshAll();
 restoreFromIdb();   // localStorageが消えていてもIndexedDBから自動復元
 </script>
