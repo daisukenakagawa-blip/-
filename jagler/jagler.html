@@ -65,7 +65,7 @@
 <body>
 <header>
   <h1>🎰 ジャグラー データ分析ツール</h1>
-  <p>ブラウザだけで動作・データは端末に保存（インストール不要）</p>
+  <p>ブラウザだけで動作・データは端末に保存（インストール不要）<span id="app-ver" style="opacity:.7"></span></p>
 </header>
 <div class="wrap">
 
@@ -426,6 +426,7 @@
 <script>
 "use strict";
 const KEY="jagler_records_v1", EKEY="jagler_events_v1";
+const APP_VERSION="2026-06-15-23時 容量対策版";   // 最新版かどうかの確認用
 const WD=["日","月","火","水","木","金","土"];
 const WD_ORDER=["月","火","水","木","金","土","日"];
 const REG_COLORS=[[200,255,"#ff5b5b"],[256,290,"#ffae42"],[291,330,"#ffe066"]];
@@ -3150,6 +3151,7 @@ const _t=fmtDate(new Date());
 ["in-date","ph-date","ev-date","an-date"].forEach(id=>{const el=document.getElementById(id); if(el)el.value=_t;});
 {const by=document.getElementById("bulk-year"); if(by)by.value=new Date().getFullYear();}
 aiLoad();
+try{ const v=document.getElementById("app-ver"); if(v) v.textContent="　[版: "+APP_VERSION+"]"; }catch(e){}
 try{ const ab=document.getElementById("auto-backup"); if(ab&&localStorage.getItem("jag_autobk")==="1") ab.checked=true; }catch(e){}
 refreshAll();
 restoreFromIdb();   // localStorageが消えていてもIndexedDBから自動復元
