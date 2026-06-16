@@ -87,6 +87,7 @@
     <button data-t="inject">💉 投入期待</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
+    <button data-t="myplay">📝 実戦収支</button>
     <button data-t="csv">💾 CSV/管理</button>
   </div>
 
@@ -387,9 +388,33 @@
     <div id="t-andetail"></div>
   </div>
 
+  <!-- 実戦収支 -->
+  <div class="panel" id="p-myplay">
+    <h2>📝 実戦収支（自分の打った台の記録）</h2>
+    <p class="muted">BIG・バケ(REG)・総回転・差枚を入力すると、機械割・各確率を自動計算し、機種別＆トータルの収支を集計します。</p>
+    <div class="row">
+      <div><label>日付</label><input id="my-date" type="date"></div>
+      <div><label>店舗</label><input id="my-store" placeholder="店名（任意）"></div>
+      <div><label>機種</label><input id="my-machine" list="my-mach-list" placeholder="マイジャグラーV など">
+        <datalist id="my-mach-list"></datalist></div>
+      <div><label>台番号(任意)</label><input id="my-no" type="number" inputmode="numeric"></div>
+    </div>
+    <div class="row">
+      <div><label>BIG</label><input id="my-big" type="number" inputmode="numeric" oninput="myPreview()"></div>
+      <div><label>バケ(REG)</label><input id="my-reg" type="number" inputmode="numeric" oninput="myPreview()"></div>
+      <div><label>総回転数</label><input id="my-total" type="number" inputmode="numeric" oninput="myPreview()"></div>
+      <div><label>差枚（±）</label><input id="my-diff" type="number" inputmode="numeric" placeholder="例 +1500 / -800" oninput="myPreview()"></div>
+    </div>
+    <div id="my-preview" class="muted" style="margin:4px 0"></div>
+    <button class="primary" onclick="addMyPlay()">📝 この台を記録する</button>
+    <div id="my-msg"></div>
+    <div class="row" style="margin-top:10px">
+      <div><label>差枚→円換算（円/枚）</label><input id="my-rate" type="number" inputmode="numeric" value="20" onchange="localStorage.setItem('jag_myrate',this.value);renderMyPlay()"></div>
+    </div>
+    <div id="t-myplay"></div>
+  </div>
+
   <!-- CSV / 管理 -->
-  <div class="panel" id="p-csv">
-    <h2>CSV / データ管理</h2>
     <div class="note" style="background:#fffbe6;border-color:#f0d000">
       <b>💾 データを守る（消える前に推奨）</b>
       <div id="data-count" class="muted" style="margin:4px 0"></div>
@@ -456,6 +481,10 @@ function _idbDo(mode,fn){ return new Promise(res=>{ try{ if(typeof indexedDB==="
  }catch(_){res(null);} }); }
 function idbSet(k,v){ return _idbDo("readwrite",(st,tx,res)=>{ st.put(v,k); tx.oncomplete=()=>res(true); tx.onerror=()=>res(false); }); }
 function idbGet(k){ return _idbDo("readonly",(st,tx,res)=>{ const g=st.get(k); g.onsuccess=()=>res(g.result); g.onerror=()=>res(null); }); }
+// 実戦収支（自分の打った台）の保存先
+const MKEY="jagler_myplay_v1"; let _memMy=null;
+function loadMyPlay(){ if(_memMy!==null) return _memMy.slice(); try{return JSON.parse(localStorage.getItem(MKEY))||[];}catch(e){return _memMy?_memMy.slice():[];} }
+function saveMyPlay(r){ const j=JSON.stringify(r); if(_memMy!==null){ _memMy=r.slice(); } else { try{ localStorage.setItem(MKEY,j); }catch(e){ _memMy=r.slice(); storageWarn(); } } idbSet("myplay",j); if(r&&r.length) idbSet("myplay_bak",j); }
 // 保存時は内部キャッシュ(__est等)を除外して容量を節約
 const _noInternal=(k,v)=> (k && k.indexOf("__")===0) ? undefined : v;
 // バックテスト期間（日数）。ユーザー設定。デフォルト90日、"all"で全期間
@@ -505,6 +534,13 @@ async function restoreFromIdb(){
     let be=ce; if(e1&&e1.length>be.length) be=e1; if(be.length===0&&e2&&e2.length) be=e2;
     if(be!==ce && be.length){ _memEv=null; try{ localStorage.setItem(EKEY,JSON.stringify(be)); }catch(_){ _memEv=be.slice(); }
       if(typeof renderEvents==="function") renderEvents(); }
+    // 実戦収支
+    const cm=loadMyPlay(); let m1=null,m2=null;
+    { let j=await idbGet("myplay"); try{m1=j?JSON.parse(j):null;}catch(_){}
+      let jb=await idbGet("myplay_bak"); try{m2=jb?JSON.parse(jb):null;}catch(_){} }
+    let bm=cm; if(m1&&m1.length>bm.length) bm=m1; if(bm.length===0&&m2&&m2.length) bm=m2;
+    if(bm!==cm && bm.length){ _memMy=null; try{ localStorage.setItem(MKEY,JSON.stringify(bm)); }catch(_){ _memMy=bm.slice(); }
+      if(typeof renderMyPlay==="function") renderMyPlay(); }
   }catch(_){}
 }
 
@@ -1387,6 +1423,8 @@ function refreshAll(){
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
+  { const dl2=document.getElementById("my-mach-list"); if(dl2){ const names=[...new Set([...Object.keys(JAG_SPECS),...rows.map(r=>r.machine_name),...loadMyPlay().map(r=>r.machine)])].filter(x=>x);
+    dl2.innerHTML=names.map(n=>'<option value="'+n+'">').join(""); } }
   renderEvents(); render();
 }
 function fillSelect(id,opts){ const el=document.getElementById(id); if(!el)return; const cur=el.value;
@@ -1406,7 +1444,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -2426,26 +2464,86 @@ function importCsv(){
 }
 async function exportJson(){ const today=fmtDate(new Date()); const name="jagler_backup_"+today+".json";
   // 内部キャッシュ(__est)を除いて軽量化（重い・固まる対策）
-  const json=JSON.stringify({records:load(),events:loadEvents()}, _noInternal);
+  const json=JSON.stringify({records:load(),events:loadEvents(),myplay:loadMyPlay()}, _noInternal);
   // iOS等は共有シート経由のファイル保存が確実（中身を描画せず保存できる）
   try{ if(navigator.canShare){ const file=new File([json],name,{type:"application/json"});
       if(navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:name}); return; } } }catch(e){}
   dl(json,name,"application/json");   // フォールバック（通常ダウンロード）
 }
 // 画面上にコピー用テキストとしてバックアップを出す（ファイルが扱いにくい端末向け）
-function exportJsonText(){ const json=JSON.stringify({records:load(),events:loadEvents()}, _noInternal);
+function exportJsonText(){ const json=JSON.stringify({records:load(),events:loadEvents(),myplay:loadMyPlay()}, _noInternal);
   const el=document.getElementById("bk-text"); if(el){ el.value=json; el.style.display="block";
     try{ el.focus(); el.select(); document.execCommand&&document.execCommand("copy"); }catch(e){}
     const m=document.getElementById("bk-msg"); if(m) m.innerHTML='<div class="ok">下の枠にバックアップを表示しました（約'+Math.round(json.length/1024)+'KB）。長押し→全選択→コピーして、メモやメールに貼って保管できます。</div>'; } }
 function maybeAutoBackup(){ try{ if(localStorage.getItem("jag_autobk")==="1") exportJson(); }catch(e){} }
 function _applyBackup(text){ const d=JSON.parse(text);
   const recs=Array.isArray(d)?d:(d.records||[]); save(recs.map(enrich));
-  if(d.events) saveEvents(d.events); refreshAll(); return recs.length; }
+  if(d.events) saveEvents(d.events); if(d.myplay) saveMyPlay(d.myplay); refreshAll(); return recs.length; }
 function importJson(e){ const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
   rd.onload=()=>{ try{ const n=_applyBackup(rd.result); alert("復元しました："+n+"件"); }catch(x){ alert("読み込み失敗（ファイルが壊れている可能性）"); } }; rd.readAsText(f); }
 function importJsonText(){ const el=document.getElementById("bk-in"); const t=el?el.value.trim():"";
   if(!t){ alert("復元したいバックアップ文字列を貼り付けてください"); return; }
   try{ const n=_applyBackup(t); el.value=""; alert("復元しました："+n+"件"); }catch(x){ alert("文字列を読み込めませんでした（コピー漏れがないか確認してください）"); } }
+
+// ---------- 実戦収支 ----------
+// 機械割(%) = (総投入 + 差枚) / 総投入 ×100。ジャグラーは1G=3枚投入。
+function machineWari(total,diff){ if(!total) return null; const inv=total*3; return (inv+ (diff||0))/inv*100; }
+function myDen(prob){ return prob&&isFinite(prob)?"1/"+Math.round(prob):"-"; }
+function myPreview(){ const t=toInt(val("my-total")), big=toInt(val("my-big")), reg=toInt(val("my-reg")), diff=toSignedInt(val("my-diff"));
+  const el=document.getElementById("my-preview"); if(!el)return;
+  if(!t){ el.textContent=""; return; }
+  const w=machineWari(t,diff||0); const bb=big?t/big:null, rb=reg?t/reg:null, gou=(big||reg)?t/((big||0)+(reg||0)):null;
+  el.innerHTML="自動計算 → 機械割 <b>"+(w!=null?w.toFixed(1)+"%":"-")+"</b> ／ BIG "+myDen(bb)+" ／ REG "+myDen(rb)+" ／ 合成 "+myDen(gou);
+}
+function addMyPlay(){ const date=val("my-date"), store=val("my-store").trim(), machine=val("my-machine").trim();
+  const no=toInt(val("my-no")), big=toInt(val("my-big"))||0, reg=toInt(val("my-reg"))||0, total=toInt(val("my-total")), diff=toSignedInt(val("my-diff"));
+  const msg=document.getElementById("my-msg");
+  if(!date||!machine||!total){ msg.innerHTML='<div class="warn">日付・機種・総回転数は必須です。</div>'; return; }
+  const rec={id:Date.now()+"_"+Math.random().toString(36).slice(2,6),date,store,machine,machine_no:(no!=null?no:null),
+    big,reg,total,diff:(diff!=null?diff:0),wari:machineWari(total,diff||0)};
+  const arr=loadMyPlay(); arr.push(rec); saveMyPlay(arr);
+  msg.innerHTML='<div class="ok">記録しました：'+machine+(no!=null?" "+no+"番":"")+" → 機械割"+(rec.wari!=null?rec.wari.toFixed(1)+"%":"-")+" / 差枚"+(rec.diff>=0?"+":"")+rec.diff+'</div>';
+  ["my-big","my-reg","my-total","my-diff","my-no"].forEach(id=>{const e=document.getElementById(id);if(e)e.value="";});
+  myPreview(); renderMyPlay();
+}
+function deleteMyPlay(id){ if(!confirm("この記録を削除しますか？"))return; saveMyPlay(loadMyPlay().filter(r=>r.id!==id)); renderMyPlay(); }
+function clearMyPlay(){ if(!confirm("実戦収支の記録をすべて削除します。よろしいですか？"))return; saveMyPlay([]); renderMyPlay(); }
+function renderMyPlay(){ const el=document.getElementById("t-myplay"); if(!el)return;
+  const arr=loadMyPlay().slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
+  const rate=parseFloat(localStorage.getItem("jag_myrate")||"20")||20;
+  const yen=d=>{ const v=Math.round((d||0)*rate); return (v>=0?"+":"")+v.toLocaleString()+"円"; };
+  if(!arr.length){ el.innerHTML="<p class='muted'>まだ記録がありません。上のフォームから入力してください。</p>"; return; }
+  // 機種別サマリー
+  const g={}; arr.forEach(r=>{(g[r.machine]=g[r.machine]||[]).push(r);});
+  let totDiff=0,totGames=0,totBig=0,totReg=0;
+  let h="<h3 style='margin:14px 0 4px'>📊 機種別サマリー</h3><div class='scroll'><table style='font-size:12px'>"+
+    "<tr><th>機種</th><th>台数</th><th>総回転</th><th>BIG</th><th>REG</th><th>BIG率</th><th>REG率</th><th>合成</th><th>差枚</th><th>収支</th><th>平均<br>機械割</th></tr>";
+  Object.keys(g).forEach(m=>{ const a=g[m]; const G=a.reduce((s,r)=>s+r.total,0),B=a.reduce((s,r)=>s+r.big,0),R=a.reduce((s,r)=>s+r.reg,0),D=a.reduce((s,r)=>s+(r.diff||0),0);
+    totDiff+=D;totGames+=G;totBig+=B;totReg+=R; const w=machineWari(G,D);
+    const dc=D>=0?"#1a7f37":"#c00";
+    h+="<tr><td style='text-align:left'>"+m+"</td><td>"+a.length+"</td><td>"+G.toLocaleString()+"</td><td>"+B+"</td><td>"+R+"</td>"+
+      "<td>"+myDen(B?G/B:null)+"</td><td>"+myDen(R?G/R:null)+"</td><td>"+myDen((B+R)?G/(B+R):null)+"</td>"+
+      "<td style='color:"+dc+";font-weight:bold'>"+(D>=0?"+":"")+D+"</td><td style='color:"+dc+"'>"+yen(D)+"</td>"+
+      "<td style='font-weight:bold'>"+(w!=null?w.toFixed(1)+"%":"-")+"</td></tr>";
+  });
+  const tw=machineWari(totGames,totDiff); const tdc=totDiff>=0?"#1a7f37":"#c00";
+  h+="<tr style='background:#fffbe6;font-weight:bold'><td style='text-align:left'>合計</td><td>"+arr.length+"</td><td>"+totGames.toLocaleString()+"</td><td>"+totBig+"</td><td>"+totReg+"</td>"+
+    "<td>"+myDen(totBig?totGames/totBig:null)+"</td><td>"+myDen(totReg?totGames/totReg:null)+"</td><td>"+myDen((totBig+totReg)?totGames/(totBig+totReg):null)+"</td>"+
+    "<td style='color:"+tdc+"'>"+(totDiff>=0?"+":"")+totDiff+"</td><td style='color:"+tdc+"'>"+yen(totDiff)+"</td><td>"+(tw!=null?tw.toFixed(1)+"%":"-")+"</td></tr>";
+  h+="</table></div>";
+  // 明細
+  h+="<h3 style='margin:14px 0 4px'>📋 明細（新しい順）</h3><div class='scroll'><table style='font-size:12px'>"+
+    "<tr><th>日付</th><th>店舗</th><th>機種</th><th>台</th><th>BIG</th><th>REG</th><th>総回転</th><th>合成</th><th>差枚</th><th>収支</th><th>機械割</th><th></th></tr>";
+  arr.forEach(r=>{ const dc=(r.diff||0)>=0?"#1a7f37":"#c00";
+    h+="<tr><td>"+r.date.slice(5)+"</td><td style='text-align:left'>"+(r.store||"-")+"</td><td style='text-align:left'>"+r.machine+"</td><td>"+(r.machine_no!=null?r.machine_no:"-")+"</td>"+
+      "<td>"+r.big+"</td><td>"+r.reg+"</td><td>"+r.total.toLocaleString()+"</td><td>"+myDen((r.big+r.reg)?r.total/(r.big+r.reg):null)+"</td>"+
+      "<td style='color:"+dc+";font-weight:bold'>"+((r.diff||0)>=0?"+":"")+(r.diff||0)+"</td><td style='color:"+dc+"'>"+yen(r.diff)+"</td>"+
+      "<td>"+(r.wari!=null?r.wari.toFixed(1)+"%":"-")+"</td>"+
+      "<td><button class='ghost' style='padding:2px 6px;color:#c00' onclick=\"deleteMyPlay('"+r.id+"')\">削除</button></td></tr>";
+  });
+  h+="</table></div><button class='ghost' style='margin-top:8px;color:#c00' onclick='clearMyPlay()'>🗑 実戦収支を全削除</button>";
+  el.innerHTML=h;
+}
 // ---------- 個別削除 ----------
 function deleteOne(enc){
   const key=decodeURIComponent(enc); const [date,store,mno]=key.split("|");
@@ -3205,8 +3303,9 @@ try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(
 // 旧バージョンが保存した内部キャッシュ(__est)で肥大化したデータを一度だけ掃除して容量を回復
 try{ const raw=localStorage.getItem(KEY); if(raw&&raw.indexOf("__est")>=0){ save(load()); } }catch(e){}
 const _t=fmtDate(new Date());
-["in-date","ph-date","ev-date","an-date"].forEach(id=>{const el=document.getElementById(id); if(el)el.value=_t;});
+["in-date","ph-date","ev-date","an-date","my-date"].forEach(id=>{const el=document.getElementById(id); if(el)el.value=_t;});
 {const by=document.getElementById("bulk-year"); if(by)by.value=new Date().getFullYear();}
+try{ const mr=document.getElementById("my-rate"), rv=localStorage.getItem("jag_myrate"); if(mr&&rv)mr.value=rv; }catch(e){}
 aiLoad();
 try{ const v=document.getElementById("app-ver"); if(v) v.textContent="　[版: "+APP_VERSION+"]"; }catch(e){}
 try{ const ab=document.getElementById("auto-backup"); if(ab&&localStorage.getItem("jag_autobk")==="1") ab.checked=true; }catch(e){}
