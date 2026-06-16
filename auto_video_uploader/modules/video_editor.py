@@ -398,8 +398,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Hook,{font},96,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8,4,5,70,70,0,1
-Style: Talk,{font},86,&H00FFFFFF,&H00FFFFFF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,8,3,5,70,70,0,1
+Style: Hook,{font},96,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8,4,2,70,70,300,1
+Style: Talk,{font},84,&H00FFFFFF,&H00FFFFFF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,8,3,2,70,70,260,1
 Style: Flash,{font},20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 
 [Events]
@@ -422,7 +422,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for item in plan_line_schedule(content, total_sec, segment_durations):
         is_hook = item["role"] == "hook"
         style = "Hook" if is_hook else "Talk"
-        wrapped = _wrap_jp(item["text"], 8 if is_hook else 9)
+        wrapped = _wrap_jp(item["text"], 8 if is_hook else 11)
         base = "&H0000E5FF" if is_hook else "&H00FFFFFF"
         emphasized = _emphasize_numbers(wrapped, base)
         fx = r"{\fad(110,90)\t(0,130,\fscx109\fscy109)\t(130,260,\fscx100\fscy100)}"
