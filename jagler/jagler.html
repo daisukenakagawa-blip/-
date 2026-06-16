@@ -3000,7 +3000,7 @@ function computeInjection(srAll, store, targetDate, opts){
   out.forEach(o=>{ const s=o.score;
     o.mark = s>=95?"SS 本命":s>=85?"S 本命":s>=75?"A 対抗":s>=65?"B 狙い目":s>=55?"C 注意":s>=45?"D 低期待":"見送り"; });
   return {targetDate,nextWd,eventDay,evLabel:autoEv.map(e=>e.name||eventDesc(e)).join("・"),days:CU.dates.length,types:CU.types,out,
-    evStyle,evKeepRatio,evHighTotal};
+    evStyle,evKeepRatio,evHighTotal,CU,autoEv};
 }
 // 投入期待エンジンのバックテスト（未来不使用）
 function injectionBacktest(srAll, store, targetDate){
@@ -3147,6 +3147,28 @@ function renderForecastInner(){
     } else {
       h+="<div class='note' style='background:#eef7ff;border-color:#9cc8ff;font-size:13px'>🎉 <b>イベント日（"+R.evLabel+"）</b>：過去の同イベントのデータが少なく据え置き/上げの傾向はまだ不明（データ蓄積で精度UP）。</div>";
     }
+  }
+  // 🧭 この日の店のクセ（入りやすい末尾・並び・角・曜日・イベント時の傾向）
+  { const CU=R.CU, ov=CU.overallHi||0, nb=analyzeNarabi(CU);
+    let clue="<div class='note' style='background:#f3eefc;border-color:#cbb6f0;font-size:13px'><b>🧭 この日の店のクセ</b><br>";
+    const tails=Object.entries(CU.tailHiMap).filter(e=>e[1].n>=3&&e[1].hi>ov+0.03).sort((a,b)=>b[1].hi-a[1].hi).slice(0,3);
+    clue+="・入りやすい末尾："+(tails.length?tails.map(e=>"末尾"+e[0]+" "+pc(e[1].hi)+"("+e[1].n+"回)").join(" ／ "):"目立つ偏りなし")+"<br>";
+    const wh=CU.wdHiMap[R.nextWd]; if(wh&&wh.n>=3) clue+="・"+R.nextWd+"曜の傾向："+pc(wh.hi)+(wh.hi>ov+0.03?"（入りやすい）":wh.hi<ov-0.03?"（入りにくい）":"（平均的）")+"<br>";
+    clue+="・並び傾向：2台"+pc(nb.rates[2])+" ／ 3台"+pc(nb.rates[3])+" ／ 4台以上"+pc(nb.rates[4])+"（角から始まる率"+pc(nb.cornerStartRate)+" ／ 隣→翌日"+pc(nb.nbRate)+"）<br>";
+    const corn=[["角台",CU.cornerR],["角2",CU.c2R],["角3",CU.c3R]].filter(x=>x[1]&&x[1].hi>ov+0.03).map(x=>x[0]+" "+pc(x[1].hi));
+    if(corn.length) clue+="・角に入りやすい："+corn.join(" ／ ")+"<br>";
+    const isl=Object.entries(CU.islHiMap).filter(e=>e[1].n>=3&&e[1].hi>ov+0.05).sort((a,b)=>b[1].hi-a[1].hi).slice(0,2);
+    if(isl.length) clue+="・強い島："+isl.map(e=>"島"+e[0]+" "+pc(e[1].hi)).join(" ／ ")+"<br>";
+    const ph=CU.phaseRate[CU.phase(targetDate)]; if(ph) clue+="・"+CU.phase(targetDate)+"の傾向："+pc(ph.hi)+"<br>";
+    // イベント日：このイベントで強い末尾・島・機種
+    if(R.eventDay){ const es=eventReliability(srAll,store,targetDate);
+      const tn=(R.autoEv||[]).map(e=>e.eventType||e.name||eventDesc(e));
+      let ev=es.find(x=>tn.includes(x.name))||es[0];
+      if(ev){ const t=ev.sTail&&ev.sTail.length?ev.sTail.map(x=>"末尾"+x.k+"("+pc(x.hi)+")").join("・"):"-";
+        const il=ev.sIsl&&ev.sIsl.length?ev.sIsl.map(x=>"島"+x.k+"("+pc(x.hi)+")").join("・"):"-";
+        const mc=ev.sMach&&ev.sMach.length?ev.sMach.map(x=>x.k+"("+pc(x.hi)+")").join("・"):"-";
+        clue+="<span style='color:#1565c0'>🎉 このイベント時に強い → 末尾："+t+" ／ 島："+il+" ／ 機種："+mc+"</span><br>"; } }
+    clue+="</div>"; h+=clue;
   }
   // 機種ごと（その機種の最高スコア順）
   const byMach={}; R.out.forEach(o=>{(byMach[o.mname]=byMach[o.mname]||[]).push(o);});
