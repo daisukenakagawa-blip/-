@@ -57,6 +57,8 @@ BG_PHOTOS_DIR = ASSETS_DIR / "bg_photos"
 CHARACTER_DIR = ASSETS_DIR / "character"
 CHARACTER_SRC = CHARACTER_DIR / "jugglerman_src.png"
 CHARACTER_BADGE = CHARACTER_DIR / "jugglerman_badge.png"
+# 口パク(喋っている)透過アバタークリップ
+CHARACTER_CLIP = CHARACTER_DIR / "jugglerman_talk.webm"
 # 右下アバターを表示するか。画面に対するアバター径の割合・余白(px)。
 SHOW_AVATAR = os.getenv("SHOW_AVATAR", "1").strip() not in ("0", "false", "False", "")
 AVATAR_WIDTH_RATIO = float(os.getenv("AVATAR_WIDTH_RATIO", "0.30"))
