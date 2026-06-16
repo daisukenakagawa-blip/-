@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b3d2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ランクマッチ">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>ランクマッチ - テキサスホールデム</title>
+<style>
+  :root{--green:#0b3d2e;--gold:#f5c542;--gold2:#d4a017;--red:#e2433b;--card:#fdfdfb;--shadow:rgba(0,0,0,.4);}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Segoe UI",Roboto,sans-serif;
+    background:radial-gradient(circle at 50% -10%, #14573d, #07291d 75%);color:#fff;min-height:100dvh;overflow-x:hidden;
+    user-select:none;-webkit-user-select:none;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);}
+  .hidden{display:none !important;}
+
+  /* lobby */
+  #lobby{max-width:460px;margin:0 auto;padding:18px 16px;text-align:center;}
+  #lobby h1{color:var(--gold);font-size:24px;margin:10px 0 2px;}
+  #lobby .sub{color:#bfe2d4;font-size:12px;letter-spacing:.22em;margin-bottom:16px;}
+  .rankcard{background:#0a2419;border:1px solid #2c6b52;border-radius:16px;padding:18px;margin:12px 0;}
+  .tier{font-size:30px;font-weight:900;margin-bottom:4px;}
+  .lp{font-size:14px;color:#cfe9dd;}
+  .lpbar{height:10px;background:#08201a;border-radius:6px;margin:10px 0 4px;overflow:hidden;border:1px solid #2c6b52;}
+  .lpbar > div{height:100%;background:linear-gradient(90deg,var(--gold2),var(--gold));}
+  .nameinp{width:100%;padding:11px 12px;border-radius:10px;border:1px solid #2c6b52;background:#0a2419;color:#fff;font-size:16px;margin:8px 0;}
+  .bigbtn{width:100%;border:none;border-radius:12px;padding:15px;font-size:18px;font-weight:800;color:#1c1200;
+    background:linear-gradient(180deg,var(--gold),var(--gold2));box-shadow:0 4px 0 #00000040;cursor:pointer;margin-top:6px;letter-spacing:.05em;}
+  .bigbtn:active{transform:translateY(2px);box-shadow:0 2px 0 #00000040;}
+  .bigbtn.sec{background:linear-gradient(180deg,#3a7a5e,#2a5d46);color:#fff;}
+  .stats{display:flex;gap:8px;margin-top:10px;}
+  .stats .s{flex:1;background:#0a2419;border:1px solid #2c6b52;border-radius:10px;padding:8px;}
+  .stats .s .n{font-size:18px;font-weight:800;color:var(--gold);}
+  .stats .s .l{font-size:10px;color:#9fc7b6;}
+
+  /* matchmaking */
+  #match{position:fixed;inset:0;background:#07291dF2;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;}
+  #match h2{color:var(--gold);font-size:20px;margin:0 0 6px;}
+  #match .room{color:#cfe9dd;font-size:13px;margin-bottom:18px;}
+  .spinner{width:54px;height:54px;border:5px solid #ffffff22;border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin-bottom:18px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .found{width:100%;max-width:340px;}
+  .found .row{display:flex;align-items:center;gap:10px;background:#0a2419;border:1px solid #2c6b52;border-radius:10px;padding:8px 12px;margin:6px 0;opacity:0;transform:translateY(8px);transition:.3s;}
+  .found .row.show{opacity:1;transform:none;}
+  .found .row .av{width:26px;height:26px;border-radius:50%;background:#1d6b4d;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;}
+  .found .row .nm{flex:1;font-weight:700;}
+  .found .row .ok{color:#6fd39a;font-size:12px;}
+
+  /* table */
+  #game{max-width:540px;margin:0 auto;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;font-size:12px;color:#cfe9dd;}
+  .topbar .stage{color:var(--gold);font-weight:800;letter-spacing:.08em;}
+  .topbar .roomtag{background:#0a2419;border:1px solid #2c6b52;border-radius:8px;padding:3px 8px;}
+  .table-wrap{position:relative;width:100%;height:60vh;min-height:400px;}
+  .felt{position:absolute;left:5%;top:8%;width:90%;height:84%;background:radial-gradient(circle at 50% 40%, #1c8a5f, #0c5238 80%);
+    border-radius:46% / 40%;border:10px solid #6b3f1d;box-shadow:inset 0 0 40px #00000066,0 10px 30px #00000088;}
+  .center{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:78%;text-align:center;}
+  .pot{font-size:13px;color:var(--gold);font-weight:800;margin-bottom:6px;text-shadow:0 1px 2px #000;}
+  .community{display:flex;gap:4px;justify-content:center;min-height:48px;}
+  .msgline{margin-top:8px;font-size:12px;color:#eafff4;min-height:16px;font-weight:600;text-shadow:0 1px 2px #000;}
+
+  .card{width:32px;height:45px;border-radius:5px;background:var(--card);color:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-weight:800;box-shadow:0 2px 4px var(--shadow);font-size:14px;line-height:1;}
+  .card.sm{width:28px;height:40px;font-size:12px;}
+  .card.red{color:var(--red);}
+  .card .s{font-size:12px;}
+  .card.back{background:repeating-linear-gradient(45deg,#1d5fa8 0 6px,#1a539a 6px 12px);border:2px solid #fff;color:transparent;}
+  .card.empty{background:#ffffff14;box-shadow:none;border:1px dashed #ffffff33;}
+
+  .seat{position:absolute;transform:translate(-50%,-50%);width:92px;background:#0a2419ee;border:1px solid #2c6b52;border-radius:10px;
+    padding:5px 6px;text-align:center;font-size:11px;transition:box-shadow .2s,border-color .2s,opacity .3s;}
+  .seat.you{border-color:#6db3ff;}
+  .seat.active{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold),0 0 14px #f5c54288;}
+  .seat.folded{opacity:.38;}
+  .seat .nm{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .seat .you-lbl{color:#6db3ff;}
+  .seat .ch{color:var(--gold);font-weight:800;}
+  .seat .holecards{display:flex;gap:3px;justify-content:center;margin:3px 0;min-height:40px;}
+  .seat .tag{display:inline-block;font-size:9px;font-weight:800;padding:1px 5px;border-radius:8px;margin-top:1px;}
+  .tag.fold{background:#7a2a2a;}.tag.allin{background:var(--gold);color:#3a2a00;}.tag.act{background:#1d6b4d;color:#cfe;}
+  .badge{position:absolute;top:-8px;right:-8px;width:20px;height:20px;border-radius:50%;font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid #07291d;}
+  .badge.D{background:#fff;color:#111;}.badge.SB{background:#3a7ad4;left:-8px;right:auto;}.badge.BB{background:#d44a3a;left:-8px;right:auto;}
+  .betchip{position:absolute;font-size:10px;font-weight:800;color:var(--gold);background:#000a;padding:1px 6px;border-radius:10px;white-space:nowrap;}
+
+  /* panel */
+  #panel{max-width:540px;margin:0 auto;padding:6px 10px 14px;min-height:120px;}
+  .myhole{display:flex;gap:8px;justify-content:center;margin:2px 0 8px;}
+  .myhole .card{width:42px;height:60px;font-size:19px;}
+  .actrow{display:flex;gap:8px;}
+  .actrow button{flex:1;border:none;border-radius:10px;padding:13px 6px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 3px 0 #00000040;}
+  .actrow button:active{transform:translateY(2px);box-shadow:0 1px 0 #00000040;}
+  .b-fold{background:#b23b30;color:#fff;}.b-check{background:linear-gradient(180deg,#3a7a5e,#2a5d46);color:#fff;}
+  .b-raise{background:linear-gradient(180deg,var(--gold),var(--gold2));color:#2a1c00;}.b-allin{background:#7a2da0;color:#fff;}
+  .raisebox{margin-top:10px;background:#08201a;border:1px solid #2c6b52;border-radius:10px;padding:10px;}
+  .raisebox .amt{text-align:center;font-size:20px;font-weight:800;color:var(--gold);margin-bottom:8px;}
+  .raisebox input[type=range]{width:100%;}
+  .presets{display:flex;gap:6px;margin-top:8px;}
+  .presets button{flex:1;background:#0a2419;border:1px solid #2c6b52;color:#fff;border-radius:8px;padding:8px 2px;font-size:12px;font-weight:700;}
+  .confirmrow{display:flex;gap:8px;margin-top:8px;}
+  .waiting{text-align:center;color:#9fc7b6;font-size:13px;padding:18px;}
+
+  .result{background:#0a2419;border:1px solid var(--gold);border-radius:12px;padding:14px;text-align:center;}
+  .result h3{color:var(--gold);margin:0 0 8px;}
+  .result .line{font-size:13px;color:#eafff4;margin:4px 0;}
+  .lpchange{font-size:22px;font-weight:900;margin:8px 0;}
+  .lpchange.up{color:#6fd39a;}.lpchange.down{color:#ff7b6e;}
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(60px);background:#000c;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;opacity:0;transition:.3s;z-index:50;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<!-- ===== LOBBY ===== -->
+<div id="lobby">
+  <h1>🏆 ランクマッチ</h1>
+  <div class="sub">TEXAS HOLD'EM · RANKED</div>
+  <div class="rankcard">
+    <div class="tier" id="tierName">Bronze</div>
+    <div class="lp"><span id="lpVal">100</span> LP</div>
+    <div class="lpbar"><div id="lpFill" style="width:20%"></div></div>
+    <div class="lp" id="nextTier" style="font-size:11px;color:#9fc7b6"></div>
+  </div>
+  <input class="nameinp" id="playerName" maxlength="10" placeholder="あなたの名前" autocomplete="off">
+  <button class="bigbtn" id="findBtn">ランクマッチを探す ▶</button>
+  <div class="stats">
+    <div class="s"><div class="n" id="stWins">0</div><div class="l">勝利</div></div>
+    <div class="s"><div class="n" id="stHands">0</div><div class="l">ハンド</div></div>
+    <div class="s"><div class="n" id="stBest">Bronze</div><div class="l">最高ランク</div></div>
+  </div>
+  <button class="bigbtn sec" id="resetBtn" style="margin-top:14px;font-size:13px;padding:10px">ランクをリセット</button>
+  <div style="margin-top:14px"><a href="../" style="color:#8fb6a5;font-size:12px">← ゲーム選択に戻る</a></div>
+</div>
+
+<!-- ===== MATCHMAKING ===== -->
+<div id="match" class="hidden">
+  <div class="spinner"></div>
+  <h2 id="matchTitle">プレイヤーを探しています…</h2>
+  <div class="room" id="matchRoom">Room 1 / 6</div>
+  <div class="found" id="foundList"></div>
+</div>
+
+<!-- ===== GAME ===== -->
+<div id="game" class="hidden">
+  <div class="topbar">
+    <div class="roomtag" id="roomTag">Room 1/6</div>
+    <div class="stage" id="stage">PREFLOP</div>
+    <div class="roomtag"><span id="myTier">Bronze</span> · <span id="myLp">100</span>LP</div>
+  </div>
+  <div class="table-wrap">
+    <div class="felt"></div>
+    <div id="seats"></div>
+    <div class="center">
+      <div class="pot" id="potLabel">POT 0</div>
+      <div class="community" id="community"></div>
+      <div class="msgline" id="centerMsg"></div>
+    </div>
+  </div>
+  <div id="panel"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ===== constants ===== */
+const SUITS=["♠","♥","♦","♣"];
+const RANKDISP={11:"J",12:"Q",13:"K",14:"A"};
+const NUM=6, START_CHIPS=10000, SB=100, BB=200;
+const HAND_NAMES=["ハイカード","ワンペア","ツーペア","スリーカード","ストレート","フラッシュ","フルハウス","フォーカード","ストレートフラッシュ"];
+const POS=[ {l:50,t:90},{l:90,t:70},{l:90,t:30},{l:50,t:8},{l:10,t:30},{l:10,t:70} ];
+const BETPOS=[ {l:50,t:74},{l:78,t:60},{l:78,t:40},{l:50,t:24},{l:22,t:40},{l:22,t:60} ];
+const BOT_NAMES=["Kenji","Yuki","Aoi","Riku","Hana","Sora","Daiki","Mei","Ren","Saki","Taro","Nao","Jin","Emi","Kai","Rio","Yuto","Mai","Sho","Aya","Goro","Leo","Maki","Ace","Koji","Rina"];
+const TIERS=[
+  {name:"Bronze",min:0,color:"#cd7f32"},
+  {name:"Silver",min:500,color:"#c9d4dd"},
+  {name:"Gold",min:1000,color:"#f5c542"},
+  {name:"Platinum",min:2000,color:"#5fd3c0"},
+  {name:"Diamond",min:3500,color:"#6db3ff"},
+  {name:"Master",min:5500,color:"#c77dff"},
+];
+
+/* ===== persistent profile ===== */
+const KEY="ranked_holdem_v1";
+let profile=loadProfile();
+function loadProfile(){ try{ const p=JSON.parse(localStorage.getItem(KEY)); if(p&&typeof p.lp==="number") return p; }catch(e){} return {lp:100,wins:0,hands:0,bestLp:100,name:""}; }
+function saveProfile(){ try{ localStorage.setItem(KEY,JSON.stringify(profile)); }catch(e){} }
+function tierOf(lp){ let t=TIERS[0]; for(const x of TIERS) if(lp>=x.min) t=x; return t; }
+function nextTierOf(lp){ for(const x of TIERS) if(x.min>lp) return x; return null; }
+
+/* ===== table state ===== */
+let players=[], deck=[], community=[];
+let buttonSeat=0,sbSeat=0,bbSeat=0;
+let currentBet=0,minRaise=BB,currentSeat=0;
+let needsToAct=new Set();
+let street="preflop";
+let roomIndex=1;
+let youStackAtHandStart=START_CHIPS;
+let handActive=false;
+
+const $=id=>document.getElementById(id);
+const YOU=0;
+const canAct=p=>!p.folded&&!p.allIn&&p.chips>0;
+const inHand=p=>!p.folded;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const clamp01=v=>clamp(v,0,1);
+function potTotal(){ return players.reduce((s,p)=>s+p.committed,0); }
+function rankStr(r){ return RANKDISP[r]||String(r); }
+function isRed(s){ return s===1||s===2; }
+function nextSeat(s){ return (s+1)%NUM; }
+function nextActiveSeat(from){ let s=from; for(let i=0;i<NUM;i++){ s=nextSeat(s); if(players[s].chips>0) return s; } return from; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function toast(t){ const e=$("toast"); e.textContent=t; e.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>e.classList.remove("show"),1500); }
+
+/* ===== lobby ===== */
+function refreshLobby(){
+  const t=tierOf(profile.lp);
+  $("tierName").textContent=t.name; $("tierName").style.color=t.color;
+  $("lpVal").textContent=profile.lp;
+  const nt=nextTierOf(profile.lp);
+  let pct=100;
+  if(nt){ const cur=t.min; pct=clamp(Math.round((profile.lp-cur)/(nt.min-cur)*100),3,100); $("nextTier").textContent=`次のランク ${nt.name} まで ${nt.min-profile.lp} LP`; }
+  else $("nextTier").textContent="最高ランク到達！";
+  $("lpFill").style.width=pct+"%";
+  $("stWins").textContent=profile.wins;
+  $("stHands").textContent=profile.hands;
+  $("stBest").textContent=tierOf(profile.bestLp).name;
+  if(profile.name) $("playerName").value=profile.name;
+}
+$("findBtn").addEventListener("click",()=>{
+  profile.name=($("playerName").value||"").trim()||"あなた"; saveProfile();
+  startMatchmaking(false);
+});
+$("resetBtn").addEventListener("click",()=>{
+  if(confirm("ランクとLPをリセットしますか？")){ profile={lp:100,wins:0,hands:0,bestLp:100,name:profile.name}; saveProfile(); refreshLobby(); }
+});
+
+/* ===== matchmaking ===== */
+function pickBotNames(){
+  const pool=BOT_NAMES.slice(); const out=[];
+  for(let i=0;i<5;i++){ const j=Math.floor(Math.random()*pool.length); out.push(pool.splice(j,1)[0]); }
+  return out;
+}
+function startMatchmaking(fast){
+  $("lobby").classList.add("hidden");
+  $("game").classList.add("hidden");
+  const m=$("match"); m.classList.remove("hidden");
+  $("matchTitle").textContent= fast? "別の部屋を探しています…" : "プレイヤーを探しています…";
+  $("matchRoom").textContent=`Room ${roomIndex} / 6`;
+  const names=pickBotNames();
+  const list=$("foundList"); list.innerHTML="";
+  const rows=[];
+  // include you first
+  const allRows=[{nm:profile.name,you:true}].concat(names.map(n=>({nm:n,you:false})));
+  allRows.forEach(r=>{
+    const div=document.createElement("div"); div.className="row";
+    div.innerHTML=`<div class="av">${escapeHtml(r.nm[0]||"?")}</div><div class="nm">${escapeHtml(r.nm)}${r.you?" (あなた)":""}</div><div class="ok">✓</div>`;
+    list.appendChild(div); rows.push(div);
+  });
+  const step= fast?160:420;
+  rows.forEach((row,i)=>setTimeout(()=>row.classList.add("show"), step*(i+1)));
+  const total=step*(rows.length+1)+ (fast?300:600);
+  setTimeout(()=>{ $("matchTitle").textContent="マッチ成立！"; },step*rows.length+150);
+  setTimeout(()=>{ m.classList.add("hidden"); beginTable(names); }, total);
+}
+
+/* ===== deck ===== */
+function newDeck(){ const d=[]; for(let s=0;s<4;s++) for(let r=2;r<=14;r++) d.push({r,s});
+  for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; } return d; }
+
+/* ===== build table ===== */
+function beginTable(botNames){
+  players=[];
+  players.push({seat:0,name:profile.name,chips:START_CHIPS,bot:false,bet:0,committed:0,folded:false,allIn:false,hole:[],lastAction:""});
+  for(let i=0;i<5;i++) players.push({seat:i+1,name:botNames[i],chips:START_CHIPS,bot:true,bet:0,committed:0,folded:false,allIn:false,hole:[],lastAction:""});
+  buttonSeat=Math.floor(Math.random()*NUM);
+  $("game").classList.remove("hidden");
+  $("roomTag").textContent=`Room ${roomIndex}/6`;
+  startHand();
+}
+
+/* ===== start hand ===== */
+function startHand(){
+  // refill busted bots with new players; if you are busted -> new room
+  if(players[YOU].chips<=0){ players[YOU].chips=START_CHIPS; toast("チップ補充（新規バイイン）"); }
+  players.forEach(p=>{
+    if(p.bot && p.chips<=0){ p.chips=START_CHIPS; p.name=pickBotNames()[0]; }
+    p.bet=0;p.committed=0;p.folded=false;p.allIn=false;p.lastAction="";p.hole=[];
+  });
+  community=[]; deck=newDeck();
+  currentBet=0; minRaise=BB; street="preflop"; handActive=true;
+  youStackAtHandStart=players[YOU].chips;
+  buttonSeat=nextActiveSeat(buttonSeat);
+
+  const alive=players.filter(p=>p.chips>0);
+  if(alive.length===2){ sbSeat=buttonSeat; bbSeat=nextActiveSeat(buttonSeat); }
+  else { sbSeat=nextActiveSeat(buttonSeat); bbSeat=nextActiveSeat(sbSeat); }
+
+  players.forEach(p=>{ p.hole=[deck.pop(),deck.pop()]; });
+  postBlind(sbSeat,SB,"SB"); postBlind(bbSeat,BB,"BB");
+  currentBet=BB; minRaise=BB;
+
+  needsToAct=new Set();
+  players.forEach(p=>{ if(canAct(p)) needsToAct.add(p.seat); });
+  render();
+  currentSeat=bbSeat;
+  advanceTurn();
+}
+function postBlind(seat,amount,label){ const p=players[seat]; const amt=Math.min(amount,p.chips); p.chips-=amt;p.bet+=amt;p.committed+=amt;p.lastAction=label; if(p.chips===0)p.allIn=true; }
+
+/* ===== flow ===== */
+function inHandCount(){ return players.filter(inHand).length; }
+function canActCount(){ return players.filter(canAct).length; }
+function advanceTurn(){
+  if(!handActive) return;
+  if(inHandCount()<=1){ endBettingRound(); return; }
+  if(needsToAct.size===0){ endBettingRound(); return; }
+  let s=currentSeat;
+  for(let i=0;i<NUM;i++){ s=nextSeat(s); if(needsToAct.has(s)){ currentSeat=s; takeTurn(); return; } }
+  endBettingRound();
+}
+function takeTurn(){
+  render();
+  const p=players[currentSeat];
+  if(p.bot){ $("panel").innerHTML=`<div class="waiting">${escapeHtml(p.name)} が考えています…</div>`;
+    setTimeout(()=>{ if(!handActive)return; const d=botDecide(p); applyAction(currentSeat,d.type,d.amount); }, 600+Math.random()*700);
+  } else {
+    showHumanActions();
+  }
+}
+
+/* ===== human actions ===== */
+function showHumanActions(){
+  const p=players[YOU];
+  const toCall=Math.min(currentBet-p.bet,p.chips);
+  const maxTarget=p.bet+p.chips;
+  const canRaise=maxTarget>currentBet;
+  const holeHtml=p.hole.map(c=>cardHtml(c,"")).join("");
+  let html=`<div class="myhole">${holeHtml}</div>
+    <div class="actrow">
+      <button class="b-fold" id="aFold">フォールド</button>
+      <button class="b-check" id="aCall">${toCall>0?("コール "+toCall):"チェック"}</button>`;
+  if(canRaise) html+=`<button class="b-raise" id="aRaise">${currentBet>0?"レイズ":"ベット"}</button>`;
+  html+=`</div><div id="raiseArea"></div>`;
+  $("panel").innerHTML=html;
+  $("aFold").addEventListener("click",()=>applyAction(YOU,"fold"));
+  $("aCall").addEventListener("click",()=>applyAction(YOU,toCall>0?"call":"check"));
+  if(canRaise) $("aRaise").addEventListener("click",openRaise);
+}
+function openRaise(){
+  const p=players[YOU];
+  const maxTarget=p.bet+p.chips;
+  let minTarget=Math.min(currentBet+minRaise,maxTarget); if(minTarget<=currentBet) minTarget=maxTarget;
+  let val=minTarget; const pot=potTotal();
+  function quick(frac){ let t=Math.round((currentBet+frac*pot)/100)*100; return clamp(t,minTarget,maxTarget); }
+  const area=$("raiseArea");
+  area.innerHTML=`<div class="raisebox">
+      <div class="amt">${currentBet>0?"レイズ先":"ベット"} <span id="rAmt">${val}</span></div>
+      <input type="range" id="rRange" min="${minTarget}" max="${maxTarget}" step="100" value="${val}">
+      <div class="presets">
+        <button data-v="${quick(0.5)}">½ポット</button>
+        <button data-v="${quick(1)}">ポット</button>
+        <button data-v="${maxTarget}">オールイン</button>
+      </div>
+      <div class="confirmrow">
+        <button class="b-check" id="rCancel" style="box-shadow:none">戻る</button>
+        <button class="b-raise" id="rConfirm" style="box-shadow:none">決定</button>
+      </div></div>`;
+  const range=$("rRange");
+  range.addEventListener("input",()=>{ val=+range.value; $("rAmt").textContent=val; });
+  area.querySelectorAll(".presets button").forEach(b=>b.addEventListener("click",()=>{ val=+b.dataset.v; range.value=val; $("rAmt").textContent=val; }));
+  $("rCancel").addEventListener("click",()=>{ area.innerHTML=""; });
+  $("rConfirm").addEventListener("click",()=>applyAction(YOU, val>=maxTarget?"allin":"raise", val));
+}
+
+/* ===== apply action (human or bot) ===== */
+function applyAction(seat,type,amount){
+  const p=players[seat];
+  if(type==="fold"){ p.folded=true; p.lastAction="フォールド"; needsToAct.delete(seat); }
+  else if(type==="check"){ p.lastAction="チェック"; needsToAct.delete(seat); }
+  else if(type==="call"){ const amt=Math.min(currentBet-p.bet,p.chips); commit(p,amt);
+    p.lastAction= amt>0?("コール "+amt):"チェック"; if(p.chips===0){p.allIn=true;p.lastAction="オールイン";} needsToAct.delete(seat); }
+  else if(type==="raise"||type==="allin"){
+    let target= type==="allin"? p.bet+p.chips : amount; target=Math.max(target,p.bet);
+    commit(p,target-p.bet); if(p.chips===0)p.allIn=true;
+    if(target>currentBet){ const inc=target-currentBet; if(inc>=minRaise)minRaise=inc; currentBet=target;
+      needsToAct=new Set(); players.forEach(q=>{ if(canAct(q)&&q.seat!==seat) needsToAct.add(q.seat); });
+      p.lastAction=(p.allIn?"オールイン ":(type==="allin"?"オールイン ":(currentBet>target?"":"レイズ ")))+target;
+      if(p.allIn) p.lastAction="オールイン "+target; else p.lastAction=(amount!==undefined&&type==="raise"?"レイズ ":"ベット ")+target;
+    } else { p.lastAction=p.allIn?"オールイン":"コール"; }
+    needsToAct.delete(seat);
+  }
+  // you folded -> leave to another room immediately
+  if(seat===YOU && type==="fold"){ render(); youFoldedLeave(); return; }
+  $("panel").innerHTML=""; render();
+  setTimeout(advanceTurn, p.bot?350:200);
+}
+function commit(p,amt){ p.chips-=amt;p.bet+=amt;p.committed+=amt; }
+
+/* ===== you folded -> requeue ===== */
+function youFoldedLeave(){
+  handActive=false;
+  const delta=players[YOU].chips-youStackAtHandStart; // negative (committed lost)
+  applyLP(delta, false);
+  profile.hands++; saveProfile();
+  $("panel").innerHTML=`<div class="waiting">フォールドしました。別の部屋へ移動します…</div>`;
+  setTimeout(()=>{ roomIndex=roomIndex%6+1; startMatchmaking(true); }, 900);
+}
+
+/* ===== end betting round ===== */
+function endBettingRound(){
+  players.forEach(p=>p.bet=0); currentBet=0; minRaise=BB;
+  if(inHandCount()<=1){ awardUncontested(); return; }
+  if(community.length===5){ showdown(); return; }
+  if(canActCount()<2){ runOutBoard(); return; }
+  dealNextStreet();
+  needsToAct=new Set(); players.forEach(p=>{ if(canAct(p)) needsToAct.add(p.seat); });
+  if(needsToAct.size<2){ if(community.length===5) return showdown(); return runOutBoard(); }
+  render(); currentSeat=buttonSeat; advanceTurn();
+}
+function dealNextStreet(){
+  if(community.length===0){ community.push(deck.pop(),deck.pop(),deck.pop()); street="flop"; }
+  else if(community.length===3){ community.push(deck.pop()); street="turn"; }
+  else if(community.length===4){ community.push(deck.pop()); street="river"; }
+  render();
+}
+function runOutBoard(){
+  $("panel").innerHTML=`<div class="waiting">オールイン！ ボードを公開します…</div>`;
+  render(true);
+  (function step(){ if(community.length<5){ dealNextStreet(); render(true); setTimeout(step,850);} else setTimeout(showdown,700); })();
+}
+
+/* ===== evaluation (7-card) ===== */
+function bestStraight(rset){ const s=new Set(rset); if(s.has(14))s.add(1);
+  for(let hi=14;hi>=5;hi--){ let ok=true; for(let k=0;k<5;k++){ if(!s.has(hi-k)){ok=false;break;} } if(ok)return hi; } return 0; }
+function evaluate7(cards){
+  const ranks=cards.map(c=>c.r); const rc={},bySuit={0:[],1:[],2:[],3:[]};
+  cards.forEach(c=>{ rc[c.r]=(rc[c.r]||0)+1; bySuit[c.s].push(c.r); });
+  let fs=-1; for(let s=0;s<4;s++) if(bySuit[s].length>=5) fs=s;
+  if(fs>=0){ const sf=bestStraight(new Set(bySuit[fs])); if(sf) return [8,sf]; }
+  const groups=Object.keys(rc).map(r=>({r:+r,c:rc[r]})).sort((a,b)=>b.c-a.c||b.r-a.r);
+  const sortedDesc=[...new Set(ranks)].sort((a,b)=>b-a);
+  const straightHigh=bestStraight(new Set(ranks));
+  if(groups[0].c===4){ const q=groups[0].r; const k=sortedDesc.find(r=>r!==q); return [7,q,k]; }
+  if(groups[0].c===3&&groups[1]&&groups[1].c>=2) return [6,groups[0].r,groups[1].r];
+  if(fs>=0){ const t=bySuit[fs].slice().sort((a,b)=>b-a).slice(0,5); return [5,...t]; }
+  if(straightHigh) return [4,straightHigh];
+  if(groups[0].c===3){ const t=groups[0].r; const ks=sortedDesc.filter(r=>r!==t).slice(0,2); return [3,t,...ks]; }
+  if(groups[0].c===2&&groups[1]&&groups[1].c===2){ const p1=Math.max(groups[0].r,groups[1].r),p2=Math.min(groups[0].r,groups[1].r);
+    const k=sortedDesc.filter(r=>r!==p1&&r!==p2)[0]; return [2,p1,p2,k]; }
+  if(groups[0].c===2){ const p=groups[0].r; const ks=sortedDesc.filter(r=>r!==p).slice(0,3); return [1,p,...ks]; }
+  return [0,...sortedDesc.slice(0,5)];
+}
+function cmpScore(a,b){ const n=Math.max(a.length,b.length); for(let i=0;i<n;i++){ const x=a[i]||0,y=b[i]||0; if(x!==y)return x-y; } return 0; }
+function scoreName(sc){ if(sc[0]===8&&sc[1]===14)return"ロイヤルフラッシュ"; return HAND_NAMES[sc[0]]; }
+
+/* ===== side pots ===== */
+function sameSet(a,b){ if(a.length!==b.length)return false; const s=new Set(a); return b.every(x=>s.has(x)); }
+function buildPots(){
+  const rem=players.map(p=>p.committed); const pots=[];
+  while(true){ let min=Infinity,any=false;
+    for(let i=0;i<NUM;i++){ if(rem[i]>0){any=true; if(rem[i]<min)min=rem[i];} } if(!any)break;
+    let amount=0; const eligible=[];
+    for(let i=0;i<NUM;i++){ if(rem[i]>0){ amount+=min; rem[i]-=min; if(inHand(players[i])) eligible.push(i);} }
+    if(amount<=0)continue; const prev=pots[pots.length-1];
+    if(prev&&sameSet(prev.eligible,eligible)) prev.amount+=amount; else pots.push({amount,eligible}); }
+  return pots;
+}
+function orderFromButton(seats){ const out=[]; let s=buttonSeat; for(let i=0;i<NUM;i++){ s=nextSeat(s); if(seats.includes(s)) out.push(s); } return out; }
+
+/* ===== bot AI ===== */
+function chen(hole){
+  const r=[hole[0].r,hole[1].r].sort((a,b)=>b-a); const hi=r[0],lo=r[1];
+  const pts=v=> v===14?10: v===13?8: v===12?7: v===11?6: v/2;
+  let s=pts(hi);
+  if(hi===lo){ s=Math.max(5, pts(hi)*2); }
+  if(hole[0].s===hole[1].s) s+=2;
+  if(hi!==lo){ const gap=hi-lo-1;
+    if(gap===1)s-=1; else if(gap===2)s-=2; else if(gap===3)s-=4; else if(gap>=4)s-=5;
+    if(gap<=1 && hi<12) s+=1; }
+  return Math.max(0,s);
+}
+function drawBonus(all){
+  const suitC={}; all.forEach(c=>suitC[c.s]=(suitC[c.s]||0)+1);
+  let fd=Object.values(suitC).some(v=>v>=4)?0.18:0;
+  const rs=[...new Set(all.map(c=>c.r))]; const set=new Set(rs); if(set.has(14))set.add(1);
+  let sd=0; const arr=[...set].sort((a,b)=>a-b);
+  for(let i=0;i<arr.length;i++){ let cnt=1; for(let k=1;k<5;k++){ if(set.has(arr[i]+k))cnt++; else break; } if(cnt>=4) sd=0.14; }
+  return Math.max(fd,sd);
+}
+function postStrength(hole,comm){
+  const sc=evaluate7(hole.concat(comm)); const cat=sc[0];
+  let base=[0.16,0.40,0.66,0.80,0.86,0.91,0.96,0.99,1][cat];
+  if(cat===1){ const bh=Math.max(...comm.map(c=>c.r)); base= sc[1]>=bh?0.54:0.34; }
+  if(cat===0){ base=0.16+drawBonus(hole.concat(comm)); }
+  return clamp01(base);
+}
+function botDecide(p){
+  const toCall=Math.min(currentBet-p.bet,p.chips);
+  const pot=potTotal(); const maxTarget=p.bet+p.chips;
+  let s = community.length===0 ? clamp01(chen(p.hole)/20) : postStrength(p.hole,community);
+  s = clamp01(s + (Math.random()-0.5)*0.12);
+  function raiseTarget(){
+    let add=Math.max(minRaise, Math.round(pot*0.6/100)*100, BB);
+    let t=(currentBet>0?currentBet:0)+add;
+    return clamp(t, Math.min(currentBet+minRaise,maxTarget), maxTarget);
+  }
+  if(toCall<=0){
+    if(s>0.6 && Math.random()<0.6 && maxTarget>BB) return {type:"raise",amount:raiseTarget()};
+    if(s>0.45 && Math.random()<0.2 && maxTarget>BB) return {type:"raise",amount:raiseTarget()};
+    return {type:"check"};
+  }
+  const potOdds=toCall/(pot+toCall);
+  if(s>0.82 && Math.random()<0.6 && maxTarget>currentBet){ const t=raiseTarget(); return t>=maxTarget?{type:"allin"}:{type:"raise",amount:t}; }
+  if(s>=potOdds*1.05 || (s>0.34 && toCall<=p.chips*0.12)){ return toCall>=p.chips?{type:"allin"}:{type:"call"}; }
+  if(Math.random()<0.05 && maxTarget>currentBet){ const t=raiseTarget(); return t>=maxTarget?{type:"allin"}:{type:"raise",amount:t}; }
+  return {type:"fold"};
+}
+
+/* ===== showdown / award ===== */
+function awardUncontested(){
+  handActive=false;
+  const w=players.find(inHand); const total=potTotal(); w.chips+=total;
+  render(false);
+  const youWon=(w.seat===YOU);
+  finishHand(youWon, total, youWon?`あなたがポット ${total} を獲得（全員フォールド）`:`${escapeHtml(w.name)} がポットを獲得`);
+}
+function showdown(){
+  handActive=false;
+  render(true);
+  const pots=buildPots(); const lines=[]; let youWonAny=false;
+  pots.forEach((pot,idx)=>{
+    let best=null,winners=[];
+    pot.eligible.forEach(i=>{ const sc=evaluate7(players[i].hole.concat(community));
+      if(!best||cmpScore(sc,best)>0){best=sc;winners=[i];} else if(cmpScore(sc,best)===0)winners.push(i); });
+    const ordered=orderFromButton(winners);
+    const base=Math.floor(pot.amount/ordered.length); let rem=pot.amount-base*ordered.length;
+    ordered.forEach(i=>{ let add=base; if(rem>0){add++;rem--;} players[i].chips+=add; if(i===YOU)youWonAny=true; });
+    const potName=pots.length>1?(idx===0?"メインポット":"サイドポット"+idx):"ポット";
+    lines.push(`${potName} <b>${pot.amount}</b> → ${ordered.map(i=>escapeHtml(players[i].name)).join(" / ")}<br><small style="color:#9fc7b6">${scoreName(best)}</small>`);
+  });
+  render(true);
+  finishHand(youWonAny, 0, lines.join("<br>"));
+}
+
+/* ===== finish hand: LP + result ===== */
+function applyLP(deltaChips, won){
+  let dLp=Math.round(deltaChips/100);
+  if(deltaChips>0 && dLp<1) dLp=1;
+  if(deltaChips<0 && dLp>-1) dLp=-1;
+  profile.lp=Math.max(0, profile.lp+dLp);
+  if(profile.lp>profile.bestLp) profile.bestLp=profile.lp;
+  if(won) profile.wins++;
+  saveProfile();
+  return dLp;
+}
+function finishHand(youWon, _t, resultHtml){
+  const delta=players[YOU].chips-youStackAtHandStart;
+  const dLp=applyLP(delta, youWon && delta>0);
+  profile.hands++; saveProfile();
+  $("myTier").textContent=tierOf(profile.lp).name; $("myLp").textContent=profile.lp;
+  const cls=dLp>=0?"up":"down"; const sign=dLp>=0?"+":"";
+  let html=`<div class="result"><h3>ハンド結果</h3>
+    <div class="line">${resultHtml}</div>
+    <div class="lpchange ${cls}">${sign}${dLp} LP</div>
+    <div class="line">${tierOf(profile.lp).name} · ${profile.lp} LP（あなたの増減 ${delta>=0?"+":""}${delta}）</div>
+    <div class="actrow" style="margin-top:10px">
+      <button class="b-check" id="leaveBtn" style="box-shadow:none">ロビーへ</button>
+      <button class="b-raise" id="nextHandBtn" style="box-shadow:none">次のハンド ▶</button>
+    </div></div>`;
+  $("panel").innerHTML=html;
+  $("nextHandBtn").addEventListener("click",()=>{ startHand(); });
+  $("leaveBtn").addEventListener("click",()=>backToLobby());
+}
+function backToLobby(){ handActive=false; $("game").classList.add("hidden"); $("lobby").classList.remove("hidden"); refreshLobby(); }
+
+/* ===== render ===== */
+function cardHtml(c,cls){ if(!c) return `<div class="card empty ${cls}"></div>`;
+  return `<div class="card ${cls} ${isRed(c.s)?"red":""}">${rankStr(c.r)}<span class="s">${SUITS[c.s]}</span></div>`; }
+function render(revealAll){
+  $("stage").textContent=street.toUpperCase();
+  $("potLabel").textContent="POT "+potTotal();
+  $("myTier").textContent=tierOf(profile.lp).name; $("myLp").textContent=profile.lp;
+  let comm=""; for(let i=0;i<5;i++) comm+= i<community.length?cardHtml(community[i],"sm"):`<div class="card empty sm"></div>`;
+  $("community").innerHTML=comm;
+  const wrap=$("seats"); wrap.innerHTML="";
+  players.forEach((p,i)=>{
+    const seat=document.createElement("div"); let cls="seat"+(i===YOU?" you":"");
+    if(p.folded)cls+=" folded";
+    if(i===currentSeat && needsToAct.has(i) && handActive) cls+=" active";
+    seat.className=cls; seat.style.left=POS[i].l+"%"; seat.style.top=POS[i].t+"%";
+    let holeHtml="";
+    if(i===YOU){ holeHtml=p.hole.map(c=>cardHtml(c,"sm")).join(""); }
+    else if(revealAll && inHand(p)) holeHtml=p.hole.map(c=>cardHtml(c,"sm")).join("");
+    else if(!p.folded) holeHtml=`<div class="card back sm"></div><div class="card back sm"></div>`;
+    let tags=""; if(p.folded)tags=`<span class="tag fold">FOLD</span>`; else if(p.allIn)tags=`<span class="tag allin">ALL-IN</span>`; else if(p.lastAction)tags=`<span class="tag act">${escapeHtml(p.lastAction)}</span>`;
+    let badges=""; if(i===buttonSeat)badges+=`<span class="badge D">D</span>`; if(i===sbSeat)badges+=`<span class="badge SB">SB</span>`; if(i===bbSeat)badges+=`<span class="badge BB">BB</span>`;
+    seat.innerHTML=`${badges}<div class="nm ${i===YOU?"you-lbl":""}">${escapeHtml(p.name)}${i===YOU?" (あなた)":""}</div>
+      <div class="holecards">${holeHtml}</div><div class="ch">${p.chips}</div><div>${tags}</div>`;
+    wrap.appendChild(seat);
+    if(p.bet>0){ const bc=document.createElement("div"); bc.className="betchip"; bc.style.left=BETPOS[i].l+"%"; bc.style.top=BETPOS[i].t+"%"; bc.style.transform="translate(-50%,-50%)"; bc.textContent=p.bet; wrap.appendChild(bc); }
+  });
+}
+
+/* ===== init ===== */
+refreshLobby();
+if("serviceWorker" in navigator){ window.addEventListener("load",()=>navigator.serviceWorker.register("service-worker.js").catch(()=>{})); }
+})();
+</script>
+</body>
+</html>
