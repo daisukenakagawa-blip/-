@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b3d2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ポーカー">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>ビデオポーカー</title>
+<style>
+  :root{
+    --green:#0b3d2e;
+    --green2:#0f5238;
+    --gold:#f5c542;
+    --gold2:#d4a017;
+    --red:#e2433b;
+    --felt:#15724e;
+    --card:#fdfdfb;
+    --shadow:rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Segoe UI",Roboto,sans-serif;
+    background:radial-gradient(circle at 50% 0%, var(--green2), var(--green) 70%);
+    color:#fff;
+    min-height:100dvh;
+    display:flex;flex-direction:column;align-items:center;
+    padding:env(safe-area-inset-top) 10px env(safe-area-inset-bottom);
+    user-select:none;-webkit-user-select:none;
+    overflow-x:hidden;
+  }
+  header{
+    width:100%;max-width:480px;text-align:center;padding:8px 0 4px;
+  }
+  h1{
+    margin:0;font-size:clamp(20px,6vw,28px);letter-spacing:.04em;
+    color:var(--gold);text-shadow:0 2px 0 #00000055;
+    font-weight:800;
+  }
+  .sub{font-size:11px;color:#cfe9dd;letter-spacing:.3em;margin-top:2px;text-transform:uppercase;}
+
+  /* payout table */
+  .paytable{
+    width:100%;max-width:480px;
+    background:linear-gradient(180deg,#0a2c21,#0a2419);
+    border:1px solid #2c6b52;border-radius:12px;
+    margin:8px 0;padding:6px 8px;font-size:clamp(10px,3vw,13px);
+    box-shadow:inset 0 0 0 1px #ffffff10;
+  }
+  .paytable table{width:100%;border-collapse:collapse;}
+  .paytable td{padding:2px 4px;}
+  .paytable td:first-child{color:#dff3ea;}
+  .paytable td:last-child{text-align:right;color:var(--gold);font-weight:700;font-variant-numeric:tabular-nums;}
+  .paytable tr.active td{background:#1d6b4d;border-radius:6px;}
+  .paytable tr.active td:first-child{color:#fff;}
+
+  /* status */
+  .status{
+    width:100%;max-width:480px;display:flex;justify-content:space-between;gap:8px;margin:4px 0;
+  }
+  .chip{
+    flex:1;background:#0a2419;border:1px solid #2c6b52;border-radius:10px;
+    padding:6px 8px;text-align:center;
+  }
+  .chip .lbl{font-size:10px;color:#9fc7b6;letter-spacing:.15em;}
+  .chip .val{font-size:clamp(16px,5vw,22px);font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;}
+
+  /* message */
+  .msg{
+    width:100%;max-width:480px;text-align:center;min-height:30px;
+    font-size:clamp(15px,4.5vw,20px);font-weight:800;
+    margin:4px 0;color:var(--gold);
+    text-shadow:0 1px 2px #000;transition:.2s;
+  }
+  .msg.win{animation:pop .4s ease;}
+  @keyframes pop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+
+  /* cards */
+  .hand{
+    width:100%;max-width:480px;display:flex;gap:2.2vw;justify-content:center;
+    margin:6px 0;
+  }
+  .card-slot{
+    flex:1;max-width:88px;display:flex;flex-direction:column;align-items:center;gap:6px;
+  }
+  .card{
+    width:100%;aspect-ratio:5/7;border-radius:9px;position:relative;cursor:pointer;
+    transition:transform .25s ease, box-shadow .2s;
+    transform-style:preserve-3d;
+  }
+  .card-inner{
+    position:absolute;inset:0;border-radius:9px;
+    transition:transform .35s;transform-style:preserve-3d;
+  }
+  .card.flip .card-inner{transform:rotateY(180deg);}
+  .face,.back{
+    position:absolute;inset:0;border-radius:9px;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 3px 6px var(--shadow);
+  }
+  .face{
+    background:var(--card);color:#111;flex-direction:column;
+    transform:rotateY(180deg);
+    padding:4px;
+  }
+  .back{
+    background:
+      repeating-linear-gradient(45deg,#1d5fa8 0 8px,#1a539a 8px 16px);
+    border:3px solid #fff;
+  }
+  .back::after{
+    content:"♠";font-size:28px;color:#ffffff55;
+  }
+  .corner{position:absolute;top:4px;left:5px;font-size:clamp(13px,4.2vw,18px);font-weight:800;line-height:.9;text-align:center;}
+  .corner.br{top:auto;left:auto;bottom:4px;right:5px;transform:rotate(180deg);}
+  .pip{font-size:clamp(26px,9vw,40px);font-weight:700;}
+  .card.red{color:var(--red);}
+  .corner small{display:block;font-size:.7em;}
+
+  .holdbtn{
+    font-size:11px;font-weight:800;letter-spacing:.1em;
+    padding:3px 0;width:100%;border-radius:6px;text-align:center;
+    background:#0a2419;color:#6f9685;border:1px solid #2c6b52;
+    transition:.15s;
+  }
+  .card-slot.held .holdbtn{background:var(--gold);color:#3a2a00;border-color:var(--gold);}
+  .card-slot.held .card{transform:translateY(-8px);box-shadow:0 0 0 3px var(--gold), 0 8px 14px var(--shadow);}
+  .card-slot.held .card{border-radius:9px;}
+
+  /* controls */
+  .controls{
+    width:100%;max-width:480px;display:flex;gap:8px;margin:10px 0 4px;
+  }
+  button.action{
+    flex:1;border:none;border-radius:12px;padding:14px 8px;
+    font-size:clamp(15px,4.5vw,19px);font-weight:800;
+    color:#1c1200;cursor:pointer;
+    background:linear-gradient(180deg,var(--gold),var(--gold2));
+    box-shadow:0 4px 0 #00000040, inset 0 1px 0 #ffffff80;
+    transition:transform .05s, filter .15s;
+    letter-spacing:.05em;
+  }
+  button.action:active{transform:translateY(2px);box-shadow:0 2px 0 #00000040;}
+  button.action.secondary{
+    background:linear-gradient(180deg,#3a7a5e,#2a5d46);color:#fff;
+  }
+  button.action:disabled{filter:grayscale(.7) brightness(.7);cursor:default;}
+
+  .bet-row{
+    width:100%;max-width:480px;display:flex;gap:8px;align-items:center;margin-top:6px;
+  }
+  .bet-row .lbl{font-size:12px;color:#9fc7b6;}
+  .bet-btn{
+    background:#0a2419;border:1px solid #2c6b52;color:#fff;border-radius:8px;
+    padding:8px 14px;font-weight:800;font-size:16px;cursor:pointer;
+  }
+  .bet-btn:active{background:#1d6b4d;}
+  .bet-amount{flex:1;text-align:center;font-weight:800;font-size:18px;color:var(--gold);}
+
+  .hint{font-size:11px;color:#8fb6a5;text-align:center;margin:8px 0 14px;max-width:480px;}
+  a.reset{color:#8fb6a5;font-size:11px;text-decoration:underline;}
+
+  .toast{
+    position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(60px);
+    background:#000a;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;
+    opacity:0;transition:.3s;pointer-events:none;z-index:50;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<header>
+  <h1>♠ ビデオポーカー ♥</h1>
+  <div class="sub">Jacks or Better</div>
+</header>
+
+<div class="paytable" id="paytable"></div>
+
+<div class="status">
+  <div class="chip"><div class="lbl">CREDITS</div><div class="val" id="credits">200</div></div>
+  <div class="chip"><div class="lbl">BET</div><div class="val" id="bet">5</div></div>
+  <div class="chip"><div class="lbl">WIN</div><div class="val" id="win">0</div></div>
+</div>
+
+<div class="msg" id="msg">ベットして DEAL を押そう</div>
+
+<div class="hand" id="hand"></div>
+
+<div class="bet-row" id="betRow">
+  <span class="lbl">ベット</span>
+  <button class="bet-btn" id="betDown">－</button>
+  <div class="bet-amount" id="betAmount">5</div>
+  <button class="bet-btn" id="betUp">＋</button>
+  <button class="bet-btn" id="betMax">MAX</button>
+</div>
+
+<div class="controls">
+  <button class="action" id="mainBtn">DEAL</button>
+</div>
+
+<div class="hint">
+  カードをタップして <b>HOLD</b>（キープ）→ DRAW で残りを引き直し。<br>
+  ジャック以上のペアで配当成立。<a class="reset" id="resetLink">リセット</a>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- payouts (multiplier of bet) ----
+  const PAYOUTS = [
+    {key:"royal",   name:"ロイヤルフラッシュ", mult:250},
+    {key:"sflush",  name:"ストレートフラッシュ", mult:50},
+    {key:"quads",   name:"フォーカード",       mult:25},
+    {key:"full",    name:"フルハウス",         mult:9},
+    {key:"flush",   name:"フラッシュ",         mult:6},
+    {key:"straight",name:"ストレート",         mult:4},
+    {key:"trips",   name:"スリーカード",       mult:3},
+    {key:"twopair", name:"ツーペア",           mult:2},
+    {key:"jacks",   name:"ジャック以上のペア", mult:1},
+  ];
+
+  const SUITS = ["♠","♥","♦","♣"];
+  const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+  const RANK_VAL = {}; RANKS.forEach((r,i)=>RANK_VAL[r]=i+2); // 2..14
+
+  // ---- state ----
+  const SAVE_KEY = "videopoker_save_v1";
+  let state = load() || { credits:200, bet:5 };
+  let deck=[], hand=[], held=[false,false,false,false,false];
+  let phase = "bet"; // bet -> draw -> bet
+  const MIN_BET=1, MAX_BET=25, BET_STEP=1;
+
+  // ---- elements ----
+  const $ = id=>document.getElementById(id);
+  const elHand=$("hand"), elMsg=$("msg"), elCredits=$("credits"),
+        elBet=$("bet"), elWin=$("win"), elBetAmt=$("betAmount"),
+        elMain=$("mainBtn"), elPaytable=$("paytable"), elToast=$("toast"),
+        elBetRow=$("betRow");
+
+  function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify({credits:state.credits, bet:state.bet})); }catch(e){} }
+  function load(){ try{ return JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){ return null; } }
+
+  function toast(t){
+    elToast.textContent=t; elToast.classList.add("show");
+    clearTimeout(toast._t); toast._t=setTimeout(()=>elToast.classList.remove("show"),1600);
+  }
+
+  function buildPaytable(highlightKey){
+    let rows = PAYOUTS.map(p=>{
+      const active = p.key===highlightKey ? " class='active'":"";
+      return `<tr${active}><td>${p.name}</td><td>×${p.mult}</td></tr>`;
+    }).join("");
+    elPaytable.innerHTML = `<table>${rows}</table>`;
+  }
+
+  function newDeck(){
+    const d=[];
+    for(const s of SUITS) for(const r of RANKS) d.push({r,s});
+    for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; }
+    return d;
+  }
+
+  function renderHand(faceDown){
+    elHand.innerHTML="";
+    for(let i=0;i<5;i++){
+      const c = hand[i];
+      const isRed = c && (c.s==="♥"||c.s==="♦");
+      const slot=document.createElement("div");
+      slot.className="card-slot"+(held[i]?" held":"");
+      const rankDisp = c ? c.r : "";
+      slot.innerHTML = `
+        <div class="card ${isRed?"red":""} ${c?"flip":""}" data-i="${i}">
+          <div class="card-inner">
+            <div class="back"></div>
+            <div class="face">
+              <div class="corner">${rankDisp}<small>${c?c.s:""}</small></div>
+              <div class="pip">${c?c.s:""}</div>
+              <div class="corner br">${rankDisp}<small>${c?c.s:""}</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="holdbtn">${held[i]?"HOLD":"&nbsp;"}</div>`;
+      elHand.appendChild(slot);
+    }
+    // attach taps
+    elHand.querySelectorAll(".card").forEach(card=>{
+      card.addEventListener("click",()=>toggleHold(+card.dataset.i));
+    });
+  }
+
+  function toggleHold(i){
+    if(phase!=="draw") return;
+    held[i]=!held[i];
+    const slot=elHand.children[i];
+    slot.classList.toggle("held",held[i]);
+    slot.querySelector(".holdbtn").innerHTML = held[i]?"HOLD":"&nbsp;";
+  }
+
+  function refreshStatus(){
+    elCredits.textContent=state.credits;
+    elBet.textContent=state.bet;
+    elBetAmt.textContent=state.bet;
+  }
+
+  // ---- hand evaluation ----
+  function evaluate(cards){
+    const vals=cards.map(c=>RANK_VAL[c.r]).sort((a,b)=>a-b);
+    const suits=cards.map(c=>c.s);
+    const counts={}; vals.forEach(v=>counts[v]=(counts[v]||0)+1);
+    const countVals=Object.values(counts).sort((a,b)=>b-a);
+    const isFlush=suits.every(s=>s===suits[0]);
+    // straight (incl wheel A-2-3-4-5)
+    let isStraight=false;
+    const uniq=[...new Set(vals)];
+    if(uniq.length===5){
+      if(vals[4]-vals[0]===4) isStraight=true;
+      if(JSON.stringify(uniq)===JSON.stringify([2,3,4,5,14])) isStraight=true; // wheel
+    }
+    const isRoyal = isFlush && isStraight && vals[0]===10 && vals[4]===14;
+
+    if(isRoyal) return "royal";
+    if(isFlush && isStraight) return "sflush";
+    if(countVals[0]===4) return "quads";
+    if(countVals[0]===3 && countVals[1]===2) return "full";
+    if(isFlush) return "flush";
+    if(isStraight) return "straight";
+    if(countVals[0]===3) return "trips";
+    if(countVals[0]===2 && countVals[1]===2) return "twopair";
+    if(countVals[0]===2){
+      // pair must be jacks or better
+      const pairVal=+Object.keys(counts).find(k=>counts[k]===2);
+      if(pairVal>=11) return "jacks";
+    }
+    return null;
+  }
+
+  // ---- game flow ----
+  function deal(){
+    if(state.credits < state.bet){ toast("クレジット不足です"); return; }
+    state.credits -= state.bet;
+    elWin.textContent="0";
+    deck=newDeck();
+    hand=[]; held=[false,false,false,false,false];
+    buildPaytable(null);
+    renderHand();
+    refreshStatus();
+    save();
+    // deal 5 with a tiny flip stagger
+    for(let i=0;i<5;i++){
+      setTimeout(()=>{
+        hand[i]=deck.pop();
+        const slot=elHand.children[i];
+        const card=slot.querySelector(".card");
+        const c=hand[i];
+        const isRed=(c.s==="♥"||c.s==="♦");
+        card.classList.toggle("red",isRed);
+        slot.querySelector(".face").innerHTML=`
+          <div class="corner">${c.r}<small>${c.s}</small></div>
+          <div class="pip">${c.s}</div>
+          <div class="corner br">${c.r}<small>${c.s}</small></div>`;
+        card.classList.add("flip");
+      }, 120*i);
+    }
+    setTimeout(()=>{
+      phase="draw";
+      elMain.textContent="DRAW";
+      elMsg.textContent="HOLD するカードを選んで DRAW";
+      elMsg.classList.remove("win");
+      elBetRow.style.visibility="hidden";
+    }, 120*5+150);
+  }
+
+  function draw(){
+    // replace non-held
+    for(let i=0;i<5;i++){
+      if(!held[i]){
+        hand[i]=deck.pop();
+      }
+    }
+    // animate replacements
+    for(let i=0;i<5;i++){
+      if(held[i]) continue;
+      const slot=elHand.children[i];
+      const card=slot.querySelector(".card");
+      card.classList.remove("flip");
+      setTimeout(()=>{
+        const c=hand[i];
+        const isRed=(c.s==="♥"||c.s==="♦");
+        card.classList.toggle("red",isRed);
+        slot.querySelector(".face").innerHTML=`
+          <div class="corner">${c.r}<small>${c.s}</small></div>
+          <div class="pip">${c.s}</div>
+          <div class="corner br">${c.r}<small>${c.s}</small></div>`;
+        card.classList.add("flip");
+      },180);
+    }
+    setTimeout(settle, 450);
+  }
+
+  function settle(){
+    const result=evaluate(hand);
+    let payout=0, name="";
+    if(result){
+      const p=PAYOUTS.find(x=>x.key===result);
+      payout=p.mult*state.bet; name=p.name;
+      state.credits+=payout;
+      buildPaytable(result);
+    }
+    refreshStatus();
+    save();
+    if(payout>0){
+      elWin.textContent=payout;
+      elMsg.textContent=`${name}！ +${payout}`;
+      elMsg.classList.add("win");
+    }else{
+      elMsg.textContent="残念！ もう一度";
+      elMsg.classList.remove("win");
+    }
+    phase="bet";
+    elMain.textContent="DEAL";
+    elBetRow.style.visibility="visible";
+    if(state.credits<=0){
+      setTimeout(()=>{ toast("クレジットが0に。100追加します"); state.credits=100; refreshStatus(); save(); },800);
+    }
+  }
+
+  // ---- bet controls ----
+  function changeBet(delta){
+    if(phase!=="bet") return;
+    state.bet=Math.max(MIN_BET, Math.min(MAX_BET, state.bet+delta));
+    refreshStatus(); save();
+  }
+  $("betUp").addEventListener("click",()=>changeBet(BET_STEP));
+  $("betDown").addEventListener("click",()=>changeBet(-BET_STEP));
+  $("betMax").addEventListener("click",()=>{ if(phase==="bet"){ state.bet=Math.min(MAX_BET, Math.max(MIN_BET, Math.min(state.credits,MAX_BET))); refreshStatus(); save(); }});
+
+  elMain.addEventListener("click",()=>{
+    if(phase==="bet") deal();
+    else if(phase==="draw") draw();
+  });
+
+  $("resetLink").addEventListener("click",(e)=>{
+    e.preventDefault();
+    if(confirm("クレジットを200にリセットしますか？")){
+      state={credits:200,bet:5}; save(); refreshStatus();
+      hand=[]; held=[false,false,false,false,false]; phase="bet";
+      elMain.textContent="DEAL"; elBetRow.style.visibility="visible";
+      elMsg.textContent="ベットして DEAL を押そう"; elMsg.classList.remove("win");
+      buildPaytable(null); renderHand();
+    }
+  });
+
+  // ---- init ----
+  buildPaytable(null);
+  renderHand();
+  refreshStatus();
+
+  // register service worker for PWA / offline
+  if("serviceWorker" in navigator){
+    window.addEventListener("load",()=>navigator.serviceWorker.register("service-worker.js").catch(()=>{}));
+  }
+})();
+</script>
+</body>
+</html>
