@@ -2871,6 +2871,18 @@ function computeInjection(srAll, store, targetDate, opts){
   if(eventDay){ const tnames=autoEv.map(e=>e.eventType||e.name||eventDesc(e));
     for(const es of evStats){ if(tnames.some(tn=>es.name===tn)){ evHr=es.hiRate; break; } }
     if(evHr==null&&evStats.length) evHr=evStats[0].hiRate; }
+  // ★ イベント日の投入スタイル：過去の同イベントで「据え置き寄り」か「上げ寄り」かを学習
+  let evKeepRatio=null, evHighTotal=0, evStyle="-";
+  if(eventDay){
+    const dts=[...new Set(sr.map(r=>r.date))].sort();
+    const bdn={}; sr.forEach(r=>{(bdn[r.date]=bdn[r.date]||{})[r.machine_no]=r;});
+    const evDates=dts.filter(d=>autoEv.some(e=>eventMatches(e,d,store)));   // 過去の同イベント日
+    let carry=0;
+    evDates.forEach(d=>{ const idx=dts.indexOf(d); if(idx<1)return; const prev=bdn[dts[idx-1]]||{}, curD=bdn[d]||{};
+      for(const no in curD){ if(CU.isHi(curD[no])){ evHighTotal++; if(prev[no]&&CU.isHi(prev[no]))carry++; } } });
+    if(evHighTotal>=3){ evKeepRatio=carry/evHighTotal;
+      evStyle = evKeepRatio>=0.55?"据え置き寄り" : evKeepRatio<=0.45?"上げ寄り" : "両方"; }
+  }
   const allNos=[...new Set(sr.map(r=>r.machine_no))].sort((a,b)=>a-b);
   const rp=(rate,max)=>rate==null?0:Math.min(max,Math.max(0,max*rate/0.40));   // 投入率40%で満点
   const out=[];
@@ -2906,6 +2918,18 @@ function computeInjection(srAll, store, targetDate, opts){
     if(eventDay&&evHr!=null){ const p=evHr>=0.70?20:evHr>=0.60?15:evHr>=0.50?10:evHr>=0.40?5:0;
       if(p){ add("⑤イベント相性",p); reasons.push("イベント相性"+Math.round(evHr*100)+"%(+"+p+")"); }
       if(evHr<0.25){ add("イベント相性悪い",-15); cons.push("対象イベントで過去高設定率"+Math.round(evHr*100)+"%と低い(-15)"); } }
+    // ⑰ イベント投入スタイル（イベント日のみ・据え置き寄り/上げ寄りを特に重視。最大+25/逆行-12）
+    if(eventDay && evKeepRatio!=null){
+      if(evStyle==="据え置き寄り"){
+        if(prevHi){ const p=Math.min(25,Math.round((evKeepRatio-0.5)*60)); add("⑰イベ据え置き傾向",p); reasons.push("このイベントは過去据え置き寄り("+Math.round(evKeepRatio*100)+"%)×前日高設定(+"+p+")"); }
+        else { add("イベ据え置き不一致",-12); cons.push("このイベントは据え置き寄り("+Math.round(evKeepRatio*100)+"%)だが前日通常で据え置き対象外(-12)"); }
+      } else if(evStyle==="上げ寄り"){
+        if(streak>=1){ const p=Math.min(25,Math.round((0.5-evKeepRatio)*60)+Math.min(10,streak*3)); add("⑰イベ上げ傾向",p); reasons.push("このイベントは過去上げ寄り(据え置き"+Math.round(evKeepRatio*100)+"%)×不発"+streak+"日(+"+p+")"); }
+        else { add("イベ上げ不一致",-10); cons.push("このイベントは上げ寄りだが前日高設定で上げ対象外(-10)"); }
+      } else { // 両方
+        if(prevHi||streak>=1){ add("⑰イベント投入対象",6); reasons.push("イベント日の投入対象台(+6)"); }
+      }
+    }
     // ⑥ 台番号実績（店平均超で+15／極端に悪いと-15）
     if(mh){ const d=mh.hi-overall; if(d>0){ const p=Math.min(15,d/0.15*15); add("⑥台番号実績",p); if(p>=4)reasons.push("台番号実績が店平均より"+Math.round(d*100)+"pt高い(+"+p.toFixed(1)+")"); }
       else if(mh.n>=5&&mh.hi<overall*0.3){ add("台番号実績が極端に悪い",-15); cons.push("台番号"+mno+"の投入率"+Math.round(mh.hi*100)+"%と極端に悪い(-15)"); } }
@@ -2975,7 +2999,8 @@ function computeInjection(srAll, store, targetDate, opts){
   out.sort((a,b)=>b.score-a.score);
   out.forEach(o=>{ const s=o.score;
     o.mark = s>=95?"SS 本命":s>=85?"S 本命":s>=75?"A 対抗":s>=65?"B 狙い目":s>=55?"C 注意":s>=45?"D 低期待":"見送り"; });
-  return {targetDate,nextWd,eventDay,evLabel:autoEv.map(e=>e.name||eventDesc(e)).join("・"),days:CU.dates.length,types:CU.types,out};
+  return {targetDate,nextWd,eventDay,evLabel:autoEv.map(e=>e.name||eventDesc(e)).join("・"),days:CU.dates.length,types:CU.types,out,
+    evStyle,evKeepRatio,evHighTotal};
 }
 // 投入期待エンジンのバックテスト（未来不使用）
 function injectionBacktest(srAll, store, targetDate){
@@ -3110,6 +3135,19 @@ function renderForecastInner(){
   let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+R.nextWd+"曜)"+(R.eventDay?" 🎉"+R.evLabel:"")+
     " ／ 過去"+R.days+"日＋バックテスト"+bt.n+"日で学習　店タイプ："+R.types.map(x=>"【"+x+"】").join("")+"</p>"+
     "<div class='note' style='background:#fff7ed;border-color:#fb923c;font-size:13px'>過去のクセとバックテスト学習だけで「明日どこに設定が入りそうか」を予想。各台に<b>入る/入らない理由</b>を表示します。</div>";
+  // イベント日は据え置き/上げのクセを特に重視（バナー表示）
+  if(R.eventDay){
+    if(R.evHighTotal>=3){ const r=R.evKeepRatio;
+      const col=R.evStyle==="据え置き寄り"?"#1a7f37":R.evStyle==="上げ寄り"?"#b35900":"#555";
+      h+="<div class='note' style='background:#eef7ff;border-color:#9cc8ff'>🎉 <b>イベント日（"+R.evLabel+"）</b>："+
+        "過去の同イベントは <b style='color:"+col+"'>"+R.evStyle+"</b>（据え置き率"+Math.round(r*100)+"％・高設定"+R.evHighTotal+"台で集計）。"+
+        (R.evStyle==="据え置き寄り"?"前日高設定だった台の据え置きを最重視しています。":
+         R.evStyle==="上げ寄り"?"前日不発だった台の上げ（新規投入）を最重視しています。":"据え置き・上げ両方を見ます。")+
+        "<br><span class='muted'>※イベントなしの日とは投入傾向が異なるため、この日専用のクセで採点しています。</span></div>";
+    } else {
+      h+="<div class='note' style='background:#eef7ff;border-color:#9cc8ff;font-size:13px'>🎉 <b>イベント日（"+R.evLabel+"）</b>：過去の同イベントのデータが少なく据え置き/上げの傾向はまだ不明（データ蓄積で精度UP）。</div>";
+    }
+  }
   // 機種ごと（その機種の最高スコア順）
   const byMach={}; R.out.forEach(o=>{(byMach[o.mname]=byMach[o.mname]||[]).push(o);});
   const machNames=Object.keys(byMach).sort((a,b)=>Math.max(...byMach[b].map(o=>o.score))-Math.max(...byMach[a].map(o=>o.score)));
@@ -3124,7 +3162,8 @@ function renderForecastInner(){
       // 狙い方＋据え置きデータ
       let aimH="";
       if(o.aim&&o.aim.mode==="据え置き"){
-        const cd=o.aim.carry.map(r=>r.date.slice(5)+"：BIG"+r.big+" / バケ"+r.reg+" / 総回転"+(r.total||0).toLocaleString()+"G").join("<br>");
+        const cd=o.aim.carry.map(r=>{ const bp=r.big?Math.round(r.total/r.big):null, rpb=r.reg?Math.round(r.total/r.reg):null, cp=(r.big+r.reg)?Math.round(r.total/(r.big+r.reg)):null;
+          return r.date.slice(5)+"：BIG"+r.big+(bp?"(1/"+bp+")":"")+" / バケ"+r.reg+(rpb?"(1/"+rpb+")":"")+" / 合算"+(cp?"1/"+cp:"-")+" / 総回転"+(r.total||0).toLocaleString()+"G"; }).join("<br>");
         aimH="<b style='color:#1a7f37'>据え置き狙い</b>（据え置き"+o.aim.days+"日目）<br><span style='font-size:12px'>"+cd+"</span>";
       } else if(o.aim&&o.aim.mode==="上げ"){
         aimH="<b style='color:#b35900'>上げ狙い</b>（"+o.aim.days+"日不発後）";
