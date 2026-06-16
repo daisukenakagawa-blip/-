@@ -2794,7 +2794,8 @@ function renderAnswerDetailInner(){
     const klass = hi ? (score!=null&&score>=65?"🎯 的中":"❗取りこぼし") : (score!=null&&score<50?"✅ 正しく回避":(score!=null&&score>=65?"⚠ ハズレ":"－"));
     return {mno,mname:a.machine_name,tail:mno%10,score,mark:o?o.mark:"-",hi,klass,
       setting:est?est.setting:null,p4:est?est.high:null, reg:a.reg_prob,comb:a.combined,big:a.big,rb:a.reg,tot:a.total,
-      maReg:ma?ma.reg:null, why: hi?highReasons(a,hist,CU,evToday,isHi):[], predCons:o?o.cons.slice(0,3):[] };
+      maReg:ma?ma.reg:null, why: hi?highReasons(a,hist,CU,evToday,isHi):[],
+      predCons:o?o.cons.slice(0,3):[], predPros:o?((o.pros||o.reasons||[]).slice(0,4)):[] };
   });
   // 取りこぼし（低スコア高設定）を最優先に
   const rank={"❗取りこぼし":0,"🎯 的中":1,"⚠ ハズレ":2,"－":3,"✅ 正しく回避":4};
@@ -2802,21 +2803,32 @@ function renderAnswerDetailInner(){
   const miss=rows.filter(r=>r.klass==="❗取りこぼし"), totalHi=rows.filter(r=>r.hi).length;
 
   let h="<p class='muted'>"+store+" ／ 答え合わせ日="+D.slice(5)+(evToday?"（イベント日）":"")+" ／ 前日まで"+CU.dates.length+"日で予想 ／ <b>採点："+engLabel+"</b></p>";
+  const whiff=rows.filter(r=>r.klass==="⚠ ハズレ");
   h+="<div class='note' style='background:#fff4f4;border-color:#f3a'>"+
-    "<b>❗取りこぼし（低スコアだが高設定）："+miss.length+"台</b> ／ 実際の高設定 "+totalHi+"台中。<br>"+
-    "<span class='muted'>↓この台たちが「なぜ予想で低かったか」と「なぜ実際に高設定だったか」を並べています。</span></div>";
+    "<b>❗取りこぼし（低スコアだが高設定）："+miss.length+"台</b> ／ <b>⚠ハズレ（高スコアだが外れ）："+whiff.length+"台</b> ／ 実際の高設定 "+totalHi+"台中。<br>"+
+    "<span class='muted'>↓各台に「なぜそのスコアだったか（根拠）」と「実際の結果の理由（高設定だった理由／高スコアで外した理由）」を並べています。</span></div>";
 
   // メインテーブル
   h+="<div class='scroll'><table style='font-size:12px'><tr><th>分類</th><th>台</th><th>機種</th><th>"+engLabel.replace("スコア","<br>スコア")+"</th><th>判定</th>"+
-    "<th>当日<br>設定</th><th>当日REG<br>(機種平均)</th><th>当日<br>合算</th><th>予想が低かった理由</th><th>実際に高設定だった理由</th></tr>";
+    "<th>当日<br>設定</th><th>当日REG<br>(機種平均)</th><th>当日<br>合算</th><th>予想の根拠</th><th>結果の理由</th></tr>";
   rows.forEach(r=>{ const bg = r.klass==="❗取りこぼし"?"#ffe0e0": r.klass==="🎯 的中"?"#d8f5c0": r.klass==="⚠ ハズレ"?"#fff0d0": r.klass==="✅ 正しく回避"?"#eef7ff":"#fff";
+    const highScore = r.score!=null && r.score>=65;
+    // 予想の根拠：高スコア台は加点根拠、低スコア台は減点理由
+    const basis = highScore
+      ? "<span style='color:#1a7f37'>高スコアの根拠：<br>"+(r.predPros.length?r.predPros.join("<br>"):"—")+"</span>"
+      : "<span style='color:#b35900'>低スコアの理由：<br>"+(r.predCons.length?r.predCons.join("<br>"):"—")+"</span>";
+    // 結果の理由：実際高設定→理由、ハズレ(高スコアだが非高設定)→外した理由、それ以外→—
+    let result;
+    if(r.hi){ result="<span style='color:#1a7f37'>高設定だった理由：<br>"+(r.why.length?r.why.join("<br>"):"—")+"</span>"; }
+    else if(highScore){ result="<span style='color:#c00'>⚠ 高スコアで外した理由：<br>・店が設定を入れず（当日設定"+(r.setting||"?")+"・P4+"+pc(r.p4)+"）<br>・期待した投入クセが不発（上の根拠が空振り）</span>"; }
+    else { result="—"; }
     h+="<tr style='background:"+bg+"'><td style='white-space:nowrap'>"+r.klass+"</td><td>"+r.mno+"</td><td>"+r.mname+"</td>"+
       "<td><b>"+(r.score!=null?r.score.toFixed(1):"-")+"</b></td><td>"+r.mark+"</td>"+
       "<td>設定"+(r.setting||"-")+"<br><span class='muted'>P4+"+pc(r.p4)+"</span></td>"+
       "<td>1/"+(r.reg?Math.round(r.reg):"-")+(r.maReg?"<br><span class='muted'>機種1/"+Math.round(r.maReg)+"</span>":"")+"</td>"+
       "<td>1/"+(r.comb?Math.round(r.comb):"-")+"<br><span class='muted'>"+(r.tot?Math.round(r.tot)+"G":"")+"</span></td>"+
-      "<td style='text-align:left;color:#b35900'>"+(r.predCons.length?r.predCons.join("<br>"):"—")+"</td>"+
-      "<td style='text-align:left;color:#1a7f37'>"+(r.why.length?r.why.join("<br>"):"—")+"</td></tr>";
+      "<td style='text-align:left;font-size:11px'>"+basis+"</td>"+
+      "<td style='text-align:left;font-size:11px'>"+result+"</td></tr>";
   });
   h+="</table></div>";
 
@@ -2824,11 +2836,12 @@ function renderAnswerDetailInner(){
   const aggKey=store+"|"+srAll.length+"|"+D+"|"+btDays()+"|"+engine;
   if(!_adCache||_adCache.key!==aggKey){
     const sigCount={}; let missN=0, hiN=0;
+    const whiffSig={}; let whiffN=0;   // 高スコア(65+)なのに外した台の共通点
     const di=datesAll.indexOf(D); const start=Math.max(1,di-btDays());   // バックテスト期間（設定可）
     for(let i=start;i<=di;i++){ const DD=datesAll[i]; const srr=srAll.filter(r=>r.date<DD); if(srr.length<2)continue;
       const RR=predict(DD); if(!RR)continue; const sB={}; RR.out.forEach(o=>sB[o.mno]=o);
       const bh={}; srr.forEach(r=>{(bh[r.machine_no]=bh[r.machine_no]||[]).push(r);}); for(const k in bh)bh[k].sort((a,b)=>a.date<b.date?-1:1);
-      const ev=isEventDate(DD,store);
+      const ev=isEventDate(DD,store); const actDD={}; srAll.filter(r=>r.date===DD).forEach(r=>actDD[r.machine_no]=r);
       srAll.filter(r=>r.date===DD).forEach(a=>{ if(!isHi(a))return; hiN++; const o=sB[a.machine_no]; if(!o||o.score>=65)return; missN++;
         const hist=bh[a.machine_no]||[]; const prev=hist.length?hist[hist.length-1]:null; const add=k=>sigCount[k]=(sigCount[k]||0)+1;
         if(ev)add("イベント日");
@@ -2838,8 +2851,12 @@ function renderAnswerDetailInner(){
         if(prev&&prev.total<5000)add("前日が低回転で実態不明だった");
         if(!ev&&!(prev&&isHi(prev))&&hist.length>=1){ let st=0;for(let j=hist.length-1;j>=0;j--){if(!isHi(hist[j]))st++;else break;} if(st>=Math.min(hist.length,3))add("完全に前兆なし（読むのが困難）"); }
       });
+      // 高スコア空振り：スコア65+だが実際は高設定でなかった台の共通点（頼った加点要因）
+      RR.out.forEach(o=>{ if(o.score<65)return; const a=actDD[o.mno]; if(!a||isHi(a))return; whiffN++;
+        const ks=Object.keys(o.contrib||{}).filter(k=>o.contrib[k]>0).sort((x,y)=>o.contrib[y]-o.contrib[x]).slice(0,3);
+        ks.forEach(k=>whiffSig[k]=(whiffSig[k]||0)+1); });
     }
-    _adCache={key:aggKey, sigCount, missN, hiN};
+    _adCache={key:aggKey, sigCount, missN, hiN, whiffSig, whiffN};
   }
   const agg=_adCache;
   h+="<details class='note' open style='margin-top:8px'><summary><b>🧭 取りこぼしの共通点（"+engLabel+"・直近最大"+btDays()+"日の集計）</b></summary>"+
@@ -2852,6 +2869,17 @@ function renderAnswerDetailInner(){
     const newInj=(agg.sigCount["完全に前兆なし（読むのが困難）"]||0);
     if(agg.missN&&newInj/agg.missN>=0.4) h+="<p class='muted' style='font-size:12px'>※取りこぼしの多くは前兆なしの当日新規投入です。台データだけでは予測困難で、イベント情報・店長告知の活用やデータ蓄積が有効です。</p>";
   } else h+="<p class='muted'>集計対象の取りこぼしがありません（データが少ないか、的中が多い）。</p>";
+  h+="</details>";
+  // 高スコア空振りの共通点（高スコアで外した理由 ＝ 頼りすぎた加点要因）
+  h+="<details class='note' open style='margin-top:8px'><summary><b>⚠ 高スコアだったが外れた理由（"+engLabel+"・直近最大"+btDays()+"日の集計）</b></summary>"+
+    "<p class='muted' style='font-size:12px'>スコア65点以上で狙い目だったのに、実際は高設定でなかった台 <b>"+(agg.whiffN||0)+"件</b>の共通点です。"+
+    "これらの加点要因に頼って外したケースが多い＝その店ではアテにならない手がかりなので、投入期待エンジンが自動的に信頼度を下げています。</p>";
+  const wsigs=Object.entries(agg.whiffSig||{}).sort((a,b)=>b[1]-a[1]);
+  if(wsigs.length){ h+="<div class='scroll'><table style='font-size:12px'><tr><th>外した台が頼っていた加点要因</th><th>件数</th><th>空振り中の割合</th></tr>";
+    wsigs.forEach(([k,v])=>{ h+="<tr><td style='text-align:left'>"+k+"</td><td>"+v+"件</td><td>"+(agg.whiffN?Math.round(v/agg.whiffN*100):0)+"%</td></tr>"; });
+    h+="</table></div>";
+    h+="<p class='muted' style='font-size:12px'>※高スコアで外す主因は「店が設定を入れなかった日に、期待した投入クセが不発だった」ことです。上位の要因ほど過信は禁物で、イベント信頼度・並び・据え置きの実績と合わせて判断してください。</p>";
+  } else h+="<p class='muted'>集計対象の高スコア空振りがありません（高スコア台がよく的中している）。</p>";
   h+="</details>";
   el.innerHTML=h;
 }
