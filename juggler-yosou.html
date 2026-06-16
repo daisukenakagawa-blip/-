@@ -154,7 +154,8 @@
       <summary>📋 使用している設定値（タップで表示）／推定の仕組み</summary>
       <div id="specTable"></div>
       <p class="hint" style="margin-top:10px;">
-        値はメーカー公表値ベース（ぶどう確率は公表値ベースの目安）。設定推定＝観測したBIG/REG（＋任意でぶどう）回数の
+        BIG・REG確率・機械割はメーカー公表値ベース、<strong>ぶどう確率は北電子が非公表のため解析・実戦ベースの推定値</strong>（出典により小数がわずかにブレます）。
+        ネオアイムジャグラーEXはアイムジャグラーEXと同一スペックです。設定推定＝観測したBIG/REG（＋任意でぶどう）回数の
         起こりやすさ（ポアソン尤度）を設定1〜6で比較し、ベイズで各設定の確率を算出。展開予想＝推定設定の出玉性能で
         モンテカルロ・シミュレーション（2000回）を行い、中央値と80%レンジを描画します。判断は「グラフの形」ではなく
         期待機械割（＝1ゲームあたりの期待値）で行います。
@@ -179,23 +180,89 @@ const MACHINES = {
   im: {
     name: 'アイムジャグラーEX（6号機）',
     settings: [
-      {set:1, big:273.1, reg:439.8, grape:5.99, payout:97.0},
-      {set:2, big:269.7, reg:399.6, grape:5.97, payout:98.0},
-      {set:3, big:269.7, reg:331.0, grape:5.93, payout:99.5},
-      {set:4, big:259.0, reg:315.1, grape:5.93, payout:101.1},
-      {set:5, big:259.0, reg:255.0, grape:5.88, payout:103.3},
+      {set:1, big:273.1, reg:439.8, grape:6.02, payout:97.0},
+      {set:2, big:269.7, reg:399.6, grape:6.02, payout:98.0},
+      {set:3, big:269.7, reg:331.0, grape:6.02, payout:99.5},
+      {set:4, big:259.0, reg:315.1, grape:6.02, payout:101.1},
+      {set:5, big:259.0, reg:255.0, grape:6.02, payout:103.3},
+      {set:6, big:255.0, reg:255.0, grape:5.78, payout:105.5},
+    ]
+  },
+  neoim: {
+    name: 'ネオアイムジャグラーEX（6号機・アイムEXと同一スペック）',
+    settings: [
+      {set:1, big:273.1, reg:439.8, grape:6.02, payout:97.0},
+      {set:2, big:269.7, reg:399.6, grape:6.02, payout:98.0},
+      {set:3, big:269.7, reg:331.0, grape:6.02, payout:99.5},
+      {set:4, big:259.0, reg:315.1, grape:6.02, payout:101.1},
+      {set:5, big:259.0, reg:255.0, grape:6.02, payout:103.3},
       {set:6, big:255.0, reg:255.0, grape:5.78, payout:105.5},
     ]
   },
   my: {
-    name: 'マイジャグラーV（マイジャグ5）',
+    name: 'マイジャグラーV（マイジャグ5・6号機）',
     settings: [
-      {set:1, big:273.1, reg:439.8, grape:6.02, payout:97.0},
-      {set:2, big:270.8, reg:385.5, grape:6.02, payout:98.7},
-      {set:3, big:266.4, reg:336.1, grape:5.93, payout:99.9},
-      {set:4, big:254.0, reg:290.0, grape:5.85, payout:102.8},
-      {set:5, big:240.1, reg:268.6, grape:5.78, payout:105.3},
+      {set:1, big:273.1, reg:439.8, grape:5.90, payout:97.0},
+      {set:2, big:270.8, reg:385.5, grape:5.86, payout:98.7},
+      {set:3, big:266.4, reg:336.1, grape:5.84, payout:99.9},
+      {set:4, big:254.0, reg:290.0, grape:5.78, payout:102.8},
+      {set:5, big:240.1, reg:268.6, grape:5.76, payout:105.3},
       {set:6, big:229.1, reg:229.1, grape:5.66, payout:109.4},
+    ]
+  },
+  funky: {
+    name: 'ファンキージャグラー2（6号機）',
+    settings: [
+      {set:1, big:266.4, reg:439.8, grape:5.94, payout:97.0},
+      {set:2, big:259.0, reg:407.1, grape:5.92, payout:98.5},
+      {set:3, big:256.0, reg:366.1, grape:5.88, payout:99.8},
+      {set:4, big:249.2, reg:322.8, grape:5.83, payout:102.8},
+      {set:5, big:240.1, reg:299.3, grape:5.76, payout:104.3},
+      {set:6, big:219.9, reg:262.1, grape:5.67, payout:109.0},
+    ]
+  },
+  happy: {
+    name: 'ハッピージャグラーVIII（6号機）',
+    settings: [
+      {set:1, big:287.4, reg:409.6, grape:6.04, payout:96.1},
+      {set:2, big:282.5, reg:364.1, grape:6.02, payout:97.9},
+      {set:3, big:273.1, reg:341.3, grape:5.98, payout:99.9},
+      {set:4, big:264.3, reg:315.1, grape:5.93, payout:102.9},
+      {set:5, big:252.1, reg:287.4, grape:5.85, payout:105.8},
+      {set:6, big:240.9, reg:273.1, grape:5.79, payout:108.4},
+    ]
+  },
+  girls: {
+    name: 'ジャグラーガールズSS（6号機）',
+    settings: [
+      {set:1, big:273.1, reg:381.0, grape:5.98, payout:97.0},
+      {set:2, big:270.8, reg:350.5, grape:5.98, payout:97.9},
+      {set:3, big:260.1, reg:316.6, grape:5.98, payout:99.9},
+      {set:4, big:250.1, reg:281.3, grape:5.98, payout:102.1},
+      {set:5, big:243.6, reg:270.8, grape:5.88, payout:104.0},
+      {set:6, big:226.0, reg:252.1, grape:5.83, payout:107.5},
+    ]
+  },
+  mister: {
+    name: 'ミスタージャグラー（6号機）',
+    settings: [
+      {set:1, big:268.6, reg:374.5, grape:6.30, payout:97.0},
+      {set:2, big:267.5, reg:354.2, grape:6.20, payout:98.0},
+      {set:3, big:260.1, reg:331.0, grape:6.10, payout:99.8},
+      {set:4, big:249.2, reg:291.3, grape:6.00, payout:102.7},
+      {set:5, big:240.9, reg:257.0, grape:5.90, payout:105.5},
+      {set:6, big:237.4, reg:237.4, grape:5.75, payout:107.3},
+    ]
+  },
+  miracle: {
+    name: 'ウルトラミラクルジャグラー（6号機）',
+    settings: [
+      {set:1, big:267.5, reg:425.6, grape:5.93, payout:97.0},
+      {set:2, big:261.1, reg:402.1, grape:5.93, payout:98.9},
+      {set:3, big:256.0, reg:350.5, grape:5.93, payout:101.0},
+      {set:4, big:242.7, reg:322.8, grape:5.93, payout:102.1},
+      {set:5, big:233.2, reg:297.9, grape:5.87, payout:105.0},
+      {set:6, big:216.3, reg:277.7, grape:5.81, payout:108.1},
     ]
   }
 };
