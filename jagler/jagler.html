@@ -86,6 +86,7 @@
     <button data-t="ranknew">🆕 狙い台予想・新</button>
     <button data-t="inject">💉 投入期待</button>
     <button data-t="forecast">🔮 明日の投入予想</button>
+    <button data-t="inject3">🧠 投入予想3</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
     <button data-t="myplay">📝 実戦収支</button>
@@ -370,6 +371,20 @@
     </div>
     <button class="primary" onclick="render()">🔮 明日の投入を予想する</button>
     <div id="t-forecast"></div>
+  </div>
+
+  <!-- 投入予想3（命中率最大化・重み再設計） -->
+  <div class="panel" id="p-inject3">
+    <h2>🧠 投入予想3（命中率最大化・重み再設計）</h2>
+    <p class="muted">取りこぼし要因（前日据え置き・前日低回転）と空振り要因（不発後投入・上げ率・台別投入率）の集計をもとに重みを再設計。
+      <b>「実際に高設定だった確率」</b>を最大化し、<b>店舗ごとに命中率/空振り率で重みを自動最適化</b>します。前日据え置きはREG・ぶどう・合算・設定推定・稼働で強化、前日低回転は減点しません。<b>予想日より前のみ使用（未来不使用）。</b></p>
+    <div class="row">
+      <div><label>店舗</label><select id="inj3-store" onchange="render()"></select></div>
+      <div><label>予想する日（空欄＝最新の翌日）</label><input id="inj3-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">🧠 投入予想3を計算する</button>
+    <div id="t-inject3"></div>
   </div>
 
   <!-- 実戦予想（総合） -->
@@ -1440,6 +1455,7 @@ function refreshAll(){
   fillSelect("ad-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj-store",stores.length?stores:["（データなし）"]);
   fillSelect("fc-store",stores.length?stores:["（データなし）"]);
+  fillSelect("inj3-store",stores.length?stores:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1465,7 +1481,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -3145,6 +3161,292 @@ function renderInjectionInner(){
   el.innerHTML=h;
 }
 
+// ========== 投入予想3（命中率最大化・重み再設計＋店舗ごと自動最適化）==========
+// 目的：「設定が入りやすい台」ではなく「実際に高設定だった確率」が最大になるよう重みを再設計。
+// 取りこぼし要因（前日据え置き64%/前日低回転38%/イベント36%…）を強化し、
+// 空振り要因（不発後投入85%/上げ率71%/台別投入率70%…）を弱体化する。
+// v3が使うのは「店のクセ」＋「前日の実績（据え置き判定のためのREG/ぶどう/合算/設定推定/稼働）」のみ。当日値は不使用。
+const INJ3_BASE={  // 再設計後の基準重み（最大加点）。店舗ごとに学習重みでさらに自動調整される。
+  prevKeep:40, weekday:18, evNextKeep:22, machineRotate:25, eventAffinity:18,
+  evKeepStyle:25, evUpStyle:12, missAfter:10, upRate:6, machineInjRate:6, machineNoRec:8,
+  tail:12, island:10, narabi:8, corner:8, phase:6, storeType:8, missRescue:20 };
+// 前日の据え置き強度：差枚より REG・ぶどう・合算・設定推定・稼働を優先（不発でもREG先行/ぶどう優秀なら据え置き候補）
+function keepStrength3(prev, baseReg, baseComb, baseBud){
+  if(!prev) return null;
+  if(prev.total!=null && prev.total<3000) return {evalable:false, why:["前日3000G未満＝評価不能（減点しない）"]};
+  let sc=0; const why=[]; const e=estimateSetting(prev);
+  if(e&&e.setting>=5){ sc+=3; why.push("前日設定5+推定"); } else if(e&&e.setting>=4){ sc+=2; why.push("前日設定4推定"); }
+  if(baseReg&&prev.reg_prob&&prev.reg_prob<baseReg){ sc+=2; why.push("前日REG先行(1/"+Math.round(prev.reg_prob)+")"); }
+  if(baseComb&&prev.combined&&prev.combined<baseComb){ sc+=1; why.push("前日合算良好(1/"+Math.round(prev.combined)+")"); }
+  const bd=budouDen(prev.budou); if(baseBud&&bd&&bd<baseBud){ sc+=2; why.push("前日ぶどう優秀(1/"+bd+")"); }
+  if(prev.total!=null && prev.total>=5000){ sc+=1; why.push("前日高稼働("+Math.round(prev.total)+"G)"); }
+  return {evalable:true, sc, why, hi:!!(e&&e.setting>=4)};
+}
+function computeInjection3(srAll, store, targetDate, opts){
+  const sr=srAll.filter(r=>r.date<targetDate); if(sr.length<2) return null;
+  const MP=(opts&&opts.missPattern)||null;     // 取りこぼし投入傾向
+  const FW=(opts&&opts.factorWeights)||null;    // 店舗ごとに学習した各要因の重み（命中率で自動最適化）
+  const md=maxDate(sr); const nd=new Date(targetDate+"T00:00:00"); const nextWd=WD[nd.getDay()];
+  const CU=learnCusp(sr,d=>isEventDate(d,store),md);
+  const autoEv=eventsOn(targetDate,store); const eventDay=autoEv.length>0;
+  const mdEvent=isEventDate(md,store);
+  const lastDay={}; sr.filter(r=>r.date===md).forEach(r=>lastDay[r.machine_no]=r);
+  const overall=CU.overallHi||0; const phase=CU.phase(targetDate);
+  // 店舗ベースライン（前日据え置き強度の判定に使用）
+  const baseReg=avg(sr.map(r=>r.reg_prob)), baseComb=avg(sr.map(r=>r.combined)), baseBud=avg(sr.map(r=>budouDen(r.budou)).filter(x=>x!=null));
+  const dist=(arr)=>{let a=0,b=0,c=0;arr.forEach(r=>{const e=estimateSetting(r);if(e){if(e.setting===4)a++;else if(e.setting===5)b++;else if(e.setting===6)c++;}});return{s4:a,s5:b,s6:c,n:a+b+c};};
+  const Sdist=dist(sr), Edist=dist(sr.filter(r=>isEventDate(r.date,store)));
+  const evStats=eventReliability(srAll,store,targetDate);
+  let evHr=null;
+  if(eventDay){ const tnames=autoEv.map(e=>e.eventType||e.name||eventDesc(e));
+    for(const es of evStats){ if(tnames.some(tn=>es.name===tn)){ evHr=es.hiRate; break; } }
+    if(evHr==null&&evStats.length) evHr=evStats[0].hiRate; }
+  let evKeepRatio=null, evHighTotal=0, evStyle="-";
+  if(eventDay){
+    const dts=[...new Set(sr.map(r=>r.date))].sort();
+    const bdn={}; sr.forEach(r=>{(bdn[r.date]=bdn[r.date]||{})[r.machine_no]=r;});
+    const evDates=dts.filter(d=>autoEv.some(e=>eventMatches(e,d,store)));
+    let carry=0;
+    evDates.forEach(d=>{ const idx=dts.indexOf(d); if(idx<1)return; const prev=bdn[dts[idx-1]]||{}, curD=bdn[d]||{};
+      for(const no in curD){ if(CU.isHi(curD[no])){ evHighTotal++; if(prev[no]&&CU.isHi(prev[no]))carry++; } } });
+    if(evHighTotal>=3){ evKeepRatio=carry/evHighTotal; evStyle = evKeepRatio>=0.55?"据え置き寄り" : evKeepRatio<=0.45?"上げ寄り" : "両方"; }
+  }
+  const allNos=[...new Set(sr.map(r=>r.machine_no))].sort((a,b)=>a-b);
+  const rp=(rate,max)=>rate==null?0:Math.min(max,Math.max(0,max*rate/0.40));
+  const out=[];
+  for(const mno of allNos){
+    const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
+    const tail=mno%10, isl=Math.floor(mno/10), mname=hist[hist.length-1].machine_name||"";
+    const ld=lastDay[mno]; const prevHi=ld?CU.isHi(ld):false;
+    let streak=0; for(let i=hist.length-1;i>=0;i--){ if(!CU.isHi(hist[i]))streak++; else break; }
+    const hiCount=hist.filter(CU.isHi).length;
+    let runs=[],cur=0; hist.forEach(r=>{ if(CU.isHi(r))cur++; else {if(cur>0)runs.push(cur);cur=0;} }); if(cur>0)runs.push(cur);
+    const avgKeepDays=runs.length?+avg(runs).toFixed(1):0;
+    const hiDates=hist.filter(CU.isHi).map(r=>r.date).sort(); const gaps=[]; for(let i=1;i<hiDates.length;i++)gaps.push(dayDiff(hiDates[i-1],hiDates[i]));
+    const avgGap=gaps.length?+avg(gaps).toFixed(1):null;
+    const nbHiMd=(lastDay[mno-1]&&CU.isHi(lastDay[mno-1]))||(lastDay[mno+1]&&CU.isHi(lastDay[mno+1]));
+    const ks=keepStrength3(ld, baseReg, baseComb, baseBud);
+
+    let s=0; const C={}; const reasons=[]; const cons=[];
+    const add=(k,p)=>{ if(!p)return; if(FW&&FW[k]!=null&&p>0)p=p*FW[k]; p=+p.toFixed(1); C[k]=(C[k]||0)+p; s+=p; };
+    const mh=CU.machHi[mno];
+    // ① 前日据え置き【最重要・強化】：店の据え置き率＋前日の据え置き強度（REG/ぶどう/合算/設定推定/稼働）
+    if(ks && ks.evalable && (prevHi || ks.hi || ks.sc>=2)){
+      const krBase = CU.keepRate!=null ? CU.keepRate : overall;
+      let base = krBase>=0.65?22 : krBase>=0.50?17 : krBase>=0.35?12 : 8;
+      const boost = Math.min(18, ks.sc*3);
+      const p = Math.min(INJ3_BASE.prevKeep, base+boost);
+      add("①前日据え置き", p);
+      reasons.push("前日据え置き＝据え置き率"+(CU.keepRate!=null?Math.round(CU.keepRate*100)+"%":"-")+"＋強度["+ (ks.why.join("・")||"前日高設定") +"](+"+p.toFixed(1)+")");
+    } else if(ks && !ks.evalable){
+      reasons.push("前日3000G未満＝評価不能（減点なし）");   // 低回転は減点しない
+    }
+    // ② 曜日実績【強化】（空振り率1%で高信頼）
+    { const wh=CU.wdHiMap[nextWd]; if(wh&&wh.n>=3){ const p=rp(wh.hi,INJ3_BASE.weekday); if(p){ add("②曜日実績",p); reasons.push(nextWd+"曜投入率"+Math.round(wh.hi*100)+"%(+"+p.toFixed(1)+")"); } } }
+    // ③ イベント翌日据え置き【強化】（空振り率1%）
+    if(prevHi&&mdEvent&&CU.evKeepRate!=null){ const p=rp(CU.evKeepRate,INJ3_BASE.evNextKeep); if(p){ add("③イベ翌日据置",p); reasons.push("イベント翌日据え置き率"+Math.round(CU.evKeepRate*100)+"%(+"+p.toFixed(1)+")"); } }
+    // ④ 機種ローテーション【最重要格上げ】（空振り率0%）
+    { const ro=CU.rotate[mname]; if(ro&&ro.cad){ const p=Math.min(INJ3_BASE.machineRotate,(ro.since/ro.cad)*INJ3_BASE.machineRotate); if(p>=1){ add("④機種ローテ",p); reasons.push(mname+"前回投入から"+ro.since+"日(周期"+Math.round(ro.cad)+"日)(+"+p.toFixed(1)+")"); } } }
+    // ⑤ イベント相性
+    if(eventDay&&evHr!=null){ const p=evHr>=0.70?INJ3_BASE.eventAffinity:evHr>=0.60?Math.round(INJ3_BASE.eventAffinity*0.75):evHr>=0.50?Math.round(INJ3_BASE.eventAffinity*0.5):evHr>=0.40?Math.round(INJ3_BASE.eventAffinity*0.25):0;
+      if(p){ add("⑤イベント相性",p); reasons.push("イベント相性"+Math.round(evHr*100)+"%(+"+p+")"); }
+      if(evHr<0.25){ add("イベント相性悪い",-12); cons.push("対象イベントで過去高設定率"+Math.round(evHr*100)+"%と低い(-12)"); } }
+    // ⑥ イベント投入スタイル（据え置き寄りは強化／上げ寄りは弱体化）
+    if(eventDay && evKeepRatio!=null){
+      if(evStyle==="据え置き寄り"){
+        if(prevHi){ const p=Math.min(INJ3_BASE.evKeepStyle,Math.round((evKeepRatio-0.5)*60)); add("⑥イベ据え置き傾向",p); reasons.push("このイベントは据え置き寄り("+Math.round(evKeepRatio*100)+"%)×前日高設定(+"+p+")"); }
+        else { add("イベ据え置き不一致",-10); cons.push("据え置き寄りイベントだが前日通常(-10)"); }
+      } else if(evStyle==="上げ寄り"){
+        if(streak>=1){ const p=Math.min(INJ3_BASE.evUpStyle,Math.round((0.5-evKeepRatio)*30)+Math.min(5,streak*2)); add("⑥イベ上げ傾向",p); reasons.push("このイベントは上げ寄り×不発"+streak+"日(+"+p+")【補助】"); }
+      } else { if(prevHi||streak>=1){ add("⑥イベント投入対象",5); reasons.push("イベント日の投入対象台(+5)"); } }
+    }
+    // ⑦ 不発後投入【弱体化：85%空振り→従来の約4割に削減】
+    if(streak>=1){ const b=Math.min(streak,6); const r=CU.missRate[b];
+      if(r){ const p=rp(r.hi,INJ3_BASE.missAfter); if(p){ add("⑦不発後投入",p); reasons.push("不発"+streak+"日後投入率"+Math.round(r.hi*100)+"%(+"+p.toFixed(1)+")【弱】"); } } }
+    // ⑧ 上げ率【補助化：71%空振り】
+    if(!prevHi&&CU.lowUpRate!=null){ const ur=CU.lowUpRate; const p=ur>=0.30?INJ3_BASE.upRate:ur>=0.20?Math.round(INJ3_BASE.upRate*0.66):ur>=0.10?Math.round(INJ3_BASE.upRate*0.33):0;
+      if(p){ add("⑧上げ率",p); reasons.push("前日不発×上げ率"+Math.round(ur*100)+"%(+"+p+")【補助】"); } }
+    // ⑨ 台別投入率【大幅削減：70%空振り】
+    if(mh){ const p=rp(mh.hi,INJ3_BASE.machineInjRate); if(p){ add("⑨台別投入率",p); reasons.push("台"+mno+"の投入率"+Math.round(mh.hi*100)+"%("+hiCount+"/"+hist.length+"日)(+"+p.toFixed(1)+")【削減】"); } }
+    // ⑩ 台番号実績【削減】
+    if(mh){ const d=mh.hi-overall; if(d>0){ const p=Math.min(INJ3_BASE.machineNoRec,d/0.15*INJ3_BASE.machineNoRec); add("⑩台番号実績",p); if(p>=3)reasons.push("台番号実績が店平均より"+Math.round(d*100)+"pt高い(+"+p.toFixed(1)+")"); } }
+    // ⑪ 末尾実績 ⑫ 島実績
+    { const th=CU.tailHiMap[tail]; if(th&&th.n>=3){ const p=rp(th.hi,INJ3_BASE.tail); if(p){ add("⑪末尾実績",p); reasons.push("末尾"+tail+"投入率"+Math.round(th.hi*100)+"%(+"+p.toFixed(1)+")"); } } }
+    { const ih=CU.islHiMap[isl]; if(ih&&ih.n>=3){ const p=rp(ih.hi,INJ3_BASE.island); if(p){ add("⑫島実績",p); reasons.push("島"+isl+"投入率"+Math.round(ih.hi*100)+"%(+"+p.toFixed(1)+")"); } } }
+    // ⑬ 並び投入【削減】 ⑭ 角投入 ⑮ phase
+    if(nbHiMd&&CU.nbRate!=null){ const p=rp(CU.nbRate,INJ3_BASE.narabi); if(p){ add("⑬並び投入",p); reasons.push("隣が前日高設定×並び投入率"+Math.round(CU.nbRate*100)+"%(+"+p.toFixed(1)+")【削減】"); } }
+    { let pr=null,pn=""; if(CU.cornerSet.has(mno)){pr=CU.cornerR;pn="角台";} else if(CU.c2Set.has(mno)){pr=CU.c2R;pn="角2";} else if(CU.c3Set.has(mno)){pr=CU.c3R;pn="角3";}
+      if(pr){ const p=rp(pr.hi,INJ3_BASE.corner); if(p){ add("⑭角投入",p); reasons.push(pn+"投入率"+Math.round(pr.hi*100)+"%(+"+p.toFixed(1)+")"); } } }
+    { const ph=CU.phaseRate[phase]; if(ph){ const p=rp(ph.hi,INJ3_BASE.phase); if(p){ add("⑮"+phase,p); reasons.push(phase+"投入率"+Math.round(ph.hi*100)+"%(+"+p.toFixed(1)+")"); } } }
+    // ⑯ 店舗タイプ一致【削減】
+    { const T=CU.types; let mt=0,rel=0;
+      const chk=(ty,cond)=>{ if(T.includes(ty)){ rel++; if(cond)mt++; } };
+      chk("据え置き型",prevHi); chk("上げ狙い型",streak>=1); chk("末尾重視型",(CU.tailHiMap[tail]&&CU.tailHiMap[tail].hi>overall+0.05));
+      chk("角重視型",(CU.cornerSet.has(mno)||CU.c2Set.has(mno)||CU.c3Set.has(mno))); chk("並び投入型",nbHiMd); chk("イベント依存型",eventDay);
+      if(rel){ const match=mt/rel; const p=match*INJ3_BASE.storeType; if(p){ add("⑯店舗タイプ一致",p); if(p>=3)reasons.push("店舗タイプ("+T.join("・")+")一致度"+Math.round(match*100)+"%(+"+p.toFixed(1)+")"); }
+        if(match===0){ add("店舗タイプ逆行",-8); cons.push("店舗タイプ("+T.join("・")+")と逆行(-8)"); } } }
+    // ⑰ 取りこぼし投入傾向：過去取りこぼした手がかりに一致したら補正加点（前日低回転を含む）
+    let sigList=[], missMatch=0, missScore=0;
+    { const th=CU.tailHiMap[tail], ih=CU.islHiMap[isl], wh=CU.wdHiMap[nextWd], ro=CU.rotate[mname];
+      let patternStrong=false; if(hiDates.length>=2){ const cad=avg(gaps), since=dayDiff(hiDates[hiDates.length-1],md); if(cad&&since>=cad*0.8)patternStrong=true; }
+      const sigNow={ eventDay:!!eventDay, newInjection:streak>=3, lowSpinPrevDay:!!(ld&&ld.total<3000), highSettingCarry:prevHi,
+        tailStrong:!!(th&&th.n>=3&&th.hi>overall+0.05), islandStrong:!!(ih&&ih.n>=3&&ih.hi>overall+0.05), weekdayStrong:!!(wh&&wh.n>=3&&wh.hi>overall+0.05),
+        corner:CU.cornerSet.has(mno), corner2:CU.c2Set.has(mno), corner3:CU.c3Set.has(mno),
+        machineNoStrong:!!(mh&&mh.n>=3&&mh.hi>overall+0.05), patternStrong:patternStrong, rotationStrong:!!(ro&&ro.due) };
+      sigList=Object.keys(sigNow).filter(k=>sigNow[k]);
+      if(MP&&MP.missRate&&MP.missN){ const matched=[];
+        for(const k of sigList){ if(MP.missRate[k]){ missMatch+=MP.missRate[k]; matched.push(MISS_LABEL[k]||k); } }
+        missScore=Math.min(INJ3_BASE.missRescue,missMatch*10); if(MP.missN<30)missScore*=0.7; if(MP.missN<15)missScore*=0.5; missScore=+missScore.toFixed(1);
+        if(missScore>0){ add("⑰取りこぼし補正",missScore); reasons.push("取りこぼし投入傾向一致 +"+missScore.toFixed(1)+"（"+matched.join("・")+"）"); } }
+    }
+    const rates=[]; if(mh)rates.push(mh.hi);
+    if(prevHi&&CU.keepRate!=null)rates.push(CU.keepRate);
+    if(!prevHi&&streak>=1){ const r=CU.missRate[Math.min(streak,6)]; if(r)rates.push(r.hi); else if(CU.lowUpRate!=null)rates.push(CU.lowUpRate); }
+    if(eventDay&&evHr!=null)rates.push(evHr);
+    const expectRate=rates.length?avg(rates):overall;
+    const keepExp=prevHi&&CU.keepRate!=null?CU.keepRate:null;
+    const upExp=!prevHi?((streak>=1&&CU.missRate[Math.min(streak,6)])?CU.missRate[Math.min(streak,6)].hi:CU.lowUpRate):null;
+    s=Math.max(0,+s.toFixed(1));
+    let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
+    const sw=Sdist.n||1, pr=4;
+    let n4=(Sdist.s4/sw)*pr+s4, n5=(Sdist.s5/sw)*pr+s5, n6=(Sdist.s6/sw)*pr+s6;
+    if(eventDay&&Edist.n>=3){ n4+=Edist.s4/Edist.n*3; n5+=Edist.s5/Edist.n*3; n6+=Edist.s6/Edist.n*3; }
+    const nt=(n4+n5+n6)||1; const e4=n4/nt, e5=n5/nt, e6=n6/nt;
+    const honmei = (e6>=e5&&e6>=e4)?6:(e5>=e4?5:4);
+    out.push({mno,mname,tail,score:s,contrib:C,reasons:reasons.slice(),cons:cons.slice(),aim:aimInfo(hist),
+      s4,s5,s6,e4,e5,e6,honmei,sig:sigList.slice(),missMatch,missScore,
+      expectRate,keepExp,upExp,streak,hiCount,days:hist.length,avgKeepDays,avgGap,prevHi,keepWhy:(ks&&ks.why)||[],
+      plusTop:Object.entries(C).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,5).map(e=>e[0]+" +"+e[1].toFixed(1)),
+      minusTop:Object.entries(C).filter(e=>e[1]<0).sort((a,b)=>a[1]-b[1]).map(e=>e[0]+" "+e[1].toFixed(1))});
+  }
+  out.sort((a,b)=>b.score-a.score);
+  out.forEach(o=>{ const s=o.score; o.mark = s>=95?"SS 本命":s>=85?"S 本命":s>=75?"A 対抗":s>=65?"B 狙い目":s>=55?"C 注意":s>=45?"D 低期待":"見送り"; });
+  return {targetDate,nextWd,eventDay,evLabel:autoEv.map(e=>e.name||eventDesc(e)).join("・"),days:CU.dates.length,types:CU.types,out,
+    evStyle,evKeepRatio,evHighTotal,evHr,CU,autoEv};
+}
+// 投入予想3のバックテスト：各要因の命中率/空振り率を集計→店舗ごとに重みを自動最適化（命中率最大化）
+function injectionBacktest3(srAll, store, targetDate){
+  const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
+  const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+  const start=Math.max(1,dates.length-btDays()); let n=0,t1=0,t3=0,t5=0, missLow=0,missLowHi=0;
+  const missSig={}; let missN=0;
+  const F={}; let totN=0, totHi=0;
+  for(let i=start;i<dates.length;i++){ const D=dates[i];
+    const R=computeInjection3(srAll,store,D); if(!R||!R.out.length)continue;
+    const act={}; srAll.filter(r=>r.date===D).forEach(r=>act[r.machine_no]=r);
+    if(!Object.values(act).some(isHi))continue; n++;
+    const ranked=R.out; const inTop=N=>ranked.slice(0,N).some(o=>act[o.mno]&&isHi(act[o.mno]));
+    if(inTop(1))t1++; if(inTop(3))t3++; if(inTop(5))t5++;
+    const sB={}; ranked.forEach(o=>sB[o.mno]=o);
+    ranked.forEach(o=>{ if(o.score<45){ if(act[o.mno]){ missLow++; if(isHi(act[o.mno]))missLowHi++; } }
+      const a=act[o.mno]; if(a){ const hi=isHi(a); totN++; if(hi)totHi++;
+        for(const k in o.contrib){ if(o.contrib[k]>0){ (F[k]=F[k]||{n:0,hi:0}).n++; if(hi)F[k].hi++; } } } });
+    srAll.filter(r=>r.date===D).forEach(a=>{ const e=estimateSetting(a); if(!(e&&e.high>=0.5))return;
+      const o=sB[a.machine_no]; if(!o||o.score>=65)return; missN++; (o.sig||[]).forEach(k=>missSig[k]=(missSig[k]||0)+1); });
+  }
+  const missRate={}; for(const k in missSig) missRate[k]=missN?missSig[k]/missN:0;
+  // 店舗ごと自動最適化：命中率(rate)が店平均(base)より高い要因は重みUP、空振り率が高い要因はDOWN
+  const base=totN?totHi/totN:0; const factorWeights={}, factorStats={};
+  for(const k in F){ const r=F[k], rate=r.n?r.hi/r.n:0, miss=1-rate, diff=rate-base;
+    let w,v;
+    if(r.n<8){ w=1; v="判定不可"; }
+    else { w=Math.max(0.3, Math.min(1.6, 1 + diff*3)); v=diff>=0.05?"有効":diff>=-0.03?"標準":"空振り多"; }
+    factorWeights[k]=+w.toFixed(2); factorStats[k]={n:r.n,hi:r.hi,rate,miss,diff,verdict:v,weight:+w.toFixed(2)}; }
+  return {n,t1,t3,t5,missLow,missLowHi,missN,missSig,missRate,factorWeights,factorStats,base};
+}
+// 設計レポート（現在重み→修正後→理由→想定効果）
+const INJ3_REPORT=[
+  ["前日据え置き","②据え置き +20","①前日据え置き +40（REG/ぶどう/合算/設定推定/稼働で強化）","取りこぼしの64%。最重要要因として大幅強化","◎"],
+  ["前日低回転","減点対象だった","評価不能（3000G未満は減点しない）＋取りこぼし補正","取りこぼし38%。低回転を減点していたのが取りこぼしの原因","◎"],
+  ["不発高設定の判定","差枚中心","REG/ぶどう/合算を優先（マイナス差枚でも据え置き候補）","REG先行/ぶどう優秀を見逃さない","○"],
+  ["不発後投入","④ +25","⑦ +10（約60%削減）","空振り率85%。過学習のため弱体化","◎"],
+  ["上げ率","③ +15","⑧ +6（補助要素化）","空振り率71%。投入率だけで加点しない","○"],
+  ["台別投入率","① +20","⑨ +6（大幅削減）","空振り率70%。過去に強かっただけでは加点しない","○"],
+  ["台番号実績","⑥ +15","⑩ +8（削減）","空振り率14%。やや弱体化","○"],
+  ["並び投入","⑪ +15","⑬ +8（削減）","空振り率20%","△"],
+  ["店舗タイプ一致","⑮ +15","⑯ +8（削減）","空振り率21%","△"],
+  ["曜日実績","⑨ +10","② +18（強化）","空振り率1%。非常に高信頼のため強化","◎"],
+  ["イベント翌日据置","⑭ +12","③ +22（強化）","空振り率1%。据置判定に大きく加点","◎"],
+  ["機種ローテ","⑬ +10","④ +25（最重要格上げ）","空振り率0%。最重要クラスへ","◎"],
+  ["全要因","固定重み","店舗ごとに命中率で自動最適化（×0.3〜×1.6）","空振り率が高い要因は自動で重みDOWN・命中率が高い要因はUP","◎"]
+];
+let _inj3Bt=null;
+function renderInjection3(){
+  const el=document.getElementById("t-inject3"); if(!el) return;
+  const panel=document.getElementById("p-inject3");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと計算します（重い処理のため）。</p>"; return; }
+  try{ renderInjection3Inner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+function renderInjection3Inner(){
+  const el=document.getElementById("t-inject3"); const store=val("inj3-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("inj3-date")||fmtDate(ndDef);
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  if(!_inj3Bt||_inj3Bt.key!==key){ _inj3Bt={key,bt:injectionBacktest3(srAll,store,targetDate)}; }
+  const bt=_inj3Bt.bt; const pc=x=>x==null?"-":Math.round(x*100)+"%";
+  const R=computeInjection3(srAll,store,targetDate,{missPattern:{missN:bt.missN,missRate:bt.missRate},factorWeights:bt.factorWeights});
+  if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータ不足）。</p>"; return; }
+  let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+R.nextWd+"曜)"+(R.eventDay?" 🎉"+R.evLabel:"")+
+    " ／ 学習"+R.days+"日分（未来不使用）／ 店舗タイプ："+R.types.map(x=>"【"+x+"】").join("")+"</p>"+
+    "<div class='note' style='background:#ecfdf5;border-color:#34d399;font-size:13px'>🧠 <b>投入予想3：命中率最大化の再設計版。</b>「設定が入りやすい台」ではなく<b>「実際に高設定だった確率」</b>を最大化するよう重みを組み直し、店舗ごとに自動最適化します。前日据え置き（REG/ぶどう/合算/設定推定/稼働）を最重要に、不発後投入・上げ率・台別投入率を弱め、曜日・イベ翌日据置・機種ローテを強化。</div>";
+  // ① 設計レポート（現在重み→修正後→理由）
+  h+="<details class='note' style='background:#f8fafc;border-color:#94a3b8'><summary><b>📐 重み再設計レポート（現在→修正後→理由→効果）</b></summary>"+
+    "<div class='scroll'><table style='font-size:12px'><tr><th>要因</th><th>現在の重み</th><th>修正後の重み</th><th>修正理由</th><th>効果</th></tr>"+
+    INJ3_REPORT.map(r=>"<tr><td style='text-align:left;white-space:nowrap'><b>"+r[0]+"</b></td><td style='text-align:left'>"+r[1]+"</td><td style='text-align:left;color:#1a7f37'>"+r[2]+"</td><td style='text-align:left'>"+r[3]+"</td><td style='font-size:15px'>"+r[4]+"</td></tr>").join("")+
+    "</table></div><p class='muted' style='font-size:12px'>想定効果：取りこぼし要因（前日据え置き64%・前日低回転38%）を拾い、空振り要因（不発後投入85%・上げ率71%・台別投入率70%）を抑制。上位的中率の改善とハズレ（高スコア空振り）の減少を狙います。下の<b>実測バックテスト</b>で効果を確認できます。</p></details>";
+  // ④ バックテスト（実測効果）
+  if(bt.n>=3){ const p=x=>bt.n?Math.round(x/bt.n*100)+"%":"-";
+    h+="<div class='note' style='background:#eef7ff;border-color:#9cc8ff'>🧪 <b>バックテスト</b>（過去"+bt.n+"日・高設定あり日）：上位的中 1位"+p(bt.t1)+" / 3位内"+p(bt.t3)+" / 5位内"+p(bt.t5)+
+      " ／ 低スコア(45未満)台の高設定率 "+(bt.missLow?Math.round(bt.missLowHi/bt.missLow*100)+"%":"-")+"（低いほど良い）／ 全体高設定率 "+pc(bt.base)+"</div>"; }
+  else h+="<div class='note'>🧪 バックテスト：検証データ不足（3日以上で表示）</div>";
+  // 自動最適化された重み（店舗ごと・命中率/空振り率で調整）
+  if(bt.factorStats && Object.keys(bt.factorStats).length){
+    const fs=Object.entries(bt.factorStats).filter(e=>e[1].n>=8).sort((a,b)=>b[1].diff-a[1].diff);
+    h+="<details class='note' open style='background:#f3f0ff;border-color:#a78bfa;font-size:13px'><summary><b>⚖️ 店舗ごと自動最適化された重み（命中率・空振り率で調整）</b></summary>"+
+      "<p class='muted' style='font-size:12px'>各要因が出た台の命中率（その後高設定だった率）と空振り率。店平均("+pc(bt.base)+")より命中率が高い要因は重みUP、空振りが多い要因は自動でDOWN。これが「②修正後の重み」に毎回かけ合わさり、店舗ごとに最適化されます。</p>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>要因</th><th>発生</th><th>命中率</th><th>空振り率</th><th>店平均差</th><th>判定</th><th>学習重み</th></tr>"+
+      fs.map(e=>{ const v=e[1]; const vc=v.verdict==="有効"?"#1a7f37":v.verdict==="空振り多"?"#c00":"#b35900";
+        return "<tr><td style='text-align:left'>"+e[0]+"</td><td>"+v.n+"回</td><td>"+Math.round(v.rate*100)+"%</td><td>"+Math.round(v.miss*100)+"%</td>"+
+          "<td style='color:"+(v.diff>=0?'#1a7f37':'#c00')+"'>"+(v.diff>=0?"+":"")+Math.round(v.diff*100)+"pt</td>"+
+          "<td style='color:"+vc+";font-weight:bold'>"+v.verdict+"</td><td style='font-weight:bold'>×"+v.weight+"</td></tr>"; }).join("")+
+      "</table></div></details>"; }
+  // 取りこぼし手がかり（前日低回転含む）
+  if(bt.missN>=1){ const ms=Object.entries(bt.missSig).sort((a,b)=>b[1]-a[1]);
+    h+="<div class='note' style='background:#fff4f4;border-color:#f3a;font-size:13px'>🧭 <b>取りこぼし手がかりを学習し反映済み</b>（過去スコア65未満なのに高設定 "+bt.missN+"件）：<br>"+
+      ms.map(e=>(MISS_LABEL[e[0]]||e[0])+" <b>"+(bt.missN?Math.round(e[1]/bt.missN*100):0)+"%</b>").join(" ／ ")+"</div>"; }
+  const judBg=m=>m.indexOf("SS")>=0||m.indexOf("S ")>=0?"#7CFC00":m.indexOf("A")>=0?"#b6f5a0":m.indexOf("B")>=0?"#d8f5c0":m.indexOf("C")>=0?"#ffe066":m.indexOf("D")>=0?"#ffd0d0":"#eee";
+  const byMach={}; R.out.forEach(o=>{(byMach[o.mname]=byMach[o.mname]||[]).push(o);});
+  const machNames=Object.keys(byMach).sort((a,b)=>Math.max(...byMach[b].map(o=>o.score))-Math.max(...byMach[a].map(o=>o.score)));
+  for(const mname of machNames){
+    const list=byMach[mname].slice().sort((a,b)=>b.score-a.score);
+    const t4=list.reduce((s,o)=>s+o.s4,0), t5=list.reduce((s,o)=>s+o.s5,0), t6=list.reduce((s,o)=>s+o.s6,0);
+    h+="<h3 style='margin:14px 0 4px;background:#064e3b;color:#fff;padding:6px 10px;border-radius:6px'>🎰 "+mname+
+      " <span style='font-weight:normal;font-size:12px'>（"+list.length+"台 ／ 設定4: "+t4+"回・設定5: "+t5+"回・設定6: "+t6+"回）</span></h3>";
+    h+="<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>投入予想3<br>スコア</th><th>判定</th><th>狙い方</th>"+
+      "<th>投入<br>期待率</th><th>今回の<br>期待設定</th><th>据え置き<br>期待率</th><th>上げ<br>期待率</th><th>不発<br>日数</th>"+
+      "<th style='background:#e6f8d8'>設定4<br>回数</th><th style='background:#b6f5a0'>設定5<br>回数</th><th style='background:#7CFC00'>設定6<br>回数</th>"+
+      "<th>平均<br>投入間隔</th><th>根拠(加点)</th><th>減点</th></tr>";
+    list.forEach((o,i)=>{
+      const hc={4:"#e6f8d8",5:"#b6f5a0",6:"#7CFC00"}[o.honmei]||"#eee";
+      const exp="<b style='background:"+hc+";padding:1px 4px;border-radius:4px'>本命 設定"+o.honmei+"</b><br><span style='font-size:11px'>4:"+pc(o.e4)+" 5:"+pc(o.e5)+" 6:"+pc(o.e6)+"</span>";
+      h+="<tr><td>"+(i+1)+"</td><td>"+o.mno+"</td>"+
+        "<td style='background:"+judBg(o.mark)+";font-weight:bold;font-size:14px'>"+o.score.toFixed(0)+"</td><td style='white-space:nowrap'>"+o.mark+"</td>"+
+        "<td style='text-align:left'>"+aimCellHTML(o.aim)+"</td>"+
+        "<td style='font-weight:bold'>"+pc(o.expectRate)+"</td><td style='text-align:left;white-space:nowrap'>"+exp+"</td><td>"+pc(o.keepExp)+"</td><td>"+pc(o.upExp)+"</td>"+
+        "<td>"+o.streak+"日</td>"+
+        "<td style='background:#f1fae8;font-weight:bold'>"+o.s4+"</td><td style='background:#dcf7c8;font-weight:bold'>"+o.s5+"</td><td style='background:#caf5a0;font-weight:bold'>"+o.s6+"</td>"+
+        "<td>"+(o.avgGap!=null?o.avgGap+"日":"-")+"</td>"+
+        "<td style='text-align:left;color:#1a7f37'>"+(o.plusTop.length?o.plusTop.join("<br>"):"—")+"</td>"+
+        "<td style='text-align:left;color:#c00'>"+(o.minusTop.length?o.minusTop.join("<br>"):"—")+"</td></tr>";
+    });
+    h+="</table></div>";
+  }
+  el.innerHTML=h;
+}
+
 // ========== 明日の投入予想（読みやすいカード版）==========
 function renderForecast(){
   const el=document.getElementById("t-forecast"); if(!el) return;
@@ -3508,6 +3810,7 @@ document.getElementById("tabs").addEventListener("click",e=>{
   else if(t==="andetail") renderAnswerDetail();
   else if(t==="inject") renderInjection();
   else if(t==="forecast") renderForecast();
+  else if(t==="inject3") renderInjection3();
 });
 
 // ---------- 初期化 ----------
