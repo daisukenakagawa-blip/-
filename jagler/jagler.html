@@ -85,6 +85,7 @@
     <button data-t="rank">🎯 狙い台予想</button>
     <button data-t="ranknew">🆕 狙い台予想・新</button>
     <button data-t="inject">💉 投入期待</button>
+    <button data-t="forecast">🔮 明日の投入予想</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
     <button data-t="myplay">📝 実戦収支</button>
@@ -355,6 +356,20 @@
     </div>
     <button class="primary" onclick="render()">💉 投入期待を計算する</button>
     <div id="t-inject"></div>
+  </div>
+
+  <!-- 明日の投入予想 -->
+  <div class="panel" id="p-forecast">
+    <h2>🔮 明日の投入予想（過去データ・バックテスト学習ベース）</h2>
+    <p class="muted">REG/合算/BIG/設定推定は使わず、<b>過去のクセとバックテスト学習だけ</b>で「明日どの台に設定が入りそうか」を機種ごと・入りやすい順に予想。
+      期待設定(6/5/4)・据え置き/上げ狙い・据え置きデータ・入る/入らない理由を表示します。</p>
+    <div class="row">
+      <div><label>店舗</label><select id="fc-store" onchange="render()"></select></div>
+      <div><label>予想する日（空欄＝最新の翌日）</label><input id="fc-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">🔮 明日の投入を予想する</button>
+    <div id="t-forecast"></div>
   </div>
 
   <!-- 実戦予想（総合） -->
@@ -1423,6 +1438,7 @@ function refreshAll(){
   fillSelect("b2-store",stores.length?stores:["（データなし）"]);
   fillSelect("ad-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj-store",stores.length?stores:["（データなし）"]);
+  fillSelect("fc-store",stores.length?stores:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1448,7 +1464,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -3071,6 +3087,70 @@ function renderInjectionInner(){
   el.innerHTML=h;
 }
 
+// ========== 明日の投入予想（読みやすいカード版）==========
+function renderForecast(){
+  const el=document.getElementById("t-forecast"); if(!el) return;
+  const panel=document.getElementById("p-forecast");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと予想を計算します（重い処理のため）。</p>"; return; }
+  try{ renderForecastInner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+function renderForecastInner(){
+  const el=document.getElementById("t-forecast"); const store=val("fc-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("fc-date")||fmtDate(ndDef);
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  if(!_injBt||_injBt.key!==key){ _injBt={key,bt:injectionBacktest(srAll,store,targetDate)}; }
+  const bt=_injBt.bt;
+  const R=computeInjection(srAll,store,targetDate,{missPattern:{missN:bt.missN,missRate:bt.missRate},factorWeights:bt.factorWeights});
+  if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータ不足）。</p>"; return; }
+  const pc=x=>x==null?"-":Math.round(x*100)+"%";
+  let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+R.nextWd+"曜)"+(R.eventDay?" 🎉"+R.evLabel:"")+
+    " ／ 過去"+R.days+"日＋バックテスト"+bt.n+"日で学習　店タイプ："+R.types.map(x=>"【"+x+"】").join("")+"</p>"+
+    "<div class='note' style='background:#fff7ed;border-color:#fb923c;font-size:13px'>過去のクセとバックテスト学習だけで「明日どこに設定が入りそうか」を予想。各台に<b>入る/入らない理由</b>を表示します。</div>";
+  // 機種ごと（その機種の最高スコア順）
+  const byMach={}; R.out.forEach(o=>{(byMach[o.mname]=byMach[o.mname]||[]).push(o);});
+  const machNames=Object.keys(byMach).sort((a,b)=>Math.max(...byMach[b].map(o=>o.score))-Math.max(...byMach[a].map(o=>o.score)));
+  for(const mname of machNames){
+    const list=byMach[mname].slice().sort((a,b)=>b.score-a.score);
+    const likely=list.filter(o=>o.score>=65).length;
+    h+="<h3 style='margin:14px 0 6px;background:#1a1a1a;color:#fff;padding:6px 10px;border-radius:6px'>🎰 "+mname+
+      " <span style='font-weight:normal;font-size:12px'>（入りやすい順 ／ 有力 "+likely+"台）</span></h3>";
+    list.forEach((o,i)=>{
+      const band = o.score>=75?["🔴 入りやすい（本命）","#7CFC00"]: o.score>=65?["🟠 入る可能性が高い","#b6f5a0"]:
+        o.score>=55?["🟡 五分（注意）","#ffe066"]: o.score>=45?["⚪ 入りにくい","#eee"]:["⚫ ほぼ入らない","#e5e5e5"];
+      // 狙い方＋据え置きデータ
+      let aimH="";
+      if(o.aim&&o.aim.mode==="据え置き"){
+        const cd=o.aim.carry.map(r=>r.date.slice(5)+"：BIG"+r.big+" / バケ"+r.reg+" / 総回転"+(r.total||0).toLocaleString()+"G").join("<br>");
+        aimH="<b style='color:#1a7f37'>据え置き狙い</b>（据え置き"+o.aim.days+"日目）<br><span style='font-size:12px'>"+cd+"</span>";
+      } else if(o.aim&&o.aim.mode==="上げ"){
+        aimH="<b style='color:#b35900'>上げ狙い</b>（"+o.aim.days+"日不発後）";
+      }
+      // 入る理由・入らない理由
+      const yes=(o.reasons||[]).slice(0,5);
+      const no=(o.cons||[]).slice();
+      if(!o.prevHi && o.streak<2) no.push("前日は通常設定で据え置き対象でなく、不発"+o.streak+"日と浅い（上げ狙いにはまだ早い）");
+      if((o.plusTop||[]).length===0) no.push("この店の投入クセに該当する要素がない");
+      const verdict = o.score>=65?"明日は<b style='color:#1a7f37'>設定が入りやすい</b>台です":
+        o.score>=45?"明日は<b style='color:#b35900'>五分〜やや入りにくい</b>台です":"明日は<b style='color:#c00'>設定が入りにくい</b>台です";
+      h+="<div style='border:1px solid #ddd;border-radius:8px;padding:8px 10px;margin:6px 0;background:"+(o.score>=65?"#f3fbef":"#fff")+"'>"+
+        "<div style='display:flex;justify-content:space-between;align-items:center'>"+
+          "<b style='font-size:15px'>"+(i+1)+"位　"+o.mno+"番</b>"+
+          "<span style='background:"+band[1]+";padding:2px 8px;border-radius:6px;font-weight:bold'>"+band[0]+"　投入期待"+pc(o.expectRate)+"</span></div>"+
+        "<div style='margin-top:4px'>📊 <b>期待設定：本命 設定"+o.honmei+"</b>　<span class='muted'>（設定6:"+pc(o.e6)+" ／ 設定5:"+pc(o.e5)+" ／ 設定4:"+pc(o.e4)+"）</span></div>"+
+        (aimH?"<div style='margin-top:4px'>🎯 "+aimH+"</div>":"")+
+        "<div style='margin-top:4px;color:#1a7f37;font-size:13px'>✅ 入りそうな理由：<br>"+(yes.length?yes.map(x=>"・"+x).join("<br>"):"・目立った投入クセは無し")+"</div>"+
+        "<div style='margin-top:3px;color:#b35900;font-size:13px'>⚠ 入りにくい理由：<br>"+(no.length?no.map(x=>"・"+x).join("<br>"):"・特になし")+"</div>"+
+        "<div style='margin-top:4px;font-size:13px'>👉 "+verdict+"</div>"+
+        "</div>";
+    });
+  }
+  el.innerHTML=h;
+}
+
 // ========== 実戦予想（総合）==========
 // 並び分析（未来不使用・CUはsrのみで学習済み）
 function analyzeNarabi(CU){
@@ -3333,6 +3413,7 @@ document.getElementById("tabs").addEventListener("click",e=>{
   else if(t==="battle") renderBattle();
   else if(t==="andetail") renderAnswerDetail();
   else if(t==="inject") renderInjection();
+  else if(t==="forecast") renderForecast();
 });
 
 // ---------- 初期化 ----------
