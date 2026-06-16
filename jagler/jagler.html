@@ -2723,8 +2723,9 @@ function renderAnswerDetailInner(){
 
 // ========== 投入期待スコア専用エンジン（REG/合算/BIG/設定推定を一切使わない）==========
 // 「今日その台に高設定(設定4以上)が投入される確率」を、店のクセだけから推定する。
-function computeInjection(srAll, store, targetDate){
+function computeInjection(srAll, store, targetDate, missPattern){
   const sr=srAll.filter(r=>r.date<targetDate); if(sr.length<2) return null;
+  const MP=missPattern||null;   // 取りこぼし投入傾向（過去取りこぼし手がかりの頻度）
   const md=maxDate(sr); const nd=new Date(targetDate+"T00:00:00"); const nextWd=WD[nd.getDay()];
   const CU=learnCusp(sr,d=>isEventDate(d,store),md);
   const autoEv=eventsOn(targetDate,store); const eventDay=autoEv.length>0;
@@ -2797,6 +2798,20 @@ function computeInjection(srAll, store, targetDate){
         if(match===0){ add("店舗タイプ逆行",-10); cons.push("店舗タイプ("+T.join("・")+")と逆行(-10)"); } } }
     // 上げ期待なのに不発日数不足
     if(CU.types.includes("上げ狙い型")&&!prevHi&&streak<1){ add("上げ前提不足",-10); cons.push("上げ型店だが不発日数が不足(-10)"); }
+    // ⑯ 取りこぼし投入傾向：過去に取りこぼした手がかりに一致したら補正加点（上限+20）
+    let sigList=[], missMatch=0, missScore=0;
+    { const th=CU.tailHiMap[tail], ih=CU.islHiMap[isl], wh=CU.wdHiMap[nextWd], ro=CU.rotate[mname];
+      let patternStrong=false; if(hiDates.length>=2){ const cad=avg(gaps), since=dayDiff(hiDates[hiDates.length-1],md); if(cad&&since>=cad*0.8)patternStrong=true; }
+      const sigNow={ eventDay:!!eventDay, newInjection:streak>=3, lowSpinPrevDay:!!(ld&&ld.total<5000), highSettingCarry:prevHi,
+        tailStrong:!!(th&&th.n>=3&&th.hi>overall+0.05), islandStrong:!!(ih&&ih.n>=3&&ih.hi>overall+0.05), weekdayStrong:!!(wh&&wh.n>=3&&wh.hi>overall+0.05),
+        corner:CU.cornerSet.has(mno), corner2:CU.c2Set.has(mno), corner3:CU.c3Set.has(mno),
+        machineNoStrong:!!(mh&&mh.n>=3&&mh.hi>overall+0.05), patternStrong:patternStrong, rotationStrong:!!(ro&&ro.due) };
+      sigList=Object.keys(sigNow).filter(k=>sigNow[k]);
+      if(MP&&MP.missRate&&MP.missN){ const matched=[];
+        for(const k of sigList){ if(MP.missRate[k]){ missMatch+=MP.missRate[k]; matched.push(MISS_LABEL[k]||k); } }
+        missScore=Math.min(20,missMatch*10); if(MP.missN<30)missScore*=0.7; if(MP.missN<15)missScore*=0.5; missScore=+missScore.toFixed(1);
+        if(missScore>0){ add("⑯取りこぼし補正",missScore); reasons.push("取りこぼし投入傾向一致 +"+missScore.toFixed(1)+"（"+matched.join("・")+"）過去の取りこぼし高設定台で頻出"); } }
+    }
 
     // 投入期待率（確率）：状況別の投入率を平均
     const rates=[]; if(mh)rates.push(mh.hi);
@@ -2811,7 +2826,7 @@ function computeInjection(srAll, store, targetDate){
     // 過去に設定4/5/6が何回入ったか（別々に集計）
     let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
     out.push({mno,mname,tail,score:s,contrib:C,reasons:reasons.slice(),cons:cons.slice(),aim:aimInfo(hist),
-      s4,s5,s6,
+      s4,s5,s6,sig:sigList.slice(),missMatch,missScore,
       expectRate,keepExp,upExp,streak,hiCount,days:hist.length,avgKeepDays,avgGap,prevHi,
       plusTop:Object.entries(C).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,5).map(e=>e[0]+" +"+e[1].toFixed(1)),
       minusTop:Object.entries(C).filter(e=>e[1]<0).sort((a,b)=>a[1]-b[1]).map(e=>e[0]+" "+e[1].toFixed(1))});
@@ -2826,16 +2841,22 @@ function injectionBacktest(srAll, store, targetDate){
   const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
   const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
   const start=Math.max(1,dates.length-btDays()); let n=0,t1=0,t3=0,t5=0, missLow=0,missLowHi=0;
+  const missSig={}; let missN=0;   // 取りこぼし投入傾向の学習（P設定4+≥50%なのにスコア<65）
   for(let i=start;i<dates.length;i++){ const D=dates[i];
-    const R=computeInjection(srAll,store,D); if(!R||!R.out.length)continue;
+    const R=computeInjection(srAll,store,D); if(!R||!R.out.length)continue;   // base（補正なし）で検証
     const act={}; srAll.filter(r=>r.date===D).forEach(r=>act[r.machine_no]=r);
     if(!Object.values(act).some(isHi))continue; n++;
     const ranked=R.out;   // already score desc
     const inTop=N=>ranked.slice(0,N).some(o=>act[o.mno]&&isHi(act[o.mno]));
     if(inTop(1))t1++; if(inTop(3))t3++; if(inTop(5))t5++;
+    const sB={}; ranked.forEach(o=>sB[o.mno]=o);
     ranked.forEach(o=>{ if(o.score<45){ if(act[o.mno]){ missLow++; if(isHi(act[o.mno]))missLowHi++; } } });
+    // 取りこぼし手がかりを集計（実P4+≥50%なのに投入期待スコア<65）
+    srAll.filter(r=>r.date===D).forEach(a=>{ const e=estimateSetting(a); if(!(e&&e.high>=0.5))return;
+      const o=sB[a.machine_no]; if(!o||o.score>=65)return; missN++; (o.sig||[]).forEach(k=>missSig[k]=(missSig[k]||0)+1); });
   }
-  return {n,t1,t3,t5,missLow,missLowHi};
+  const missRate={}; for(const k in missSig) missRate[k]=missN?missSig[k]/missN:0;
+  return {n,t1,t3,t5,missLow,missLowHi,missN,missSig,missRate};
 }
 let _injBt=null;
 function renderInjection(){
@@ -2851,11 +2872,12 @@ function renderInjectionInner(){
   if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
   const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
   const targetDate=val("inj-date")||fmtDate(ndDef);
-  const R=computeInjection(srAll,store,targetDate);
-  if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータ不足）。</p>"; return; }
+  // 先にバックテストで取りこぼし手がかりを学習し、その結果を予想に反映
   const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
   if(!_injBt||_injBt.key!==key){ _injBt={key,bt:injectionBacktest(srAll,store,targetDate)}; }
   const bt=_injBt.bt; const pc=x=>x==null?"-":Math.round(x*100)+"%";
+  const R=computeInjection(srAll,store,targetDate,{missN:bt.missN,missRate:bt.missRate});   // 取りこぼし手がかりを反映
+  if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータ不足）。</p>"; return; }
   let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+R.nextWd+"曜)"+(R.eventDay?" 🎉"+R.evLabel:"")+
     " ／ 学習"+R.days+"日分（未来不使用）／ 店舗タイプ："+R.types.map(x=>"【"+x+"】").join("")+"</p>"+
     "<div class='note' style='background:#fff7ed;border-color:#fb923c;font-size:13px'>💉 <b>このスコアはREG・合算・BIG・設定推定を一切使いません。</b>店のクセ（どこに設定を入れるか）だけで「今日その台に設定が入る確率」を採点します。</div>";
@@ -2864,6 +2886,12 @@ function renderInjectionInner(){
     h+="<div class='note' style='background:#eef7ff;border-color:#9cc8ff'>🧪 <b>バックテスト</b>（過去"+bt.n+"日・高設定あり日）：上位的中 1位"+p(bt.t1)+" / 3位内"+p(bt.t3)+" / 5位内"+p(bt.t5)+
       " ／ 低スコア(45未満)台の高設定率 "+(bt.missLow?Math.round(bt.missLowHi/bt.missLow*100)+"%":"-")+"（低いほど良い）</div>"; }
   else h+="<div class='note'>🧪 バックテスト：検証データ不足（3日以上で表示）</div>";
+  // 取りこぼし手がかりの学習結果（次の予想に反映済み）
+  if(bt.missN>=1){ const ms=Object.entries(bt.missSig).sort((a,b)=>b[1]-a[1]);
+    h+="<div class='note' style='background:#fff4f4;border-color:#f3a;font-size:13px'>🧭 <b>取りこぼし手がかりを学習し、今回の予想に反映済み</b>"+
+      "（過去スコア65未満なのに高設定だった台 "+bt.missN+"件）：<br>"+
+      ms.map(e=>(MISS_LABEL[e[0]]||e[0])+" <b>"+(bt.missN?Math.round(e[1]/bt.missN*100):0)+"%</b>").join(" ／ ")+
+      "<br><span class='muted'>↑該当する台に「⑯取りこぼし補正」として最大+20点を加点しています。</span></div>"; }
   const judBg=m=>m.indexOf("SS")>=0||m.indexOf("S ")>=0?"#7CFC00":m.indexOf("A")>=0?"#b6f5a0":m.indexOf("B")>=0?"#d8f5c0":m.indexOf("C")>=0?"#ffe066":m.indexOf("D")>=0?"#ffd0d0":"#eee";
   // 機種ごとにグループ表示（各機種内は投入期待スコア順）
   const byMach={}; R.out.forEach(o=>{(byMach[o.mname]=byMach[o.mname]||[]).push(o);});
