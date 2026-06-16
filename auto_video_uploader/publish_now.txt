@@ -1,2 +1,2 @@
 publish at 2026-06-18 12:00 JST
-triggered: 2026-06-16
+triggered: 2026-06-16 (retry pip fix)

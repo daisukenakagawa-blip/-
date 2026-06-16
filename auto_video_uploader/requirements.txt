@@ -8,5 +8,5 @@ google-api-python-client>=2.100
 google-auth>=2.23
 google-auth-oauthlib>=1.1
 google-auth-httplib2>=0.1
-pyopenjtalk-prebuilt
-numpy<2
+# 注: pyopenjtalk(オフラインTTS)はローカル試聴専用。クラウドでは VOICEVOX を使うため不要。
+# ローカルで使う場合のみ: pip install pyopenjtalk-prebuilt "numpy<2"
