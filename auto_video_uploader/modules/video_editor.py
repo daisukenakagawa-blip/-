@@ -526,6 +526,30 @@ def _resolve_custom_background(background_url: str, segment_durations: list | No
     return None
 
 
+def _default_photo_background(segment_durations: list | None, total_sec: float,
+                             stem: str) -> Path | None:
+    """フォーム指定が無いとき、assets/bg_photos/ の実機写真を背景に使う。
+
+    2枚以上ならセグメント同期のスライドショー、1枚ならズーム背景。
+    """
+    photos_dir = config.BG_PHOTOS_DIR
+    if not photos_dir.exists():
+        return None
+    photos = sorted(
+        p for p in photos_dir.iterdir()
+        if p.suffix.lower() in IMAGE_EXTS and p.stat().st_size > 0
+    )
+    if not photos:
+        return None
+    if len(photos) >= 2:
+        try:
+            return _build_slideshow(photos, segment_durations, total_sec, stem)
+        except Exception as e:
+            get_logger().warning("既定写真スライドショー生成に失敗。1枚目を使用: %s", e)
+            return photos[0]
+    return photos[0]
+
+
 def create_video(
     content: dict,
     audio_path: Path,
@@ -570,6 +594,8 @@ def create_video(
     background = _resolve_custom_background(
         background_url, segment_durations, total_sec, stem
     )
+    if background is None:
+        background = _default_photo_background(segment_durations, total_sec, stem)
     if background is None:
         background = _find_or_create_background()
     is_video_bg = background.suffix.lower() in VIDEO_EXTS
