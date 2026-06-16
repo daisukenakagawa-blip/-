@@ -1,13 +1,46 @@
 {
   "title": "クソ台かと思ったジャグラーの結末",
-  "voice": "voicevox_speaker_13_aoyama_ryusei",
-  "note": "ユーザーが字幕入り画像を順番に提供。各シーンの字幕に合わせてアフレコを生成し、字幕長ぶん画像を表示して動画化する。",
+  "voice": "voicevox_speaker_13_aoyama_ryusei (本番) / pyopenjtalk男性ピッチ (ローカル試聴)",
+  "note": "ユーザー提供の字幕入り画像を順番に表示し、各字幕に合わせてアフレコを当てる。",
+  "bgm": "assets/bgm.mp3",
   "scenes": [
     {
       "index": 1,
       "image": "scene_01.png",
       "subtitle": "この台最後どうなったと思う?",
       "narration": "この台、最後どうなったと思う?"
+    },
+    {
+      "index": 2,
+      "image": "scene_02.png",
+      "subtitle": "しかもぶどうが4.8分の1なので / BIG1回だけしか引いてないけど こんなん6確定レベルだろww",
+      "narration": "しかもぶどうが4.8分の1。ビッグ1回しか引いてないのに、こんなん6確定レベルだろ。"
+    },
+    {
+      "index": 3,
+      "image": "scene_03.png",
+      "subtitle": "1ゲーム連までしたぞww / 6しかない!! ジャグ連確定!!",
+      "narration": "1ゲーム連までしたぞ。これはもう6しかない!"
+    },
+    {
+      "index": 4,
+      "image": "scene_04.png",
+      "subtitle": "気になる結果は?!",
+      "narration": "気になる結果は…?!",
+      "min_sec": 3.2
+    },
+    {
+      "index": 5,
+      "image": "scene_05.png",
+      "subtitle": "ひどすぎる… / でもおそらく4以上はある…!",
+      "narration": "ひどすぎる…。でも、おそらく4以上はある…!"
+    },
+    {
+      "index": 6,
+      "image": "scene_06.png",
+      "subtitle": "クソ台でした… / ヒッヒッヒ…また養分が釣れたぜ…",
+      "narration": "クソ台でした…。ヒッヒッヒ…。また養分が釣れたぜ…。",
+      "min_sec": 4.0
     }
   ]
 }
