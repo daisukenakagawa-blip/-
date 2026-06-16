@@ -52,19 +52,6 @@ BACKGROUND_CANDIDATES = ["background.mp4", "background.png", "background.jpg"]
 # スライドショー背景として使う(2枚以上ならランキング進行で切替)。
 BG_PHOTOS_DIR = ASSETS_DIR / "bg_photos"
 
-# キャラクター(ジャグラーマン)アバター。動画の右下に小さく表示して
-# 「こいつが喋っている」演出にする。元画像から円形バッジを自動生成する。
-CHARACTER_DIR = ASSETS_DIR / "character"
-CHARACTER_SRC = CHARACTER_DIR / "jugglerman_src.png"
-CHARACTER_BADGE = CHARACTER_DIR / "jugglerman_badge.png"
-# 口パク(喋っている)透過アバタークリップ
-CHARACTER_CLIP = CHARACTER_DIR / "jugglerman_talk.webm"
-# 右下アバターを表示するか。画面に対するアバター径の割合・余白(px)。
-SHOW_AVATAR = os.getenv("SHOW_AVATAR", "1").strip() not in ("0", "false", "False", "")
-AVATAR_WIDTH_RATIO = float(os.getenv("AVATAR_WIDTH_RATIO", "0.30"))
-AVATAR_MARGIN_R = int(os.getenv("AVATAR_MARGIN_R", "24"))
-AVATAR_MARGIN_B = int(os.getenv("AVATAR_MARGIN_B", "40"))
-
 # Pexels API (任意): 設定すると背景の縦型動画を自動でダウンロードして使う
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
 BACKGROUND_KEYWORD = os.getenv("BACKGROUND_KEYWORD", "casino neon lights")

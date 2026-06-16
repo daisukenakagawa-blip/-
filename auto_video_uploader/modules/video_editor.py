@@ -611,117 +611,6 @@ def _pick_impact_card(stem: str) -> Path:
     return _make_impact_card(kind, stem)
 
 
-# アバター(顔)の構図。元画像に対する比率。顔全体(ハット〜あご)が入る大きさ。
-_FACE_CX, _FACE_CY, _FACE_R = 0.700, 0.392, 0.232
-# 口のヒンジ(下あごが下がる境界線)を顔クロップ高さの比率で指定
-_MOUTH_HINGE = 0.84
-
-
-def _warp_mouth(face, delta: int):
-    """顔クロップの下あごを delta px 下げ、口内を暗くして「口を開けた」絵を作る。"""
-    from PIL import ImageEnhance
-
-    if delta <= 0:
-        return face.copy()
-    fw, fh = face.size
-    py = int(fh * _MOUTH_HINGE)
-    out = face.copy()
-    lower = face.crop((0, py, fw, fh))                  # あご側
-    seam = face.crop((0, py - 3, fw, py + 1)).resize((fw, delta))
-    seam = ImageEnhance.Brightness(seam).enhance(0.26)  # 口内を暗く
-    out.paste(seam, (0, py))
-    out.paste(lower, (0, min(py + delta, fh)))
-    return out
-
-
-def _badge_from_face(face):
-    """顔(RGB)を円形に切り抜き、金リング+影付きの RGBA バッジにする。"""
-    from PIL import Image, ImageDraw, ImageFilter
-
-    face = face.convert("RGBA")
-    D = min(face.size)
-    ss = 4
-    big = Image.new("L", (D * ss, D * ss), 0)
-    ImageDraw.Draw(big).ellipse((0, 0, D * ss, D * ss), fill=255)
-    face.putalpha(big.resize((D, D), Image.LANCZOS))
-
-    ring = max(6, int(D * 0.045))
-    pad = max(20, int(D * 0.16))
-    canvas = Image.new("RGBA", (D + pad * 2, D + pad * 2), (0, 0, 0, 0))
-
-    shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).ellipse(
-        (pad, pad + int(pad * 0.25), pad + D, pad + D + int(pad * 0.25)),
-        fill=(0, 0, 0, 170),
-    )
-    canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(pad * 0.45)))
-
-    rd = ImageDraw.Draw(canvas)
-    rd.ellipse((pad - ring, pad - ring, pad + D + ring, pad + D + ring),
-               fill=(255, 209, 64, 255))      # 金リング
-    rd.ellipse((pad - 2, pad - 2, pad + D + 2, pad + D + 2),
-               fill=(20, 20, 20, 255))         # 内側の細い黒フチ
-    canvas.alpha_composite(face, (pad, pad))
-    return canvas
-
-
-def _build_jugglerman_clip(src_path: Path, out_path: Path) -> Path:
-    """キャラ元画像から、口がパクパク動く透過アバタークリップ(webm)を作る。
-
-    口の開き量を変えた数フレームをループさせ、喋っているように見せる。
-    """
-    import tempfile
-
-    from PIL import Image
-
-    src = Image.open(src_path).convert("RGB")
-    W, H = src.size
-    cx, cy, r = int(W * _FACE_CX), int(H * _FACE_CY), int(W * _FACE_R)
-    face = src.crop((cx - r, cy - r, cx + r, cy + r))
-    fh = face.size[1]
-
-    # 口の開閉パターン(閉→開→閉)。比率で持ち、顔サイズに合わせて px 化
-    pattern = [0.0, 0.4, 0.75, 1.0, 0.75, 0.4]
-    dmax = int(fh * 0.036)
-    fps = 18
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as td:
-        for i, frac in enumerate(pattern):
-            badge = _badge_from_face(_warp_mouth(face, int(dmax * frac)))
-            badge.save(Path(td) / f"f{i:02d}.png")
-        cmd = [
-            "ffmpeg", "-y", "-framerate", str(fps),
-            "-i", str(Path(td) / "f%02d.png"),
-            "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-lossless", "1",
-            str(out_path),
-        ]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if proc.returncode != 0 or not out_path.exists():
-            raise RuntimeError(f"アバタークリップの生成に失敗: {proc.stderr[-500:]}")
-    return out_path
-
-
-def _avatar_clip_path() -> Path | None:
-    """右下アバター用の口パククリップを返す(無ければ元画像から生成)。
-
-    キャラ元画像が無い場合は None(アバターなしでレンダリングする)。
-    """
-    if not config.SHOW_AVATAR:
-        return None
-    clip = config.CHARACTER_CLIP
-    if clip.exists() and clip.stat().st_size > 0:
-        return clip
-    src = config.CHARACTER_SRC
-    if not (src.exists() and src.stat().st_size > 0):
-        return None
-    try:
-        return _build_jugglerman_clip(src, clip)
-    except Exception as e:
-        get_logger().warning("アバタークリップの生成に失敗。アバター無しで続行: %s", e)
-        return None
-
-
 def _monologue_background(content: dict, background_url: str,
                          segment_durations: list, total_sec: float, stem: str) -> Path | None:
     """モノローグ用の背景: フックはインパクトカード、以降は写真スライドショー。"""
@@ -882,15 +771,6 @@ def create_video(
         else:
             cmd += ["-f", "lavfi", "-t", "0.25", "-i", "sine=frequency=1480"]
 
-    # 右下キャラ(ジャグラーマン)アバター。モノローグのときだけ表示。
-    # 口パクの透過クリップをループ再生して「喋っている」演出にする。
-    # 入力は末尾に追加して、音声側のインデックスをずらさないようにする。
-    avatar = _avatar_clip_path() if is_monologue else None
-    avatar_index = None
-    if avatar is not None:
-        avatar_index = se_first_index + len(se_times)
-        cmd += ["-stream_loop", "-1", "-i", str(avatar)]
-
     # 字幕ファイルはカレントディレクトリ相対で参照する(パスエスケープ問題の回避)
     ass_filter = f"ass={ass_name}"
     if Path(config.FONT_PATH).exists():
@@ -911,19 +791,7 @@ def create_video(
             f"zoompan=z='1+0.12*on/{frames}':d=1:"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={fps},setsar=1"
         )
-    if avatar_index is not None:
-        # アバターを右下に重ねる。軽く上下に弾ませて「喋っている」感を出す。
-        d = max(120, int(w * config.AVATAR_WIDTH_RATIO))
-        mr, mb = config.AVATAR_MARGIN_R, config.AVATAR_MARGIN_B
-        # 上下の弾み(約4.5往復/秒・振幅12px)。口は動かせないため頷きで代用。
-        y_expr = f"H-h-{mb}-abs(sin(t*4.5))*12"
-        vchain = (
-            f"{vsrc},{ass_filter}[vbg];"
-            f"[{avatar_index}:v]scale={d}:-1[av];"
-            f"[vbg][av]overlay=x=W-w-{mr}:y='{y_expr}':shortest=0[v]"
-        )
-    else:
-        vchain = f"{vsrc},{ass_filter}[v]"
+    vchain = f"{vsrc},{ass_filter}[v]"
 
     # 音声ミックス: ナレーションを主役に、BGM は必ず小さく、SE は切替時のみ
     bgm_volume = min(config.BGM_VOLUME, 0.35)  # ナレーションより必ず小さく
