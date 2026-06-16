@@ -1,0 +1,13 @@
+{
+  "title": "クソ台かと思ったジャグラーの結末",
+  "voice": "voicevox_speaker_13_aoyama_ryusei",
+  "note": "ユーザーが字幕入り画像を順番に提供。各シーンの字幕に合わせてアフレコを生成し、字幕長ぶん画像を表示して動画化する。",
+  "scenes": [
+    {
+      "index": 1,
+      "image": "scene_01.png",
+      "subtitle": "この台最後どうなったと思う?",
+      "narration": "この台、最後どうなったと思う?"
+    }
+  ]
+}
