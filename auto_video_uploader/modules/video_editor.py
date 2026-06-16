@@ -398,8 +398,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Hook,{font},96,&H0000E5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8,4,2,70,70,470,1
-Style: Talk,{font},84,&H00FFFFFF,&H00FFFFFF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,8,3,2,70,70,440,1
+Style: Hook,{font},98,&H0000E5FF,&H00FFFFFF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,1,12,4,2,70,70,470,1
+Style: Talk,{font},86,&H0000E5FF,&H00FFFFFF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,11,4,2,70,70,440,1
 Style: Flash,{font},20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 
 [Events]
@@ -418,19 +418,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             + r"{\p1\bord0\shad0\1c&HFFFFFF&\1a&H64&\fad(40,180)}" + flash_shape + r"{\p0}"
         )
 
-    # オチ・どんでん返しの役は赤テロップで強調(単発バケ男風)
-    red_roles = {"twist", "challenge"}
+    # テロップは全行を黄色(ゴールド)+極太の黒フチで統一(サンプル準拠)。
+    # 赤は危険ワードなどのアクセントだけに使い、ベースは黄色で大きく見せる。
+    base = "&H0000E5FF"  # 黄色(ゴールド)
     # 読み上げ同期テロップ (中央・大きく・最大2行)
     for item in plan_line_schedule(content, total_sec, segment_durations):
         is_hook = item["role"] == "hook"
         style = "Hook" if is_hook else "Talk"
         wrapped = _wrap_jp(item["text"], 8 if is_hook else 11)
-        if is_hook:
-            base = "&H0000E5FF"   # フックは黄
-        elif item["role"] in red_roles:
-            base = "&H002B2BFF"   # オチは赤
-        else:
-            base = "&H00FFFFFF"   # 通常は白
         emphasized = _emphasize_numbers(wrapped, base)
         fx = r"{\fad(110,90)\t(0,130,\fscx109\fscy109)\t(130,260,\fscx100\fscy100)}"
         events.append(
