@@ -611,6 +611,67 @@ def _pick_impact_card(stem: str) -> Path:
     return _make_impact_card(kind, stem)
 
 
+def _make_jugglerman_badge(src_path: Path, out_path: Path) -> Path:
+    """キャラ元画像から、顔(ハット〜口元)を円形に切り抜いた金リング付き
+    アバターバッジを生成する。右下に重ねて「喋っている」演出に使う。"""
+    from PIL import Image, ImageDraw, ImageFilter
+
+    src = Image.open(src_path).convert("RGB")
+    W, H = src.size
+    # 顔の中心と半径を画像サイズ比で指定(元画像の構図に合わせて調整済み)
+    cx, cy = int(W * 0.700), int(H * 0.405)
+    r = int(W * 0.182)
+    face = src.crop((cx - r, cy - r, cx + r, cy + r)).convert("RGBA")
+    D = 2 * r
+
+    # 円形マスク(4倍で描いて縮小しアンチエイリアス)
+    ss = 4
+    big = Image.new("L", (D * ss, D * ss), 0)
+    ImageDraw.Draw(big).ellipse((0, 0, D * ss, D * ss), fill=255)
+    face.putalpha(big.resize((D, D), Image.LANCZOS))
+
+    ring = max(6, int(D * 0.045))   # 金リングの太さ
+    pad = max(20, int(D * 0.16))    # 影のための余白
+    canvas = Image.new("RGBA", (D + pad * 2, D + pad * 2), (0, 0, 0, 0))
+
+    shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).ellipse(
+        (pad, pad + int(pad * 0.25), pad + D, pad + D + int(pad * 0.25)),
+        fill=(0, 0, 0, 170),
+    )
+    canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(pad * 0.45)))
+
+    rd = ImageDraw.Draw(canvas)
+    rd.ellipse((pad - ring, pad - ring, pad + D + ring, pad + D + ring),
+               fill=(255, 209, 64, 255))          # 金リング
+    rd.ellipse((pad - 2, pad - 2, pad + D + 2, pad + D + 2),
+               fill=(20, 20, 20, 255))             # 内側の細い黒フチ
+    canvas.alpha_composite(face, (pad, pad))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path)
+    return out_path
+
+
+def _avatar_badge_path() -> Path | None:
+    """右下アバター用のバッジ画像を返す(無ければ元画像から生成)。
+
+    キャラ元画像が無い場合は None(アバターなしでレンダリングする)。
+    """
+    if not config.SHOW_AVATAR:
+        return None
+    badge = config.CHARACTER_BADGE
+    if badge.exists() and badge.stat().st_size > 0:
+        return badge
+    src = config.CHARACTER_SRC
+    if not (src.exists() and src.stat().st_size > 0):
+        return None
+    try:
+        return _make_jugglerman_badge(src, badge)
+    except Exception as e:
+        get_logger().warning("アバターバッジの生成に失敗。アバター無しで続行: %s", e)
+        return None
+
+
 def _monologue_background(content: dict, background_url: str,
                          segment_durations: list, total_sec: float, stem: str) -> Path | None:
     """モノローグ用の背景: フックはインパクトカード、以降は写真スライドショー。"""
@@ -771,6 +832,14 @@ def create_video(
         else:
             cmd += ["-f", "lavfi", "-t", "0.25", "-i", "sine=frequency=1480"]
 
+    # 右下キャラ(ジャグラーマン)アバター。モノローグのときだけ表示。
+    # 入力は末尾に追加して、音声側のインデックスをずらさないようにする。
+    avatar = _avatar_badge_path() if is_monologue else None
+    avatar_index = None
+    if avatar is not None:
+        avatar_index = se_first_index + len(se_times)
+        cmd += ["-loop", "1", "-i", str(avatar)]
+
     # 字幕ファイルはカレントディレクトリ相対で参照する(パスエスケープ問題の回避)
     ass_filter = f"ass={ass_name}"
     if Path(config.FONT_PATH).exists():
@@ -791,7 +860,19 @@ def create_video(
             f"zoompan=z='1+0.12*on/{frames}':d=1:"
             f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={fps},setsar=1"
         )
-    vchain = f"{vsrc},{ass_filter}[v]"
+    if avatar_index is not None:
+        # アバターを右下に重ねる。軽く上下に弾ませて「喋っている」感を出す。
+        d = max(120, int(w * config.AVATAR_WIDTH_RATIO))
+        mr, mb = config.AVATAR_MARGIN_R, config.AVATAR_MARGIN_B
+        # 上下の弾み(約4.5往復/秒・振幅12px)。口は動かせないため頷きで代用。
+        y_expr = f"H-h-{mb}-abs(sin(t*4.5))*12"
+        vchain = (
+            f"{vsrc},{ass_filter}[vbg];"
+            f"[{avatar_index}:v]scale={d}:-1[av];"
+            f"[vbg][av]overlay=x=W-w-{mr}:y='{y_expr}':shortest=0[v]"
+        )
+    else:
+        vchain = f"{vsrc},{ass_filter}[v]"
 
     # 音声ミックス: ナレーションを主役に、BGM は必ず小さく、SE は切替時のみ
     bgm_volume = min(config.BGM_VOLUME, 0.35)  # ナレーションより必ず小さく
