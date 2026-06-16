@@ -413,6 +413,7 @@
         <option value="rank">通常予想スコア</option>
         <option value="inject">投入期待スコア</option>
         <option value="forecast">🔮 明日の投入予想（学習反映）</option>
+        <option value="inject3">🧠 投入予想3（学習反映）</option>
       </select></div>
     </div>
     <button class="primary" onclick="render()">🔍 答え合わせする</button>
@@ -2790,13 +2791,17 @@ function renderAnswerDetailInner(){
   const md=maxDate(sr); const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
   const CU=learnCusp(sr,d=>isEventDate(d,store),md);
   const mAvgs=machineAverages(recent(sr,30));
-  const engine=val("ad-engine")||"rank";   // 採点エンジン：通常予想／投入期待／明日の投入予想(学習反映)
-  // 集計ループ用は base（軽い）。選択日の本予想は forecast なら学習反映を適用。
-  const predict=(dd)=> (engine==="inject"||engine==="forecast") ? computeInjection(srAll,store,dd) : computeRanking(srAll,store,dd,false,null);
-  const engLabel=engine==="forecast"?"明日の投入予想スコア":engine==="inject"?"投入期待スコア":"予想スコア";
+  const engine=val("ad-engine")||"rank";   // 採点エンジン：通常予想／投入期待／明日の投入予想／投入予想3(学習反映)
+  // 集計ループ用は base（軽い）。選択日の本予想は forecast/inject3 なら学習反映を適用。
+  const predict=(dd)=> engine==="inject3" ? computeInjection3(srAll,store,dd)
+    : (engine==="inject"||engine==="forecast") ? computeInjection(srAll,store,dd)
+    : computeRanking(srAll,store,dd,false,null);
+  const engLabel=engine==="inject3"?"投入予想3スコア":engine==="forecast"?"明日の投入予想スコア":engine==="inject"?"投入期待スコア":"予想スコア";
   let R;
   if(engine==="forecast"){ const bt=injectionBacktest(srAll,store,D);
     R=computeInjection(srAll,store,D,{missPattern:{missN:bt.missN,missRate:bt.missRate},factorWeights:bt.factorWeights}); }
+  else if(engine==="inject3"){ const bt=injectionBacktest3(srAll,store,D);
+    R=computeInjection3(srAll,store,D,{missPattern:{missN:bt.missN,missRate:bt.missRate},factorWeights:bt.factorWeights}); }
   else R=predict(D);
   const scoreBy={}; if(R) R.out.forEach(o=>scoreBy[o.mno]=o);
   const byMhist={}; sr.forEach(r=>{(byMhist[r.machine_no]=byMhist[r.machine_no]||[]).push(r);}); for(const k in byMhist)byMhist[k].sort((a,b)=>a.date<b.date?-1:1);
