@@ -391,14 +391,17 @@
   <!-- 実戦収支 -->
   <div class="panel" id="p-myplay">
     <h2>📝 実戦収支（自分の打った台の記録）</h2>
-    <p class="muted">BIG・バケ(REG)・総回転・差枚を入力すると、機械割・各確率を自動計算し、機種別＆トータルの収支を集計します。</p>
+    <p class="muted">BIG・バケ(REG)・総回転・差枚を入力すると、機械割・各確率を自動計算します。
+      <b>店舗・日付・台番号を入れると、取り込み済みデータから自動で数値が入ります。</b></p>
     <div class="row">
-      <div><label>日付</label><input id="my-date" type="date"></div>
-      <div><label>店舗</label><input id="my-store" placeholder="店名（任意）"></div>
+      <div><label>日付</label><input id="my-date" type="date" onchange="myAutoFill()"></div>
+      <div><label>店舗</label><input id="my-store" list="my-store-list" placeholder="店名" onchange="myAutoFill()">
+        <datalist id="my-store-list"></datalist></div>
+      <div><label>台番号</label><input id="my-no" type="number" inputmode="numeric" placeholder="例 2001" onchange="myAutoFill()" oninput="myAutoFill()"></div>
       <div><label>機種</label><input id="my-machine" list="my-mach-list" placeholder="マイジャグラーV など">
         <datalist id="my-mach-list"></datalist></div>
-      <div><label>台番号(任意)</label><input id="my-no" type="number" inputmode="numeric"></div>
     </div>
+    <button class="ghost" style="margin:2px 0 6px" onclick="myAutoFill()">📥 データから自動取得（店舗・日付・台番号で検索）</button>
     <div class="row">
       <div><label>BIG</label><input id="my-big" type="number" inputmode="numeric" oninput="myPreview()"></div>
       <div><label>バケ(REG)</label><input id="my-reg" type="number" inputmode="numeric" oninput="myPreview()"></div>
@@ -1424,7 +1427,8 @@ function refreshAll(){
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
   { const dl2=document.getElementById("my-mach-list"); if(dl2){ const names=[...new Set([...Object.keys(JAG_SPECS),...rows.map(r=>r.machine_name),...loadMyPlay().map(r=>r.machine)])].filter(x=>x);
-    dl2.innerHTML=names.map(n=>'<option value="'+n+'">').join(""); } }
+    dl2.innerHTML=names.map(n=>'<option value="'+n+'">').join(""); }
+    const dl3=document.getElementById("my-store-list"); if(dl3){ dl3.innerHTML=stores.map(n=>'<option value="'+n+'">').join(""); } }
   renderEvents(); render();
 }
 function fillSelect(id,opts){ const el=document.getElementById(id); if(!el)return; const cur=el.value;
@@ -2494,6 +2498,18 @@ function myPreview(){ const t=toInt(val("my-total")), big=toInt(val("my-big")), 
   if(!t){ el.textContent=""; return; }
   const w=machineWari(t,diff||0); const bb=big?t/big:null, rb=reg?t/reg:null, gou=(big||reg)?t/((big||0)+(reg||0)):null;
   el.innerHTML="自動計算 → 機械割 <b>"+(w!=null?w.toFixed(1)+"%":"-")+"</b> ／ BIG "+myDen(bb)+" ／ REG "+myDen(rb)+" ／ 合成 "+myDen(gou);
+}
+// 取り込み済みデータ（店舗・日付・台番号）からBIG/REG/総回転/差枚を自動取得
+function myAutoFill(){ const store=val("my-store").trim(), date=val("my-date"), no=toInt(val("my-no"));
+  const msg=document.getElementById("my-msg"); if(no==null||!date) return;
+  let cands=load().filter(r=>r.date===date && +r.machine_no===+no);
+  if(store) cands=cands.filter(r=>r.store===store);
+  if(!cands.length){ if(msg) msg.innerHTML='<div class="muted">その日付・台番号のデータが見つかりません（手入力でもOK）。</div>'; return; }
+  const r=cands[0]; const set=(id,v)=>{const e=document.getElementById(id); if(e&&v!=null&&v!=="")e.value=v;};
+  set("my-store",r.store); set("my-machine",r.machine_name); set("my-big",r.big); set("my-reg",r.reg); set("my-total",r.total);
+  if(r.sabe!=null) set("my-diff",r.sabe);
+  if(msg) msg.innerHTML='<div class="ok">📥 データ取得：'+r.store+' '+r.machine_name+' '+no+'番（BIG'+r.big+' / REG'+r.reg+' / '+r.total+'G'+(r.sabe!=null?' / 差枚'+(r.sabe>=0?"+":"")+r.sabe:'')+'）'+(cands.length>1?'　※同条件'+cands.length+'件の先頭':'')+'</div>';
+  myPreview();
 }
 function addMyPlay(){ const date=val("my-date"), store=val("my-store").trim(), machine=val("my-machine").trim();
   const no=toInt(val("my-no")), big=toInt(val("my-big"))||0, reg=toInt(val("my-reg"))||0, total=toInt(val("my-total")), diff=toSignedInt(val("my-diff"));
