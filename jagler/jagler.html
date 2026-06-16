@@ -2732,6 +2732,9 @@ function computeInjection(srAll, store, targetDate, missPattern){
   const mdEvent=isEventDate(md,store);
   const lastDay={}; sr.filter(r=>r.date===md).forEach(r=>lastDay[r.machine_no]=r);
   const overall=CU.overallHi||0; const phase=CU.phase(targetDate);
+  // 高設定が入ったとき設定4/5/6どれが多いか（店全体・イベント日）。今回の期待設定の推定に使う
+  const dist=(arr)=>{let a=0,b=0,c=0;arr.forEach(r=>{const e=estimateSetting(r);if(e){if(e.setting===4)a++;else if(e.setting===5)b++;else if(e.setting===6)c++;}});return{s4:a,s5:b,s6:c,n:a+b+c};};
+  const Sdist=dist(sr), Edist=dist(sr.filter(r=>isEventDate(r.date,store)));
   const evStats=eventReliability(srAll,store,targetDate);
   let evHr=null;
   if(eventDay){ const tnames=autoEv.map(e=>e.eventType||e.name||eventDesc(e));
@@ -2825,8 +2828,15 @@ function computeInjection(srAll, store, targetDate, missPattern){
     s=Math.max(0,+s.toFixed(1));
     // 過去に設定4/5/6が何回入ったか（別々に集計）
     let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
+    // 今回どの設定に期待できるか（高設定が入る前提での4/5/6の期待割合）
+    // 台自身の過去分布＋店全体（事前分布）＋イベント日傾向 を合成
+    const sw=Sdist.n||1, pr=4;   // 事前分布の強さ
+    let n4=(Sdist.s4/sw)*pr+s4, n5=(Sdist.s5/sw)*pr+s5, n6=(Sdist.s6/sw)*pr+s6;
+    if(eventDay&&Edist.n>=3){ n4+=Edist.s4/Edist.n*3; n5+=Edist.s5/Edist.n*3; n6+=Edist.s6/Edist.n*3; }
+    const nt=(n4+n5+n6)||1; const e4=n4/nt, e5=n5/nt, e6=n6/nt;
+    const honmei = (e6>=e5&&e6>=e4)?6:(e5>=e4?5:4);
     out.push({mno,mname,tail,score:s,contrib:C,reasons:reasons.slice(),cons:cons.slice(),aim:aimInfo(hist),
-      s4,s5,s6,sig:sigList.slice(),missMatch,missScore,
+      s4,s5,s6,e4,e5,e6,honmei,sig:sigList.slice(),missMatch,missScore,
       expectRate,keepExp,upExp,streak,hiCount,days:hist.length,avgKeepDays,avgGap,prevHi,
       plusTop:Object.entries(C).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,5).map(e=>e[0]+" +"+e[1].toFixed(1)),
       minusTop:Object.entries(C).filter(e=>e[1]<0).sort((a,b)=>a[1]-b[1]).map(e=>e[0]+" "+e[1].toFixed(1))});
@@ -2902,14 +2912,16 @@ function renderInjectionInner(){
     h+="<h3 style='margin:14px 0 4px;background:#1a1a1a;color:#fff;padding:6px 10px;border-radius:6px'>🎰 "+mname+
       " <span style='font-weight:normal;font-size:12px'>（"+list.length+"台 ／ 設定4: "+t4+"回・設定5: "+t5+"回・設定6: "+t6+"回）</span></h3>";
     h+="<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>投入期待<br>スコア</th><th>判定</th><th>狙い方</th>"+
-      "<th>投入<br>期待率</th><th>据え置き<br>期待率</th><th>上げ<br>期待率</th><th>不発<br>日数</th>"+
+      "<th>投入<br>期待率</th><th>今回の<br>期待設定</th><th>据え置き<br>期待率</th><th>上げ<br>期待率</th><th>不発<br>日数</th>"+
       "<th style='background:#e6f8d8'>設定4<br>回数</th><th style='background:#b6f5a0'>設定5<br>回数</th><th style='background:#7CFC00'>設定6<br>回数</th>"+
       "<th>平均<br>投入間隔</th><th>根拠(加点)</th><th>減点</th></tr>";
     list.forEach((o,i)=>{
+      const hc={4:"#e6f8d8",5:"#b6f5a0",6:"#7CFC00"}[o.honmei]||"#eee";
+      const exp="<b style='background:"+hc+";padding:1px 4px;border-radius:4px'>本命 設定"+o.honmei+"</b><br><span style='font-size:11px'>4:"+pc(o.e4)+" 5:"+pc(o.e5)+" 6:"+pc(o.e6)+"</span>";
       h+="<tr><td>"+(i+1)+"</td><td>"+o.mno+"</td>"+
         "<td style='background:"+judBg(o.mark)+";font-weight:bold;font-size:14px'>"+o.score.toFixed(0)+"</td><td style='white-space:nowrap'>"+o.mark+"</td>"+
         "<td style='text-align:left'>"+aimCellHTML(o.aim)+"</td>"+
-        "<td style='font-weight:bold'>"+pc(o.expectRate)+"</td><td>"+pc(o.keepExp)+"</td><td>"+pc(o.upExp)+"</td>"+
+        "<td style='font-weight:bold'>"+pc(o.expectRate)+"</td><td style='text-align:left;white-space:nowrap'>"+exp+"</td><td>"+pc(o.keepExp)+"</td><td>"+pc(o.upExp)+"</td>"+
         "<td>"+o.streak+"日</td>"+
         "<td style='background:#f1fae8;font-weight:bold'>"+o.s4+"</td><td style='background:#dcf7c8;font-weight:bold'>"+o.s5+"</td><td style='background:#caf5a0;font-weight:bold'>"+o.s6+"</td>"+
         "<td>"+(o.avgGap!=null?o.avgGap+"日":"-")+"</td>"+
