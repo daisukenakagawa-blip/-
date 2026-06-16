@@ -378,6 +378,10 @@
     <div class="row">
       <div><label>店舗</label><select id="ad-store" onchange="render()"></select></div>
       <div><label>答え合わせする日（実データがある日）</label><input id="ad-date" type="date" onchange="render()"></div>
+      <div><label>採点エンジン</label><select id="ad-engine" onchange="_adCache=null;render()">
+        <option value="rank">通常予想スコア</option>
+        <option value="inject">投入期待スコア</option>
+      </select></div>
     </div>
     <button class="primary" onclick="render()">🔍 答え合わせする</button>
     <div id="t-andetail"></div>
@@ -2639,7 +2643,10 @@ function renderAnswerDetailInner(){
   const md=maxDate(sr); const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
   const CU=learnCusp(sr,d=>isEventDate(d,store),md);
   const mAvgs=machineAverages(recent(sr,30));
-  const R=computeRanking(srAll,store,D,false,null);
+  const engine=val("ad-engine")||"rank";   // 採点エンジン：通常予想／投入期待
+  const predict=(dd)=> engine==="inject" ? computeInjection(srAll,store,dd) : computeRanking(srAll,store,dd,false,null);
+  const engLabel=engine==="inject"?"投入期待スコア":"予想スコア";
+  const R=predict(D);
   const scoreBy={}; if(R) R.out.forEach(o=>scoreBy[o.mno]=o);
   const byMhist={}; sr.forEach(r=>{(byMhist[r.machine_no]=byMhist[r.machine_no]||[]).push(r);}); for(const k in byMhist)byMhist[k].sort((a,b)=>a.date<b.date?-1:1);
   const evToday=isEventDate(D,store);
@@ -2659,13 +2666,13 @@ function renderAnswerDetailInner(){
   rows.sort((x,y)=>{ const r=(rank[x.klass]??9)-(rank[y.klass]??9); if(r)return r; return (y.score||0)-(x.score||0); });
   const miss=rows.filter(r=>r.klass==="❗取りこぼし"), totalHi=rows.filter(r=>r.hi).length;
 
-  let h="<p class='muted'>"+store+" ／ 答え合わせ日="+D.slice(5)+(evToday?"（イベント日）":"")+" ／ 前日まで"+CU.dates.length+"日で予想</p>";
+  let h="<p class='muted'>"+store+" ／ 答え合わせ日="+D.slice(5)+(evToday?"（イベント日）":"")+" ／ 前日まで"+CU.dates.length+"日で予想 ／ <b>採点："+engLabel+"</b></p>";
   h+="<div class='note' style='background:#fff4f4;border-color:#f3a'>"+
     "<b>❗取りこぼし（低スコアだが高設定）："+miss.length+"台</b> ／ 実際の高設定 "+totalHi+"台中。<br>"+
     "<span class='muted'>↓この台たちが「なぜ予想で低かったか」と「なぜ実際に高設定だったか」を並べています。</span></div>";
 
   // メインテーブル
-  h+="<div class='scroll'><table style='font-size:12px'><tr><th>分類</th><th>台</th><th>機種</th><th>予想<br>スコア</th><th>判定</th>"+
+  h+="<div class='scroll'><table style='font-size:12px'><tr><th>分類</th><th>台</th><th>機種</th><th>"+engLabel.replace("スコア","<br>スコア")+"</th><th>判定</th>"+
     "<th>当日<br>設定</th><th>当日REG<br>(機種平均)</th><th>当日<br>合算</th><th>予想が低かった理由</th><th>実際に高設定だった理由</th></tr>";
   rows.forEach(r=>{ const bg = r.klass==="❗取りこぼし"?"#ffe0e0": r.klass==="🎯 的中"?"#d8f5c0": r.klass==="⚠ ハズレ"?"#fff0d0": r.klass==="✅ 正しく回避"?"#eef7ff":"#fff";
     h+="<tr style='background:"+bg+"'><td style='white-space:nowrap'>"+r.klass+"</td><td>"+r.mno+"</td><td>"+r.mname+"</td>"+
@@ -2679,12 +2686,12 @@ function renderAnswerDetailInner(){
   h+="</table></div>";
 
   // 取りこぼしの共通点（過去複数日の集計）
-  const aggKey=store+"|"+srAll.length+"|"+D+"|"+btDays();
+  const aggKey=store+"|"+srAll.length+"|"+D+"|"+btDays()+"|"+engine;
   if(!_adCache||_adCache.key!==aggKey){
     const sigCount={}; let missN=0, hiN=0;
     const di=datesAll.indexOf(D); const start=Math.max(1,di-btDays());   // バックテスト期間（設定可）
     for(let i=start;i<=di;i++){ const DD=datesAll[i]; const srr=srAll.filter(r=>r.date<DD); if(srr.length<2)continue;
-      const RR=computeRanking(srAll,store,DD,false,null); if(!RR)continue; const sB={}; RR.out.forEach(o=>sB[o.mno]=o);
+      const RR=predict(DD); if(!RR)continue; const sB={}; RR.out.forEach(o=>sB[o.mno]=o);
       const bh={}; srr.forEach(r=>{(bh[r.machine_no]=bh[r.machine_no]||[]).push(r);}); for(const k in bh)bh[k].sort((a,b)=>a.date<b.date?-1:1);
       const ev=isEventDate(DD,store);
       srAll.filter(r=>r.date===DD).forEach(a=>{ if(!isHi(a))return; hiN++; const o=sB[a.machine_no]; if(!o||o.score>=65)return; missN++;
@@ -2700,7 +2707,7 @@ function renderAnswerDetailInner(){
     _adCache={key:aggKey, sigCount, missN, hiN};
   }
   const agg=_adCache;
-  h+="<details class='note' open style='margin-top:8px'><summary><b>🧭 取りこぼしの共通点（直近最大30日の集計）</b></summary>"+
+  h+="<details class='note' open style='margin-top:8px'><summary><b>🧭 取りこぼしの共通点（"+engLabel+"・直近最大"+btDays()+"日の集計）</b></summary>"+
     "<p class='muted' style='font-size:12px'>低スコア(65点未満)だったのに高設定だった台 <b>"+agg.missN+"件</b>（高設定 計"+agg.hiN+"件）に共通していた手がかりです。"+
     "ここが多い項目ほど、その店のクセを反映しきれていない＝強化すべきポイントです。</p>";
   const sigs=Object.entries(agg.sigCount).sort((a,b)=>b[1]-a[1]);
