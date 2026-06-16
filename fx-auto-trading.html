@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FX自動売買（EA）の始め方とVPSの選び方｜24時間ほったらかし運用ガイド【2026年】</title>
+<meta name="description" content="FX自動売買（EA・MT4）の仕組み、メリット・デメリット、そして24時間安定稼働に欠かせないVPSの選び方をやさしく解説。副業で放置運用したい人向けの入門ガイドです。">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://daisukenakagawa-blip.github.io/-/fx-auto-trading.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="FX自動売買（EA）の始め方とVPSの選び方｜24時間ほったらかし運用ガイド">
+<meta property="og:description" content="EA・MT4の仕組みからVPSの選び方まで。副業で放置運用したい人向けの自動売買入門。">
+<meta property="og:locale" content="ja_JP">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"FX自動売買（EA）の始め方とVPSの選び方","description":"EA・MT4の仕組みからVPSの選び方まで自動売買を解説。","author":{"@type":"Organization","name":"FX口座ナビ編集部"},"publisher":{"@type":"Organization","name":"FX口座ナビ"},"datePublished":"2026-06-16"}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"FXの自動売買にVPSは必要ですか？","acceptedAnswer":{"@type":"Answer","text":"必須ではありませんが強く推奨されます。自宅PCでEAを動かすと、停電・再起動・ネット切断で取引が止まるリスクがあります。VPSなら24時間クラウドで安定稼働し、約定チャンスを逃しません。"}},
+{"@type":"Question","name":"自動売買は初心者でもできますか？","acceptedAnswer":{"@type":"Answer","text":"設定自体は難しくありませんが、EA任せでも相場急変で損失が出る可能性はあります。まずは少額・低レバレッジで、デモやバックテストで検証してから本番に移すのがおすすめです。"}}]}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[
+{"@type":"ListItem","position":1,"name":"ホーム","item":"https://daisukenakagawa-blip.github.io/-/"},
+{"@type":"ListItem","position":2,"name":"FX自動売買とVPSの選び方","item":"https://daisukenakagawa-blip.github.io/-/fx-auto-trading.html"}]}
+</script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a18;--bg2:#12122a;--card:#16182e;--border:#282848;--txt:#e6e6ee;--mut:#9aa0b5;--gold:#ffd24d;--accent:#3b82f6;--green:#34d399;--red:#f87171;--cta:#ff5a3c;--cta2:#ff7a3c}
+html{scroll-behavior:smooth}
+body{font-family:'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif;background:var(--bg);color:var(--txt);line-height:1.8;font-size:16px}
+a{color:var(--accent);text-decoration:none}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+.pr-label{background:#1a1a30;color:var(--mut);font-size:.72rem;text-align:center;padding:6px;letter-spacing:.05em;border-bottom:1px solid var(--border)}
+header.site{background:var(--bg2);border-bottom:1px solid var(--border);padding:14px 0}
+header.site .wrap{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;max-width:960px}
+.logo{font-size:1.15rem;font-weight:800;color:var(--gold)}
+.logo span{color:var(--accent)}
+nav.top a{color:var(--mut);font-size:.85rem;margin-left:14px}
+nav.top a:hover{color:var(--gold)}
+.crumb{font-size:.76rem;color:var(--mut);padding:14px 0 0}
+.crumb a{color:var(--mut)}
+article h1{font-size:1.7rem;line-height:1.45;margin:14px 0 10px}
+.meta{font-size:.78rem;color:var(--mut);margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:16px}
+.disclaimer{background:#3a1414;border:1px solid #7a2a2a;border-radius:8px;padding:10px 16px;margin:18px 0;font-size:.78rem;color:#ffb4b4}
+.toc{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin:22px 0}
+.toc h2{font-size:.95rem;color:var(--gold);margin-bottom:10px}
+.toc ol{margin-left:20px;font-size:.9rem}
+.toc li{padding:3px 0}
+h2.sec{font-size:1.35rem;border-left:5px solid var(--gold);padding-left:12px;margin:38px 0 14px}
+p{margin-bottom:14px}
+ul.bullet{margin:0 0 16px 22px}
+ul.bullet li{margin-bottom:6px}
+.box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin:18px 0}
+.box.tip{border-color:#1f5a3f;background:#0e2a1e}
+.box.tip h4{color:var(--green);font-size:.92rem;margin-bottom:6px}
+.box.warn{border-color:#7a5a2a;background:#2a2210}
+.box.warn h4{color:#ffc24d;font-size:.92rem;margin-bottom:6px}
+.pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.pros,.cons{border-radius:8px;padding:12px 14px;font-size:.86rem}
+.pros{background:#0e2a1e;border:1px solid #1f5a3f}
+.cons{background:#2a1414;border:1px solid #5a2a2a}
+.pros h4{color:var(--green);font-size:.85rem;margin-bottom:6px}
+.cons h4{color:var(--red);font-size:.85rem;margin-bottom:6px}
+.pros ul,.cons ul{list-style:none}
+.pros li,.cons li{padding:2px 0;padding-left:18px;position:relative}
+.pros li::before{content:"\2714";position:absolute;left:0;color:var(--green)}
+.cons li::before{content:"\2716";position:absolute;left:0;color:var(--red)}
+.steps{counter-reset:step;margin:16px 0}
+.step{position:relative;padding:0 0 18px 48px;border-left:2px solid var(--border);margin-left:16px}
+.step:last-child{border-left:0}
+.step::before{counter-increment:step;content:counter(step);position:absolute;left:-16px;top:0;width:32px;height:32px;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800}
+.step h4{font-size:1rem;color:var(--gold);margin-bottom:4px}
+.step p{font-size:.9rem;color:var(--mut);margin-bottom:0}
+.faq details{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:10px;padding:0 16px}
+.faq summary{cursor:pointer;padding:14px 0;font-weight:700;font-size:.95rem;list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::before{content:"Q ";color:var(--accent);font-weight:800}
+.faq details[open] summary{color:var(--gold)}
+.faq .ans{padding:0 0 16px;color:var(--mut);font-size:.88rem;border-top:1px solid var(--border);padding-top:12px}
+.faq .ans::before{content:"A ";color:var(--green);font-weight:800}
+.related{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;margin:30px 0}
+.related h3{font-size:1rem;color:var(--gold);margin-bottom:10px}
+.related a{display:block;padding:7px 0;border-bottom:1px solid var(--border);color:var(--txt);font-size:.9rem}
+.related a:last-child{border-bottom:0}
+.related a:hover{color:var(--gold)}
+footer.site{background:var(--bg2);border-top:1px solid var(--border);padding:26px 0;margin-top:50px;font-size:.78rem;color:var(--mut)}
+footer.site a{color:var(--mut)}
+footer.site .links a{margin-right:16px}
+@media(max-width:600px){article h1{font-size:1.35rem}h2.sec{font-size:1.18rem}.pros-cons{grid-template-columns:1fr}nav.top{display:none}}
+</style>
+</head>
+<body>
+<div class="pr-label">本ページはプロモーション（アフィリエイト広告）を含みます</div>
+<header class="site">
+  <div class="wrap">
+    <div class="logo"><a href="index.html" style="color:inherit">FX<span>口座ナビ</span></a></div>
+    <nav class="top"><a href="fx-affiliate.html">比較ランキング</a><a href="fx-beginner-guide.html">始め方</a><a href="fx-auto-trading.html">自動売買</a><a href="fx-tax-guide.html">税金</a></nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="crumb"><a href="index.html">ホーム</a> ＞ FX自動売買とVPSの選び方</div>
+  <article>
+    <h1>FX自動売買（EA）の始め方とVPSの選び方｜24時間ほったらかし運用ガイド</h1>
+    <div class="meta">公開日：2026年6月16日 ／ 監修：FX口座ナビ編集部</div>
+
+    <p>「仕事中もチャートを見られない」「感情に左右されず淡々と取引したい」——そんな悩みを解決するのが<strong>FXの自動売買（EA）</strong>です。この記事では、自動売買の仕組みとメリット・デメリット、そして24時間安定して動かすために欠かせない<strong>VPS（仮想専用サーバー）の選び方</strong>を解説します。</p>
+
+    <div class="disclaimer">⚠️ 自動売買（EA）も損失リスクをゼロにはできません。相場の急変動では大きな損失が生じる可能性があります。本記事は情報提供を目的とし、利益を保証するものではありません。必ず余剰資金で、ご自身の判断と責任において行ってください。</div>
+
+    <div class="toc">
+      <h2>📑 この記事の内容</h2>
+      <ol>
+        <li><a href="#what">FX自動売買（EA）とは？</a></li>
+        <li><a href="#pros">メリットとデメリット</a></li>
+        <li><a href="#why-vps">なぜVPSが必要なのか</a></li>
+        <li><a href="#choose-vps">自動売買向けVPSの選び方</a></li>
+        <li><a href="#start">自動売買の始め方（4ステップ）</a></li>
+        <li><a href="#faq">よくある質問</a></li>
+      </ol>
+    </div>
+
+    <h2 class="sec" id="what">FX自動売買（EA）とは？</h2>
+    <p>EA（Expert Advisor）とは、あらかじめ決めたルールに従って<strong>自動でFX取引を行うプログラム</strong>です。主に「MT4（MetaTrader 4）」という取引ツール上で動作し、エントリー・決済・損切りまで人の手を介さずに実行します。</p>
+    <p>「平日は仕事で相場を見られない」という会社員の副業トレードと特に相性がよく、ルールベースで淡々と取引するため<strong>感情的な売買ミスを防げる</strong>のも大きな魅力です。</p>
+
+    <h2 class="sec" id="pros">メリットとデメリット</h2>
+    <div class="pros-cons">
+      <div class="pros"><h4>メリット</h4><ul>
+        <li>24時間チャンスを逃さず自動取引</li>
+        <li>感情に左右されず機械的に売買</li>
+        <li>仕事中・就寝中も稼働できる</li>
+        <li>バックテストで事前検証できる</li>
+      </ul></div>
+      <div class="cons"><h4>デメリット</h4><ul>
+        <li>相場急変で損失が出ることもある</li>
+        <li>EAの良し悪しで成績が変わる</li>
+        <li>稼働環境（PC/VPS）が必要</li>
+        <li>放置しすぎは禁物・定期点検が必要</li>
+      </ul></div>
+    </div>
+
+    <h2 class="sec" id="why-vps">なぜVPSが必要なのか</h2>
+    <p>EAは「MT4が起動し続けている環境」がないと動きません。自宅のPCで動かすこともできますが、次のようなリスクがあります。</p>
+    <ul class="bullet">
+      <li>PCの電源を切る・スリープすると取引が止まる</li>
+      <li>停電・再起動・Windows更新で停止する</li>
+      <li>自宅のネット回線が切れると約定できない</li>
+      <li>電気代・PCの負荷がかかり続ける</li>
+    </ul>
+    <p>そこで使われるのが<strong>VPS（仮想専用サーバー）</strong>です。クラウド上の常時稼働サーバーでMT4/EAを動かすため、自宅PCを消しても<strong>24時間止まらず自動売買</strong>を続けられます。</p>
+    <div class="box tip">
+      <h4>💡 VPSなら「ほったらかし」が現実的に</h4>
+      <p style="font-size:.88rem;color:var(--mut)">VPSにMT4とEAを設置すれば、あとはクラウドが動かし続けてくれます。スマホからいつでも稼働状況を確認できるので、副業でも管理しやすくなります。</p>
+    </div>
+
+    <h2 class="sec" id="choose-vps">自動売買向けVPSの選び方</h2>
+    <p>FX自動売買用のVPSは、次のポイントで選びましょう。</p>
+    <ul class="bullet">
+      <li><strong>Windows対応</strong>：MT4はWindowsで動かすのが基本。Windows VPSを選ぶ。</li>
+      <li><strong>稼働の安定性・稼働率</strong>：止まらないことが命。実績のある国内事業者が安心。</li>
+      <li><strong>メモリ・スペック</strong>：EAを複数動かすなら余裕のあるメモリを。</li>
+      <li><strong>サポート・国内データセンター</strong>：日本語サポートと低遅延は初心者に心強い。</li>
+    </ul>
+
+    <!-- ▼ PR: A8.net Xserver VPS（実広告・自動売買の文脈で正確に案内） -->
+    <div style="margin:24px 0">
+      <div style="font-size:.72rem;color:var(--mut);text-align:center;margin-bottom:8px">スポンサーリンク（PR）</div>
+      <div style="background:var(--card);border:1px solid var(--gold);border-radius:12px;padding:20px;box-shadow:0 0 0 1px var(--gold),0 8px 30px #ffd24d12">
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          <div style="font-size:2.6rem">🤖</div>
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:800;color:var(--txt);font-size:1.1rem;margin-bottom:6px">自動売買VPSの定番「Xserver VPS（Windows）」</div>
+            <p style="color:var(--mut);font-size:.86rem;margin:0">国内シェアトップクラスのエックスサーバーが提供するWindows VPS。MT4/EAを24時間安定稼働でき、国内データセンター・日本語サポートで初心者にも安心です。</p>
+          </div>
+        </div>
+        <div style="text-align:center;margin-top:16px">
+          <a href="https://px.a8.net/svt/ejp?a8mat=4B5X8F+E22GZ6+CO4+44WIE9" rel="nofollow sponsored" target="_blank"><img border="0" width="468" height="60" alt="Xserver VPS" style="max-width:100%;height:auto;border-radius:6px" src="https://www24.a8.net/svt/bgt?aid=260616831850&wid=001&eno=01&mid=s00000001642025010000&mc=1"></a>
+        </div>
+      </div>
+      <img src="https://www15.a8.net/0.gif?a8mat=4B5X8F+E22GZ6+CO4+44WIE9" width="1" height="1" alt="" style="border:0">
+    </div>
+
+    <h2 class="sec" id="start">自動売買の始め方（4ステップ）</h2>
+    <div class="steps">
+      <div class="step"><h4>MT4対応のFX口座を開設</h4><p>EAはMT4で動きます。まずはMT4が使えるFX口座を用意しましょう。</p></div>
+      <div class="step"><h4>EA（自動売買プログラム）を準備</h4><p>無料・有料のEAを入手、または自作。必ずバックテスト・デモで検証します。</p></div>
+      <div class="step"><h4>VPSを契約してMT4を設置</h4><p>Windows VPSを契約し、MT4とEAをインストール。24時間稼働の土台を作ります。</p></div>
+      <div class="step"><h4>少額で本番稼働・定期点検</h4><p>最初は少額・低ロットで運用。週1回は稼働状況と成績をチェックします。</p></div>
+    </div>
+
+    <div class="box warn">
+      <h4>⚠️ 「完全放置」はNG</h4>
+      <p style="font-size:.88rem;color:var(--mut)">自動売買でも、相場の大変動やEAの不調はあります。資金管理と定期点検は必ず行い、想定外の損失が膨らまないようにしましょう。</p>
+    </div>
+
+    <h2 class="sec" id="faq">よくある質問</h2>
+    <div class="faq">
+      <details open>
+        <summary>FXの自動売買にVPSは必要ですか？</summary>
+        <div class="ans">必須ではありませんが強く推奨されます。自宅PCでEAを動かすと、停電・再起動・ネット切断で取引が止まるリスクがあります。VPSなら24時間クラウドで安定稼働し、約定チャンスを逃しません。</div>
+      </details>
+      <details>
+        <summary>自動売買は初心者でもできますか？</summary>
+        <div class="ans">設定自体は難しくありませんが、EA任せでも相場急変で損失が出る可能性はあります。まずは少額・低レバレッジで、デモやバックテストで検証してから本番に移すのがおすすめです。</div>
+      </details>
+      <details>
+        <summary>スマホだけで自動売買できますか？</summary>
+        <div class="ans">EAの常時稼働にはMT4が動くPCまたはVPSが必要です。スマホは稼働状況の確認や手動操作には使えますが、EAを動かし続ける本体にはVPSを使うのが一般的です。</div>
+      </details>
+    </div>
+
+    <div class="related">
+      <h3>あわせて読みたい</h3>
+      <a href="fx-affiliate.html">→ FX口座おすすめ比較ランキングTOP5</a>
+      <a href="fx-beginner-guide.html">→ FX初心者の始め方完全ガイド</a>
+      <a href="fx-tax-guide.html">→ 副業FXの税金・確定申告ガイド</a>
+    </div>
+  </article>
+</div>
+
+<footer class="site">
+  <div class="wrap" style="max-width:960px">
+    <div class="links"><a href="#">運営者情報</a><a href="#">プライバシーポリシー</a><a href="#">免責事項</a><a href="#">お問い合わせ</a></div>
+    <p style="margin-top:12px">本サイトはアフィリエイトプログラムにより収益を得ています。自動売買を含むFX取引はリスクを伴います。投資判断はご自身の責任において行ってください。</p>
+    <p style="margin-top:8px">&copy; 2026 FX口座ナビ（サンプルサイト）</p>
+  </div>
+</footer>
+</body>
+</html>
