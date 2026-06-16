@@ -48,6 +48,10 @@ TARGET_MAX_SEC = int(os.getenv("TARGET_MAX_SEC", "60"))
 # 無ければ Pillow でグラデーション背景を自動生成する。
 BACKGROUND_CANDIDATES = ["background.mp4", "background.png", "background.jpg"]
 
+# 既定の背景写真フォルダ。フォームで背景指定が無いときは、ここの実機写真を
+# スライドショー背景として使う(2枚以上ならランキング進行で切替)。
+BG_PHOTOS_DIR = ASSETS_DIR / "bg_photos"
+
 # Pexels API (任意): 設定すると背景の縦型動画を自動でダウンロードして使う
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
 BACKGROUND_KEYWORD = os.getenv("BACKGROUND_KEYWORD", "casino neon lights")
