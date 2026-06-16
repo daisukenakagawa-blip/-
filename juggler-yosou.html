@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎰 ジャグラー 設定推定 & 展開予想</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+    background: #11161f;
+    color: #eef2f7;
+    line-height: 1.6;
+    padding-bottom: 60px;
+  }
+  header {
+    background: linear-gradient(135deg, #c41e2a 0%, #f7b500 100%);
+    color: #fff;
+    padding: 22px 16px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,.4);
+  }
+  header h1 { font-size: 1.5rem; text-shadow: 1px 1px 3px rgba(0,0,0,.4); }
+  header p { font-size: .8rem; opacity: .95; margin-top: 4px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 14px; }
+  .card {
+    background: #1b2330;
+    border: 1px solid #2a3445;
+    border-radius: 12px;
+    padding: 18px;
+    margin-top: 18px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.3);
+  }
+  .card h2 {
+    font-size: 1.05rem; color: #f7b500; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .step { font-size: .75rem; background:#c41e2a; color:#fff; border-radius:20px; padding:2px 9px; }
+  label { display: block; font-size: .85rem; margin: 10px 0 4px; color:#aab6c7; }
+  input[type=number], select {
+    width: 100%; padding: 10px 12px; font-size: 1rem;
+    background:#0e1420; color:#eef2f7; border:1px solid #344056; border-radius:8px;
+  }
+  input:focus, select:focus { outline:none; border-color:#f7b500; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .hint { font-size:.72rem; color:#7c8aa0; margin-top:4px; }
+  button.primary {
+    width:100%; margin-top:18px; padding:14px; font-size:1.05rem; font-weight:bold;
+    background:linear-gradient(135deg,#c41e2a,#f7b500); color:#fff; border:none;
+    border-radius:10px; cursor:pointer; transition:transform .08s;
+  }
+  button.primary:active { transform:scale(.98); }
+  #photoPreview { max-width:100%; border-radius:8px; margin-top:10px; display:none; border:1px solid #344056; }
+  .results { display:none; }
+  .stat-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #2a3445; font-size:.9rem; }
+  .stat-row span:last-child { font-weight:bold; color:#fff; }
+  .bar-wrap { margin:8px 0; }
+  .bar-label { display:flex; justify-content:space-between; font-size:.82rem; margin-bottom:3px; }
+  .bar-track { background:#0e1420; border-radius:6px; height:22px; overflow:hidden; }
+  .bar-fill { height:100%; background:linear-gradient(90deg,#2a7,#5d4); display:flex; align-items:center; padding-left:8px; font-size:.72rem; color:#06210f; font-weight:bold; transition:width .5s; }
+  canvas { width:100%; background:#0e1420; border-radius:8px; margin-top:8px; }
+  .verdict { font-size:1.05rem; font-weight:bold; padding:12px; border-radius:8px; margin-top:10px; text-align:center; }
+  .v-good { background:#123a23; color:#5de08a; border:1px solid #2a7; }
+  .v-bad  { background:#3a1212; color:#ff8a8a; border:1px solid #a44; }
+  .v-mid  { background:#3a3312; color:#f7d36b; border:1px solid #a98; }
+  .disclaimer { font-size:.74rem; color:#8290a4; margin-top:18px; background:#161d28; padding:12px; border-radius:8px; border:1px solid #2a3445; }
+  .legend { font-size:.74rem; color:#9fb; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap; }
+  .legend span::before { content:'■ '; }
+  .lg-band::before { color:#3a6ea5; } .lg-med::before { color:#f7b500; } .lg-now::before { color:#fff; }
+  details summary { cursor:pointer; color:#f7b500; font-size:.85rem; }
+  table.spec { width:100%; font-size:.75rem; margin-top:8px; border-collapse:collapse; }
+  table.spec th, table.spec td { border:1px solid #2a3445; padding:4px 6px; text-align:center; }
+  table.spec th { background:#222c3b; color:#f7b500; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎰 ジャグラー 設定推定 &amp; 展開予想</h1>
+  <p>データから「今の設定」を推定し、この先の差枚の伸びを確率で予想します</p>
+</header>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2><span class="step">STEP 1</span> データの写真（任意）</h2>
+    <label>スランプグラフ／データカウンターの写真</label>
+    <input type="file" id="photo" accept="image/*">
+    <img id="photoPreview" alt="preview">
+    <p class="hint">写真は参考表示用です。下の数字は写真の<strong>データカウンター</strong>（総回転数・BIG回数・REG回数）を見て手入力してください。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">STEP 2</span> 数字を入力</h2>
+    <label>機種</label>
+    <select id="machine">
+      <option value="im">アイムジャグラーEX タイプ（標準）</option>
+      <option value="my">マイジャグラー タイプ（高設定差・大）</option>
+    </select>
+
+    <label>総回転数（G数）</label>
+    <input type="number" id="games" placeholder="例: 4500" min="1">
+
+    <div class="grid2">
+      <div>
+        <label>BIG 回数</label>
+        <input type="number" id="big" placeholder="例: 18" min="0">
+      </div>
+      <div>
+        <label>REG（バケ）回数</label>
+        <input type="number" id="reg" placeholder="例: 16" min="0">
+      </div>
+    </div>
+
+    <label>現在の差枚数（任意・分かれば）</label>
+    <input type="number" id="diff" placeholder="例: 1200（不明なら空欄）">
+
+    <label>この先の予想回転数</label>
+    <input type="number" id="future" value="3000" min="100" step="100">
+    <p class="hint">残り何回転ぶん先まで予想するか（例: 閉店まで3000G）</p>
+
+    <button class="primary" id="run">📈 設定推定 &amp; 展開を予想する</button>
+  </div>
+
+  <div class="card results" id="results">
+    <h2><span class="step">STEP 3</span> 推定結果</h2>
+
+    <div id="verdict"></div>
+
+    <h3 style="font-size:.95rem;margin:16px 0 6px;color:#aab6c7;">📊 現在のデータ</h3>
+    <div id="stats"></div>
+
+    <h3 style="font-size:.95rem;margin:18px 0 6px;color:#aab6c7;">🎯 設定の推定確率</h3>
+    <div id="settingBars"></div>
+
+    <h3 style="font-size:.95rem;margin:18px 0 6px;color:#aab6c7;">🔮 この先の差枚 予想グラフ</h3>
+    <canvas id="chart" width="700" height="360"></canvas>
+    <div class="legend">
+      <span class="lg-now">現在地</span>
+      <span class="lg-med">予想中央値</span>
+      <span class="lg-band">80%予想レンジ</span>
+    </div>
+    <div id="projText" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>📋 使用している設定値（タップで表示）／推定の仕組み</summary>
+      <div id="specTable"></div>
+      <p class="hint" style="margin-top:10px;">
+        設定推定＝観測したBIG/REG回数の起こりやすさ（ポアソン尤度）を設定1〜6で比較し、
+        ベイズで各設定の確率を算出しています。展開予想＝推定設定の出玉性能で
+        モンテカルロ・シミュレーション（2000回）を行い、中央値と80%レンジを描画します。
+      </p>
+    </details>
+  </div>
+
+  <div class="disclaimer">
+    ⚠️ <strong>大切な注意</strong>：パチスロの各ゲームは統計的に独立で、過去のグラフの形が
+    その後の出方に影響することは<strong>ありません</strong>。「ハマったから出る」「右肩上がりだから続く」は
+    成り立ちません。このツールが行うのは <em>① データから設定を推定し ② その設定なら確率的に
+    どのくらい伸びる／沈む可能性があるか</em> を示すことだけです。結果は確率の目安であり、
+    勝ちを保証するものではありません。遊技は20歳以上・自己責任・余裕資金の範囲で。
+  </div>
+</div>
+
+<script>
+// ===== 機種別 設定スペック =====
+// 各設定: BIG確率(分母), REG確率(分母), 機械割(%)  ※公表値ベースの近似値
+const MACHINES = {
+  im: {
+    name: 'アイムジャグラーEX',
+    settings: [
+      {set:1, big:273.1, reg:439.8, payout:97.0},
+      {set:2, big:270.8, reg:399.6, payout:98.0},
+      {set:3, big:266.4, reg:360.1, payout:99.5},
+      {set:4, big:258.0, reg:315.1, payout:101.6},
+      {set:5, big:252.0, reg:292.6, payout:103.3},
+      {set:6, big:240.1, reg:240.1, payout:105.5},
+    ]
+  },
+  my: {
+    name: 'マイジャグラー',
+    settings: [
+      {set:1, big:273.1, reg:409.6, payout:97.0},
+      {set:2, big:270.8, reg:385.5, payout:98.7},
+      {set:3, big:266.4, reg:336.1, payout:100.3},
+      {set:4, big:254.0, reg:290.0, payout:102.8},
+      {set:5, big:240.1, reg:268.6, payout:105.3},
+      {set:6, big:229.1, reg:229.1, payout:109.4},
+    ]
+  }
+};
+
+// ボーナス出玉(差枚への寄与・近似): BIG約240枚, REG約96枚
+const BIG_COIN = 240, REG_COIN = 96, BET = 3;
+
+const $ = id => document.getElementById(id);
+
+// 写真プレビュー
+$('photo').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  const img = $('photoPreview');
+  img.src = url; img.style.display = 'block';
+});
+
+function poissonLogPmf(k, lambda) {
+  // log( e^-λ λ^k / k! )  … k! は設定間で定数なので比較には不要だが、表示安定のため簡略化版を使用
+  if (lambda <= 0) return -1e9;
+  let logFact = 0;
+  for (let i = 2; i <= k; i++) logFact += Math.log(i);
+  return -lambda + k * Math.log(lambda) - logFact;
+}
+
+function estimateSettings(G, b, r, settings) {
+  const scores = settings.map(s => {
+    const lamB = G / s.big;
+    const lamR = G / s.reg;
+    return poissonLogPmf(b, lamB) + poissonLogPmf(r, lamR);
+  });
+  const mx = Math.max(...scores);
+  const exps = scores.map(s => Math.exp(s - mx));
+  const sum = exps.reduce((a,c)=>a+c,0);
+  return exps.map(e => e / sum); // 各設定の事後確率
+}
+
+// 乱数ヘルパ（二項分布の近似: 正規近似 or 直接）
+function randn() {
+  let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+function binom(n, p) {
+  // n大なら正規近似、小なら直接
+  if (n * p > 30 && n*(1-p) > 30) {
+    return Math.max(0, Math.round(n*p + Math.sqrt(n*p*(1-p))*randn()));
+  }
+  let c = 0;
+  for (let i=0;i<n;i++) if (Math.random() < p) c++;
+  return c;
+}
+
+function simulateFuture(N, posteriors, settings, startDiff) {
+  const SIMS = 2000;
+  const STEPS = 40; // 軌道の分割点
+  const stepG = N / STEPS;
+  // 各サンプル軌道（STEPS+1点）
+  const trajectories = [];
+  for (let s=0; s<SIMS; s++) {
+    // まず事後確率に従って設定を1つ抽選（設定の不確実性も反映）
+    let rnd = Math.random(), idx = 0, acc = 0;
+    for (let i=0;i<posteriors.length;i++){ acc+=posteriors[i]; if(rnd<=acc){idx=i;break;} idx=i; }
+    const st = settings[idx];
+    const pB = 1/st.big, pR = 1/st.reg;
+    // 基礎ゲーム(非ボーナス)の1Gあたり期待差枚を機械割から逆算
+    const expPerG = BET * (st.payout/100 - 1);
+    const basePerG = expPerG - (pB*BIG_COIN + pR*REG_COIN); // ボーナス以外（小役-投入）の純増/G
+    let diff = startDiff;
+    const traj = [diff];
+    for (let k=0;k<STEPS;k++){
+      const nB = binom(Math.round(stepG), pB);
+      const nR = binom(Math.round(stepG), pR);
+      const base = basePerG * stepG + randn()*Math.sqrt(stepG)*1.6; // 基礎部分の小揺れ
+      diff += nB*BIG_COIN + nR*REG_COIN + base;
+      traj.push(diff);
+    }
+    trajectories.push(traj);
+  }
+  // 各ステップで percentile を集計
+  const pcts = {p10:[],p25:[],p50:[],p75:[],p90:[]};
+  for (let k=0;k<=STEPS;k++){
+    const col = trajectories.map(t=>t[k]).sort((a,b)=>a-b);
+    const q = f => col[Math.min(col.length-1, Math.floor(col.length*f))];
+    pcts.p10.push(q(0.10)); pcts.p25.push(q(0.25)); pcts.p50.push(q(0.50));
+    pcts.p75.push(q(0.75)); pcts.p90.push(q(0.90));
+  }
+  return {pcts, STEPS, stepG, startDiff};
+}
+
+function drawChart(sim, N) {
+  const cv = $('chart'); const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0,0,W,H);
+  const padL=58, padR=14, padT=14, padB=28;
+  const plotW = W-padL-padR, plotH = H-padT-padB;
+
+  const all = [].concat(sim.pcts.p10, sim.pcts.p90, [sim.startDiff]);
+  let yMin = Math.min(...all), yMax = Math.max(...all);
+  const span = Math.max(400, yMax-yMin);
+  yMin -= span*0.1; yMax += span*0.1;
+  if (yMin > 0) yMin = -200; if (yMax < 0) yMax = 200;
+
+  const xAt = i => padL + plotW * (i/sim.STEPS);
+  const yAt = v => padT + plotH * (1 - (v-yMin)/(yMax-yMin));
+
+  // グリッド + Y軸ラベル
+  ctx.strokeStyle='#243044'; ctx.fillStyle='#8290a4'; ctx.font='11px sans-serif';
+  for (let g=0; g<=4; g++){
+    const v = yMin + (yMax-yMin)*g/4;
+    const y = yAt(v);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+    ctx.fillText(Math.round(v).toLocaleString()+'', 4, y+4);
+  }
+  // ゼロライン
+  ctx.strokeStyle='#4a5a72'; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(padL,yAt(0)); ctx.lineTo(W-padR,yAt(0)); ctx.stroke();
+  ctx.setLineDash([]);
+  // X軸ラベル
+  ctx.fillText('0G', padL-6, H-8);
+  ctx.fillText('+'+N.toLocaleString()+'G', W-padR-46, H-8);
+
+  // 80%バンド (p10-p90) 塗り
+  ctx.fillStyle='rgba(58,110,165,0.28)';
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), yAt(sim.pcts.p10[0]));
+  for(let i=1;i<=sim.STEPS;i++) ctx.lineTo(xAt(i), yAt(sim.pcts.p10[i]));
+  for(let i=sim.STEPS;i>=0;i--) ctx.lineTo(xAt(i), yAt(sim.pcts.p90[i]));
+  ctx.closePath(); ctx.fill();
+  // 50%バンド (p25-p75) 濃いめ
+  ctx.fillStyle='rgba(58,110,165,0.30)';
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), yAt(sim.pcts.p25[0]));
+  for(let i=1;i<=sim.STEPS;i++) ctx.lineTo(xAt(i), yAt(sim.pcts.p25[i]));
+  for(let i=sim.STEPS;i>=0;i--) ctx.lineTo(xAt(i), yAt(sim.pcts.p75[i]));
+  ctx.closePath(); ctx.fill();
+
+  // 中央値ライン
+  ctx.strokeStyle='#f7b500'; ctx.lineWidth=2.4;
+  ctx.beginPath();
+  for(let i=0;i<=sim.STEPS;i++){ const x=xAt(i),y=yAt(sim.pcts.p50[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.stroke();
+  // 現在地点
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(xAt(0), yAt(sim.startDiff), 4, 0, Math.PI*2); ctx.fill();
+}
+
+function fmt(n){ const v=Math.round(n); return (v>0?'+':'')+v.toLocaleString(); }
+
+$('run').addEventListener('click', () => {
+  const G = parseInt($('games').value), b = parseInt($('big').value), r = parseInt($('reg').value);
+  const N = parseInt($('future').value)||3000;
+  const startDiff = $('diff').value===''? 0 : parseFloat($('diff').value);
+  if (!G || G<1 || isNaN(b) || isNaN(r)) { alert('総回転数・BIG・REGを入力してください'); return; }
+  if (b+r > G) { alert('BIG+REGが総回転数を超えています。数字を確認してください'); return; }
+
+  const M = MACHINES[$('machine').value];
+  const post = estimateSettings(G, b, r, M.settings);
+
+  // === 現在データ表示 ===
+  const combRate = (b+r)>0 ? (G/(b+r)) : Infinity;
+  const bigRate = b>0? G/b : Infinity, regRate = r>0? G/r : Infinity;
+  $('stats').innerHTML = `
+    <div class="stat-row"><span>機種</span><span>${M.name}</span></div>
+    <div class="stat-row"><span>総回転数</span><span>${G.toLocaleString()} G</span></div>
+    <div class="stat-row"><span>BIG</span><span>${b} 回（1/${bigRate===Infinity?'-':bigRate.toFixed(1)}）</span></div>
+    <div class="stat-row"><span>REG</span><span>${r} 回（1/${regRate===Infinity?'-':regRate.toFixed(1)}）</span></div>
+    <div class="stat-row"><span>合算（ボーナス合計）</span><span>1/${combRate===Infinity?'-':combRate.toFixed(1)}</span></div>
+    <div class="stat-row"><span>現在の差枚（入力値）</span><span>${$('diff').value===''?'未入力（0から表示）':fmt(startDiff)+' 枚'}</span></div>`;
+
+  // === 設定確率バー ===
+  let barsHtml = '';
+  post.forEach((p,i) => {
+    const s = M.settings[i];
+    const pct = (p*100);
+    barsHtml += `<div class="bar-wrap">
+      <div class="bar-label"><span>設定 ${s.set}（機械割 ${s.payout}%）</span><span>${pct.toFixed(1)}%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2,pct).toFixed(1)}%">${pct>=8?pct.toFixed(0)+'%':''}</div></div>
+    </div>`;
+  });
+  $('settingBars').innerHTML = barsHtml;
+
+  // 期待機械割（事後確率の加重平均）
+  const expPayout = post.reduce((a,p,i)=>a + p*M.settings[i].payout, 0);
+  const highProb = post[3]+post[4]+post[5]; // 設定4-6の確率
+  const lowProb = post[0]+post[1]; // 設定1-2
+
+  // === 判定 ===
+  let vClass='v-mid', vText='';
+  if (expPayout >= 102 && highProb >= 0.5) { vClass='v-good'; vText=`🔥 高設定濃厚（期待機械割 ${expPayout.toFixed(1)}%）— 続行価値あり`; }
+  else if (expPayout < 99 && lowProb >= 0.5) { vClass='v-bad'; vText=`⚠️ 低設定濃厚（期待機械割 ${expPayout.toFixed(1)}%）— 期待値マイナス`; }
+  else { vClass='v-mid'; vText=`🤔 設定判別中（期待機械割 ${expPayout.toFixed(1)}%）— サンプル不足ぎみ、もう少し回して判断`; }
+  if (G < 2000) vText += '<br><small style="font-weight:normal">※総回転数が少なく推定の精度は低めです（2000G以上推奨）</small>';
+  $('verdict').className = 'verdict '+vClass;
+  $('verdict').innerHTML = vText;
+
+  // === シミュレーション ===
+  const sim = simulateFuture(N, post, M.settings, startDiff);
+  drawChart(sim, N);
+
+  const endMed = sim.pcts.p50[sim.STEPS]-startDiff;
+  const endLo = sim.pcts.p10[sim.STEPS]-startDiff;
+  const endHi = sim.pcts.p90[sim.STEPS]-startDiff;
+  $('projText').innerHTML = `
+    <div class="stat-row"><span>あと ${N.toLocaleString()}G 回した時の差枚（増減）予想</span><span></span></div>
+    <div class="stat-row"><span>中央値（最もありそう）</span><span>${fmt(endMed)} 枚</span></div>
+    <div class="stat-row"><span>80%レンジ</span><span>${fmt(endLo)} 〜 ${fmt(endHi)} 枚</span></div>
+    <p class="hint" style="margin-top:8px;">＝ 推定設定どおりに回した場合、10回中8回はこのレンジに収まる見込み。残り2回はこれを上下に外れます。</p>`;
+
+  $('results').style.display = 'block';
+  $('results').scrollIntoView({behavior:'smooth'});
+});
+
+// スペック表
+(function(){
+  let html = '';
+  for (const key in MACHINES) {
+    const M = MACHINES[key];
+    html += `<p style="font-size:.8rem;margin-top:10px;color:#f7b500;">${M.name}</p>
+      <table class="spec"><tr><th>設定</th><th>BIG</th><th>REG</th><th>機械割</th></tr>`;
+    M.settings.forEach(s=>{ html+=`<tr><td>${s.set}</td><td>1/${s.big}</td><td>1/${s.reg}</td><td>${s.payout}%</td></tr>`; });
+    html += `</table>`;
+  }
+  $('specTable').innerHTML = html;
+})();
+</script>
+</body>
+</html>
