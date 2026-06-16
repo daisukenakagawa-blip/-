@@ -249,11 +249,15 @@ def compute_publish_at(date_str: str) -> str | None:
     if target is None:
         get_logger().warning("date のパースに失敗したため即時投稿します: %s", date_str)
         return None
-    if target <= date.today():
+    if target < date.today():
         return None
+    tz = _get_timezone()
     hour, minute = (int(x) for x in config.PUBLISH_TIME.split(":"))
-    dt = datetime(target.year, target.month, target.day, hour, minute,
-                  tzinfo=_get_timezone())
+    dt = datetime(target.year, target.month, target.day, hour, minute, tzinfo=tz)
+    # 当日でも公開時刻が未来なら予約投稿(非公開でアップ→時刻に自動公開)、
+    # 既に過ぎていれば即時公開
+    if dt <= datetime.now(tz):
+        return None
     return dt.isoformat()
 
 

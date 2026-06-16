@@ -10,10 +10,15 @@
 
 name: auto-video-upload
 
-# 自動アップロードは停止中。ユーザーの指示があったときだけ手動で実行する。
-# (毎日の定時実行・合図ファイル起動は無効化済み)
+# 自動(毎日の定時実行)は停止中。ユーザーの指示があったときだけ実行する。
+# 手動実行: GitHub の Run workflow ボタン、または run_now.txt の更新で起動。
 on:
-  workflow_dispatch: {}     # 手動実行のみ (GitHub アプリ / ボタンから)
+  workflow_dispatch: {}
+  push:
+    branches:
+      - claude/blackjack-game-Wk6Vv
+    paths:
+      - auto_video_uploader/run_now.txt
 
 permissions:
   contents: write
