@@ -418,12 +418,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             + r"{\p1\bord0\shad0\1c&HFFFFFF&\1a&H64&\fad(40,180)}" + flash_shape + r"{\p0}"
         )
 
+    # オチ・どんでん返しの役は赤テロップで強調(単発バケ男風)
+    red_roles = {"twist", "challenge"}
     # 読み上げ同期テロップ (中央・大きく・最大2行)
     for item in plan_line_schedule(content, total_sec, segment_durations):
         is_hook = item["role"] == "hook"
         style = "Hook" if is_hook else "Talk"
         wrapped = _wrap_jp(item["text"], 8 if is_hook else 11)
-        base = "&H0000E5FF" if is_hook else "&H00FFFFFF"
+        if is_hook:
+            base = "&H0000E5FF"   # フックは黄
+        elif item["role"] in red_roles:
+            base = "&H002B2BFF"   # オチは赤
+        else:
+            base = "&H00FFFFFF"   # 通常は白
         emphasized = _emphasize_numbers(wrapped, base)
         fx = r"{\fad(110,90)\t(0,130,\fscx109\fscy109)\t(130,260,\fscx100\fscy100)}"
         events.append(
@@ -532,6 +539,124 @@ def _resolve_custom_background(background_url: str, segment_durations: list | No
     return None
 
 
+def _make_impact_card(kind: int, stem: str) -> Path:
+    """インパクト背景カードを生成 (テロップ無し・背景のみ)。
+
+    kind 0: GOGOフラッシュ(ペカリの星・紫) / 1: 斜めスピードライン(紺×金) /
+    kind 2: ネオン放射(暗め・ホール夜景)。毎回ローテーションで使う。
+    """
+    import math
+
+    from PIL import Image, ImageDraw, ImageFilter
+
+    w, h = config.VIDEO_WIDTH, config.VIDEO_HEIGHT
+    out = config.ASSETS_DIR / f"impact_{stem}.png"
+
+    if kind == 0:  # GOGO フラッシュ
+        base = Image.new("RGB", (w, h))
+        px = base.load()
+        for y in range(h):
+            t = y / h
+            c = (int(20 + t * 30), int(8 + t * 8), int(40 + t * 50))
+            for x in range(w):
+                px[x, y] = c
+        glow = Image.new("RGB", (w, h), (0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        cx, cy = w // 2, int(h * 0.42)
+        R = int(math.hypot(w, h))
+        for k in range(16):
+            a = k / 16 * 2 * math.pi
+            wdt = 70 if k % 2 == 0 else 30
+            perp = a + math.pi / 2
+            gd.polygon([(cx + wdt * math.cos(perp), cy + wdt * math.sin(perp)),
+                        (cx - wdt * math.cos(perp), cy - wdt * math.sin(perp)),
+                        (cx + R * math.cos(a), cy + R * math.sin(a))], fill=(80, 40, 160))
+        glow = glow.filter(ImageFilter.GaussianBlur(8))
+        base = Image.blend(base, glow, 0.7)
+        d = ImageDraw.Draw(base)
+        pts = []
+        for k in range(12):
+            a = k / 12 * 2 * math.pi - math.pi / 2
+            rr = 220 if k % 2 == 0 else 90
+            pts.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
+        d.polygon(pts, fill=(120, 200, 255))
+        d.polygon([(cx + (p[0] - cx) * 0.55, cy + (p[1] - cy) * 0.55) for p in pts],
+                  fill=(255, 255, 255))
+        base.save(out)
+    elif kind == 1:  # 斜めスピードライン
+        img = Image.new("RGB", (w, h), (12, 14, 22))
+        d = ImageDraw.Draw(img)
+        sw = 70
+        for i in range(-h, w + h, sw * 2):
+            d.polygon([(i, 0), (i + sw, 0), (i + sw - h, h), (i - h, h)], fill=(24, 28, 44))
+        for i in range(-h, w + h, sw * 6):
+            d.polygon([(i, 0), (i + 18, 0), (i + 18 - h, h), (i - h, h)], fill=(200, 160, 40))
+        img.save(out)
+    else:  # ネオン放射(暗め)
+        img = Image.new("RGB", (w, h), (8, 6, 16))
+        rays = Image.new("RGB", (w, h), (0, 0, 0))
+        rd = ImageDraw.Draw(rays)
+        cx, cy = w // 2, int(h * 0.42)
+        R = int(math.hypot(w, h))
+        cols = [(230, 40, 90), (40, 90, 230), (230, 160, 40)]
+        for k in range(60):
+            a = k / 60 * 2 * math.pi
+            rd.line([(cx, cy), (cx + R * math.cos(a), cy + R * math.sin(a))],
+                    fill=cols[k % 3], width=6)
+        rays = rays.filter(ImageFilter.GaussianBlur(14))
+        Image.blend(img, rays, 0.45).save(out)
+    return out
+
+
+def _pick_impact_card(stem: str) -> Path:
+    """stem から決定的にカード種別を選ぶ(動画ごとにローテーション)。"""
+    import hashlib
+
+    kind = int(hashlib.md5(stem.encode("utf-8")).hexdigest(), 16) % 3
+    return _make_impact_card(kind, stem)
+
+
+def _monologue_background(content: dict, background_url: str,
+                         segment_durations: list, total_sec: float, stem: str) -> Path | None:
+    """モノローグ用の背景: フックはインパクトカード、以降は写真スライドショー。"""
+    n = len(content.get("segments") or [])
+    if n == 0 or not segment_durations:
+        return None
+
+    # 各セグメントに割り当てる写真(フック以外)を決める
+    photos = []
+    urls = [u.strip() for u in (background_url or "").split(",") if u.strip()]
+    if urls:
+        for url in urls:
+            local = Path(url)
+            if local.exists() and local.suffix.lower() in (IMAGE_EXTS + VIDEO_EXTS):
+                photos.append(local)
+            else:
+                from modules.background_fetcher import download_custom
+                p = download_custom(url)
+                if p:
+                    photos.append(p)
+    if not photos and config.BG_PHOTOS_DIR.exists():
+        photos = sorted(
+            p for p in config.BG_PHOTOS_DIR.iterdir()
+            if p.suffix.lower() in IMAGE_EXTS and p.stat().st_size > 0
+        )
+    if not photos:
+        photos = [_find_or_create_background()]
+
+    # 動画が混在している場合は従来のスライドショーに任せる(カード化しない)
+    if any(p.suffix.lower() in VIDEO_EXTS for p in photos):
+        return None
+
+    card = _pick_impact_card(stem)
+    seq = [card] + [photos[i % len(photos)] for i in range(n - 1)]
+    try:
+        return _build_slideshow(seq, segment_durations, total_sec, stem)
+    except Exception as e:
+        get_logger().warning("モノローグ背景の生成に失敗。通常背景にフォールバック: %s", e)
+        return None
+
+
 def _default_photo_background(segment_durations: list | None, total_sec: float,
                              stem: str) -> Path | None:
     """フォーム指定が無いとき、assets/bg_photos/ の実機写真を背景に使う。
@@ -597,9 +722,16 @@ def create_video(
             content["title"], content["script_lines"], audio_sec, config.VIDEOS_DIR / ass_name
         )
 
-    background = _resolve_custom_background(
-        background_url, segment_durations, total_sec, stem
-    )
+    background = None
+    if is_monologue:
+        # フックはインパクトカード、以降は写真スライドショー(単発バケ男風)
+        background = _monologue_background(
+            content, background_url, segment_durations, total_sec, stem
+        )
+    if background is None:
+        background = _resolve_custom_background(
+            background_url, segment_durations, total_sec, stem
+        )
     if background is None:
         background = _default_photo_background(segment_durations, total_sec, stem)
     if background is None:
