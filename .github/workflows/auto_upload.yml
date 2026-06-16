@@ -10,15 +10,10 @@
 
 name: auto-video-upload
 
+# 自動アップロードは停止中。ユーザーの指示があったときだけ手動で実行する。
+# (毎日の定時実行・合図ファイル起動は無効化済み)
 on:
-  schedule:
-    - cron: "0 23 * * *"   # 毎日 08:00 JST (UTC 23:00)
-  workflow_dispatch: {}     # スマホの GitHub アプリから手動実行も可能
-  push:
-    branches:
-      - claude/blackjack-game-Wk6Vv
-    paths:
-      - auto_video_uploader/run_now.txt   # この合図ファイルの更新でも実行される
+  workflow_dispatch: {}     # 手動実行のみ (GitHub アプリ / ボタンから)
 
 permissions:
   contents: write
