@@ -104,8 +104,22 @@ def generate_segments(segments: list, stem: str) -> tuple:
     for i, seg in enumerate(segments):
         text = _narration_text(seg["lines"])
         path = _synthesize(text, config.AUDIO_DIR / f"{stem}_seg{i}")
+        dur = get_audio_duration(path)
+        # min_sec 指定があり音声が短い場合は末尾に無音を足して「ため」を作る
+        min_sec = float(seg.get("min_sec") or 0)
+        if min_sec > dur + 0.05:
+            padded = config.AUDIO_DIR / f"{stem}_seg{i}_pad.wav"
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(path), "-af",
+                 f"apad=pad_dur={min_sec - dur:.2f}", "-t", f"{min_sec:.2f}", str(padded)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            if padded.exists() and padded.stat().st_size > 0:
+                path.unlink(missing_ok=True)
+                path = padded
+                dur = min_sec
         seg_paths.append(path)
-        durations.append(get_audio_duration(path))
+        durations.append(dur)
 
     # 結合 (フォーマット差異を吸収するため再エンコード)
     out_path = config.AUDIO_DIR / f"{stem}.wav"

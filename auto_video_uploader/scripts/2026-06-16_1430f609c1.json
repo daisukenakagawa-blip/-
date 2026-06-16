@@ -61,7 +61,8 @@
       "role": "twist",
       "lines": [
         "さて最終結果は…?!"
-      ]
+      ],
+      "min_sec": 4.0
     },
     {
       "role": "challenge",
