@@ -3523,6 +3523,18 @@ function inj4Feats(mno, CU, x){
   if(mh&&mh.n>=3&&mh.hi>x.overall+0.05)sig.push("machineNoStrong"); if(ro&&ro.due)sig.push("rotationStrong");
   return {F,sig,prevHi,streak,hist,tail,mname};
 }
+// 前日の実数値を条件（ビン）に変換：据え置き/上げの「理由」洗い出し用
+// カテゴリ付きで返す（[カテゴリ, ラベル]）。回転数・合算・REG・ぶどう・差枚・BIG。
+function inj4Cond(ld){ if(!ld) return [];
+  const C=[]; const t=ld.total, cm=ld.combined, rg=ld.reg_prob, bd=budouDen(ld.budou), sb=ld.sabe, bg=ld.big_prob;
+  if(t!=null) C.push(["回転数", t<2000?"前日回転 <2000G（超低稼働）":t<3000?"前日回転 2000〜3000G（低稼働）":t<5000?"前日回転 3000〜5000G（中稼働）":t<8000?"前日回転 5000〜8000G（高稼働）":"前日回転 8000G以上（超高稼働）"]);
+  if(cm!=null) C.push(["合算", cm<=130?"前日合算 1/130以下（優秀）":cm<=170?"前日合算 1/131〜170（良）":cm<=220?"前日合算 1/171〜220（中）":cm<=300?"前日合算 1/221〜300（低調）":"前日合算 1/300超（不調）"]);
+  if(rg!=null) C.push(["REG", rg<=170?"前日REG 1/170以下（優秀）":rg<=250?"前日REG 1/171〜250（良）":rg<=400?"前日REG 1/251〜400（中）":"前日REG 1/400超（不調）"]);
+  if(bd!=null) C.push(["ぶどう", bd<=6.0?"前日ぶどう 1/6.0以下（優秀）":bd<=6.3?"前日ぶどう 1/6.0〜6.3（良）":bd<=6.6?"前日ぶどう 1/6.3〜6.6（中）":"前日ぶどう 1/6.6超（不調）"]);
+  if(sb!=null) C.push(["差枚", sb<=-2000?"前日差枚 -2000以下（大負け）":sb<0?"前日差枚 マイナス":sb<2000?"前日差枚 0〜+2000":sb<5000?"前日差枚 +2000〜+5000":"前日差枚 +5000以上（大勝ち）"]);
+  if(bg!=null) C.push(["BIG", bg<=240?"前日BIG 1/240以下（先行）":bg<=320?"前日BIG 1/241〜320（標準）":"前日BIG 1/320超（不調）"]);
+  return C;
+}
 // 特徴量の出現/高設定/命中率を accumulate に集計（その日より前のみ使用）
 function inj4Accum(srAll, store, D, acc){
   const sr=srAll.filter(r=>r.date<D); if(sr.length<2) return;
@@ -3615,8 +3627,9 @@ function comboKeys(feats){ const base=feats.filter(f=>COMBO_BASE.includes(f)).so
 function keepUpLearn(srAll, store, targetDate){
   const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
   const start=Math.max(1,dates.length-btDays());
-  const F={}, COMBO={}, MACH={}; let keepCnt=0,upCnt=0,resetCnt=0,hiTotal=0; const dayClass=[];
+  const F={}, COMBO={}, MACH={}, COND={}; let keepCnt=0,upCnt=0,resetCnt=0,hiTotal=0; const dayClass=[];
   const upDays={}, keepDays={};   // 何日不発後に上げたか／何日連続据え置きしたか（日数別のクセ）
+  const condCat={};   // 条件ラベル→カテゴリ
   const bump=(o,prevState,hi)=>{ if(prevState==="keep"){o.keepN++; if(hi)o.keepHi++;} else if(prevState==="up"){o.upN++; if(hi)o.upHi++;} else {o.resetN++; if(hi)o.resetHi++;} };
   const blank=()=>({keepN:0,keepHi:0,upN:0,upHi:0,resetN:0,resetHi:0});
   for(let i=start;i<dates.length;i++){ const D=dates[i];
@@ -3632,6 +3645,8 @@ function keepUpLearn(srAll, store, targetDate){
       // 機種別（改修③）：機種ごとの keep/up と機種別特徴量
       const M=MACH[mname]=MACH[mname]||{keepCnt:0,upCnt:0,resetCnt:0,feats:{}};
       feats.forEach(k=>{ bump(M.feats[k]=M.feats[k]||blank(),prevState,hi); });
+      // 据え置く/上げる条件の洗い出し（前日の実数値ビン）
+      inj4Cond(ld).forEach(([cat,label])=>{ condCat[label]=cat; bump(COND[label]=COND[label]||blank(),prevState,hi); });
       // 日数別のクセ：上げ＝前日不発の連続日数(streak)／据え置き＝前日まで高設定が続いた連続日数(keepRun)
       const hist=CU.byM[mno]||[]; let keepRun=0; for(let j=hist.length-1;j>=0;j--){ if(CU.isHi(hist[j]))keepRun++; else break; }
       if(prevState==="up" && streak>=1){ const b=Math.min(streak,8); const o=upDays[b]=upDays[b]||{n:0,hi:0}; o.n++; if(hi)o.hi++; }
@@ -3649,7 +3664,8 @@ function keepUpLearn(srAll, store, targetDate){
   const byMachine={}; for(const m in MACH){ const M=MACH[m]; const mf={}; for(const k in M.feats) mf[k]=fin(M.feats[k]);
     const md=M.keepCnt+M.upCnt||1; byMachine[m]={keepCnt:M.keepCnt,upCnt:M.upCnt,resetCnt:M.resetCnt,
       keepRatio:M.keepCnt/md,upRatio:M.upCnt/md,feats:mf}; }
-  return {feats,combo,byMachine,upDays,keepDays,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass};
+  const cond={}; for(const k in COND){ const f=fin(COND[k]); f.cat=condCat[k]; cond[k]=f; }
+  return {feats,combo,byMachine,cond,upDays,keepDays,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass};
 }
 // 本日（最新営業日）の投入タイプを推定（明日の予想にバイアスをかける）
 // 改修⑤：1日を営業タイプに分類
@@ -3795,6 +3811,34 @@ function renderInjection4Inner(){
       (kpK.length?kpK.map(d=>dayRow(KU.keepDays[d],(d>=8?"8日以上":d+"日")+"連続後")).join(""):"<tr><td colspan='4' class='muted'>データなし</td></tr>")+
       "</table></div></details></div>";
     h+="</div>";
+    // 据え置く/上げる条件の洗い出し（前日の実数値ビン別の据え置き成功率・上げ成功率）
+    const catOrder=["回転数","合算","REG","ぶどう","差枚","BIG"];
+    const condByCat={}; Object.entries(KU.cond).forEach(([label,s])=>{ if(s.keepN+s.upN<5)return; (condByCat[s.cat]=condByCat[s.cat]||[]).push([label,s]); });
+    if(Object.keys(condByCat).length){
+      h+="<details class='note' open style='background:#fef2f2;border-color:#f87171'><summary><b>🔎 据え置く条件／上げる条件の洗い出し（前日の実数値別）</b></summary>"+
+        "<p class='muted' style='font-size:12px'>前日の回転数・合算・REG・ぶどう・差枚・BIGが、どの範囲のとき据え置き／上げが成立しやすいか。"+
+        "据え置き成功率＝前日高設定だった台がその条件で翌日も高設定だった率。上げ成功率＝前日低設定だった台がその条件で翌日高設定に上がった率。</p>";
+      catOrder.forEach(cat=>{ const rows=condByCat[cat]; if(!rows)return;
+        rows.sort((a,b)=>a[0]<b[0]?-1:1);
+        h+="<div style='font-weight:bold;margin:8px 0 2px'>■ "+cat+"</div>"+
+          "<div class='scroll'><table style='font-size:12px'><tr><th>条件</th><th>据え置き成功率<br>(該当数)</th><th>上げ成功率<br>(該当数)</th><th>どちら寄り</th></tr>"+
+          rows.map(([label,s])=>{ const kr=Math.round(s.keepRate*100),ur=Math.round(s.upRate*100);
+            const lean = s.keepN>=20&&s.upN>=20 ? (s.keepRate>=s.upRate+0.08?"据え置き寄り":s.upRate>=s.keepRate+0.08?"上げ寄り":"両方") : (s.keepN>=s.upN?"(据え置き側)":"(上げ側)");
+            const lc=lean.indexOf("据え置き")>=0?"#1a7f37":lean.indexOf("上げ")>=0?"#b35900":"#555";
+            return "<tr><td style='text-align:left'>"+label+"</td>"+
+              "<td style='color:#1a7f37'>"+(s.keepN>=5?kr+"%<span class='muted'> ("+s.keepN+")</span>":"-")+"</td>"+
+              "<td style='color:#b35900'>"+(s.upN>=5?ur+"%<span class='muted'> ("+s.upN+")</span>":"-")+"</td>"+
+              "<td style='color:"+lc+";font-weight:bold'>"+lean+"</td></tr>"; }).join("")+
+          "</table></div>"; });
+      // 据え置き/上げに最も効く条件トップ
+      const all=Object.entries(KU.cond).filter(e=>e[1].keepN>=20||e[1].upN>=20);
+      const topKeep=all.filter(e=>e[1].keepN>=20).sort((a,b)=>b[1].keepRate-a[1].keepRate).slice(0,3);
+      const topUp=all.filter(e=>e[1].upN>=20).sort((a,b)=>b[1].upRate-a[1].upRate).slice(0,3);
+      h+="<p style='font-size:12px;margin-top:6px'>"+
+        "<b style='color:#1a7f37'>据え置きされやすい前日条件 TOP3：</b>"+(topKeep.length?topKeep.map(e=>e[0].replace(/（.*?）/,"")+" "+Math.round(e[1].keepRate*100)+"%").join(" ／ "):"-")+"<br>"+
+        "<b style='color:#b35900'>上げられやすい前日条件 TOP3：</b>"+(topUp.length?topUp.map(e=>e[0].replace(/（.*?）/,"")+" "+Math.round(e[1].upRate*100)+"%").join(" ／ "):"-")+"</p>";
+      h+="</details>";
+    }
     // 改修⑤：本日の営業タイプ確率 → 明日へバイアス
     const bz=KR.biz; const bzc=bz.type==="据え置き営業"?"#1a7f37":bz.type==="上げ営業"?"#b35900":bz.type==="回収営業"?"#c00":"#555";
     const pp=k=>Math.round((bz.probs[k]||0)*100);
