@@ -3485,7 +3485,8 @@ function inj4Ctx(sr, D, store, CU){
   const eventDay=isEventDate(D,store), mdEvent=isEventDate(md,store);
   const baseReg=avg(sr.map(r=>r.reg_prob)), baseComb=avg(sr.map(r=>r.combined)), baseBud=avg(sr.map(r=>budouDen(r.budou)).filter(x=>x!=null));
   const overall=CU.overallHi||0, phase=CU.phase(D);
-  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase};
+  const domTail=(+D.slice(8,10))%10;   // 予想日の日付（末尾一致判定用）
+  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase,domTail};
 }
 function inj4Feats(mno, CU, x){
   const hist=CU.byM[mno]||[]; const tail=mno%10, isl=Math.floor(mno/10);
@@ -3515,6 +3516,7 @@ function inj4Feats(mno, CU, x){
   const mh=CU.machHi[mno]; if(mh&&mh.n>=3&&mh.hi>x.overall+0.05)F.push("台番号実績高");
   const ro=CU.rotate[mname]; if(ro&&ro.due)F.push("機種ローテ期");
   const ph=CU.phaseRate[x.phase]; if(ph&&ph.hi>x.overall+0.03)F.push(x.phase+"投入傾向");
+  if(x.domTail!=null && tail===x.domTail)F.push("日付末尾一致");
   // 取りこぼし集計用の sig（MISS_LABELキー）
   const sig=[]; if(x.eventDay)sig.push("eventDay"); if(streak>=3)sig.push("newInjection");
   if(ld&&ld.total!=null&&ld.total<3000)sig.push("lowSpinPrevDay"); if(prevHi)sig.push("highSettingCarry");
@@ -3630,6 +3632,7 @@ function keepUpLearn(srAll, store, targetDate){
   const F={}, COMBO={}, MACH={}, COND={}; let keepCnt=0,upCnt=0,resetCnt=0,hiTotal=0; const dayClass=[];
   const upDays={}, keepDays={};   // 何日不発後に上げたか／何日連続据え置きしたか（日数別のクセ）
   const condCat={};   // 条件ラベル→カテゴリ
+  const dateTail={matchN:0,matchHi:0,nonN:0,nonHi:0, keepN:0,keepHi:0,upN:0,upHi:0};  // 日付と末尾の一致
   const bump=(o,prevState,hi)=>{ if(prevState==="keep"){o.keepN++; if(hi)o.keepHi++;} else if(prevState==="up"){o.upN++; if(hi)o.upHi++;} else {o.resetN++; if(hi)o.resetHi++;} };
   const blank=()=>({keepN:0,keepHi:0,upN:0,upHi:0,resetN:0,resetHi:0});
   for(let i=start;i<dates.length;i++){ const D=dates[i];
@@ -3638,8 +3641,11 @@ function keepUpLearn(srAll, store, targetDate){
     const act=srAll.filter(r=>r.date===D); let dk=0,du=0,dr=0,dhi=0;
     act.forEach(a=>{ const mno=a.machine_no; const hi=CU.isHi(a);
       const ld=x.lastDay[mno]; const prevState = !ld?"reset":(CU.isHi(ld)?"keep":"up");
-      const {F:feats,mname,streak}=inj4Feats(mno,CU,x);
+      const {F:feats,mname,streak,tail}=inj4Feats(mno,CU,x);
       feats.forEach(k=>{ bump(F[k]=F[k]||blank(),prevState,hi); });
+      // 日付と末尾の一致
+      if(tail===x.domTail){ dateTail.matchN++; if(hi)dateTail.matchHi++; if(prevState==="keep"){dateTail.keepN++; if(hi)dateTail.keepHi++;} else if(prevState==="up"){dateTail.upN++; if(hi)dateTail.upHi++;} }
+      else { dateTail.nonN++; if(hi)dateTail.nonHi++; }
       // 複合特徴量
       comboKeys(feats).forEach(ck=>{ bump(COMBO[ck]=COMBO[ck]||blank(),prevState,hi); });
       // 機種別（改修③）：機種ごとの keep/up と機種別特徴量
@@ -3665,7 +3671,7 @@ function keepUpLearn(srAll, store, targetDate){
     const md=M.keepCnt+M.upCnt||1; byMachine[m]={keepCnt:M.keepCnt,upCnt:M.upCnt,resetCnt:M.resetCnt,
       keepRatio:M.keepCnt/md,upRatio:M.upCnt/md,feats:mf}; }
   const cond={}; for(const k in COND){ const f=fin(COND[k]); f.cat=condCat[k]; cond[k]=f; }
-  return {feats,combo,byMachine,cond,upDays,keepDays,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass};
+  return {feats,combo,byMachine,cond,upDays,keepDays,dateTail,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass};
 }
 // 本日（最新営業日）の投入タイプを推定（明日の予想にバイアスをかける）
 // 改修⑤：1日を営業タイプに分類
@@ -3792,7 +3798,33 @@ function renderInjection4Inner(){
       "🏷️ <b>この店の投入パターン：<span style='color:"+stc+"'>"+KU.storeType+"</span></b>"+
       "（高設定投入 計"+KU.hiTotal+"件 ／ 据え置き <b>"+KU.keepCnt+"件</b>("+Math.round(KU.keepRatio*100)+"%) ・ 上げ <b>"+KU.upCnt+"件</b>("+Math.round(KU.upRatio*100)+"%) ・ リセット/その他 "+KU.resetCnt+"件)<br>"+
       "<span class='muted'>「高設定かどうか」ではなく「店長がどのパターンで入れる店か」を学習しています。</span></div>";
-    // 日数別のク세：何日不発後に上げたか／何日連続据え置きしたか
+    // 🧠 バックテストで分かったこの店のクセ（自然文の要約）
+    { const sm=[];
+      sm.push("この店は <b>"+KU.storeType+"</b>（高設定投入のうち据え置き"+Math.round(KU.keepRatio*100)+"%・上げ"+Math.round(KU.upRatio*100)+"%）。");
+      if(bt.n>=3) sm.push("直近"+bt.n+"日のバックテストで、上位3位以内的中 <b>"+Math.round(bt.t3/bt.n*100)+"%</b>・5位内 <b>"+Math.round(bt.t5/bt.n*100)+"%</b>（命中率スコア基準）。");
+      { const ud=Object.entries(KU.upDays).map(([d,s])=>({d:+d,n:s.n,hi:s.hi})).filter(o=>o.n>=15);
+        if(ud.length){ const byCnt=ud.slice().sort((a,b)=>b.hi-a.hi)[0]; const byRate=ud.slice().sort((a,b)=>b.hi/b.n-a.hi/a.n)[0];
+          sm.push("上げ（リセット投入）は <b>"+(byCnt.d>=8?"8日以上":byCnt.d+"日")+"不発後</b>が最も多く、成功率が高いのは <b>"+(byRate.d>=8?"8日以上":byRate.d+"日")+"不発後（"+Math.round(byRate.hi/byRate.n*100)+"%）</b>。"); } }
+      { const kd=Object.entries(KU.keepDays).map(([d,s])=>({d:+d,n:s.n,hi:s.hi})).filter(o=>o.n>=8&&o.hi/o.n>=0.4);
+        if(kd.length){ const maxd=Math.max(...kd.map(o=>o.d)); sm.push("据え置きは <b>"+(maxd>=8?"8日以上":maxd+"日連続")+"</b>まで継続しやすい（継続率40%以上）。"); } }
+      { const all=Object.entries(KU.cond);
+        const tk=all.filter(e=>e[1].keepN>=20).sort((a,b)=>b[1].keepRate-a[1].keepRate)[0];
+        const tu=all.filter(e=>e[1].upN>=20).sort((a,b)=>b[1].upRate-a[1].upRate)[0];
+        if(tk) sm.push("据え置きが決まりやすい前日条件は <b>"+tk[0].replace(/（.*?）/,"")+"</b>（据え置き成功率"+Math.round(tk[1].keepRate*100)+"%）。");
+        if(tu) sm.push("上げが決まりやすい前日条件は <b>"+tu[0].replace(/（.*?）/,"")+"</b>（上げ成功率"+Math.round(tu[1].upRate*100)+"%）。"); }
+      { const cb=Object.entries(KU.combo).filter(e=>e[1].keepN>=100).map(([k,s])=>({k,r:s.keepRate})).sort((a,b)=>b.r-a.r)[0];
+        if(cb) sm.push("複合条件では <b>"+cb.k+"</b> が据え置き成功率"+Math.round(cb.r*100)+"%と強力。"); }
+      { const ms=Object.entries(KU.byMachine).filter(e=>(e[1].keepCnt+e[1].upCnt)>=10);
+        if(ms.length>=2){ const k=ms.slice().sort((a,b)=>b[1].keepRatio-a[1].keepRatio)[0]; const u=ms.slice().sort((a,b)=>b[1].upRatio-a[1].upRatio)[0];
+          if(k[0]!==u[0]) sm.push("機種では <b>"+k[0]+"</b> が最も据え置き寄り（"+Math.round(k[1].keepRatio*100)+"%）、<b>"+u[0]+"</b> が最も上げ寄り（"+Math.round(u[1].upRatio*100)+"%）。"); } }
+      { const dt=KU.dateTail; if(dt&&dt.matchN>=10){ const mr=dt.matchHi/dt.matchN, nr=dt.nonN?dt.nonHi/dt.nonN:0; const diff=Math.round((mr-nr)*100);
+        sm.push("日付と末尾の一致は高設定率"+Math.round(mr*100)+"%（非該当"+Math.round(nr*100)+"%）で差"+(diff>=0?"+":"")+diff+"pt"+(diff>=5?"＝末尾狙い有効":diff<=-5?"＝逆効果ぎみ":"＝ほぼ無関係")+"。"); } }
+      if(KU.dayClass.length){ const bz=KR.biz; sm.push("直近の営業は <b>"+bz.type+"</b>傾向。"+bz.note+"。"); }
+      h+="<div class='note' style='background:#eff6ff;border-color:#3b82f6;font-size:13px'><b>🧠 バックテストで分かったこの店のクセ（要約）</b>"+
+        "<ul style='margin:6px 0 0;padding-left:18px'>"+sm.map(s=>"<li style='margin:3px 0'>"+s+"</li>").join("")+"</ul>"+
+        "<span class='muted' style='font-size:12px'>※直近最大"+btDays()+"日の実データから自動算出。下の各表が根拠です。</span></div>";
+    }
+    // 日数別のクセ：何日不発後に上げたか／何日連続据え置きしたか
     const dayRow=(o,label,unit)=>{ const rate=o.n?Math.round(o.hi/o.n*100):0; const rc=rate>=40?"#1a7f37":rate>=25?"#b35900":"#888";
       return "<tr><td style='text-align:left'>"+label+"</td><td>"+o.hi+"件</td><td>"+o.n+"回</td><td style='color:"+rc+";font-weight:bold'>"+rate+"%</td></tr>"; };
     const upK=Object.keys(KU.upDays).map(Number).sort((a,b)=>a-b);
@@ -3811,6 +3843,13 @@ function renderInjection4Inner(){
       (kpK.length?kpK.map(d=>dayRow(KU.keepDays[d],(d>=8?"8日以上":d+"日")+"連続後")).join(""):"<tr><td colspan='4' class='muted'>データなし</td></tr>")+
       "</table></div></details></div>";
     h+="</div>";
+    // 日付と末尾の一致
+    { const dt=KU.dateTail; if(dt && dt.matchN>=1){ const mr=dt.matchN?dt.matchHi/dt.matchN:0, nr=dt.nonN?dt.nonHi/dt.nonN:0; const diff=Math.round((mr-nr)*100);
+      const dc=diff>=5?"#1a7f37":diff<=-5?"#c00":"#555";
+      h+="<div class='note' style='background:#f5f3ff;border-color:#a78bfa;font-size:13px'>🗓️ <b>日付と末尾の一致</b>（例：7日→末尾7、24日→末尾4）："+
+        "該当 <b>"+dt.matchN+"回</b>中 高設定 <b>"+dt.matchHi+"件</b>（"+Math.round(mr*100)+"%） ／ 非該当 高設定率 "+Math.round(nr*100)+"%（該当"+dt.nonN+"回）"+
+        " ／ 差 <b style='color:"+dc+"'>"+(diff>=0?"+":"")+diff+"pt</b> "+(diff>=5?"＝末尾狙いが有効":diff<=-5?"＝末尾は逆効果ぎみ":"＝ほぼ無関係")+
+        "<br><span class='muted'>内訳：据え置き状況"+dt.keepN+"回中"+dt.keepHi+"件（"+(dt.keepN?Math.round(dt.keepHi/dt.keepN*100):0)+"%）・上げ状況"+dt.upN+"回中"+dt.upHi+"件（"+(dt.upN?Math.round(dt.upHi/dt.upN*100):0)+"%）</span></div>"; } }
     // 据え置く/上げる条件の洗い出し（前日の実数値ビン別の据え置き成功率・上げ成功率）
     const catOrder=["回転数","合算","REG","ぶどう","差枚","BIG"];
     const condByCat={}; Object.entries(KU.cond).forEach(([label,s])=>{ if(s.keepN+s.upN<5)return; (condByCat[s.cat]=condByCat[s.cat]||[]).push([label,s]); });
