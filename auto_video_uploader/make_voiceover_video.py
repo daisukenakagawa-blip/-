@@ -1,11 +1,12 @@
-"""ユーザー提供の字幕入り画像 + アフレコ で1本の縦動画を組み立てる。
+"""ユーザー提供の字幕入り画像/動画 + アフレコ で1本の縦動画を組み立てる。
 
-各シーンは画像の字幕に合わせたナレーションを読み上げ、その音声の長さだけ
-表示する。画像は 1080x1920 にフィットさせ、背景はぼかしで埋める(黒帯なし)。
+各シーンは「画像」または「動画クリップ」。ナレーション(narration)があれば
+その読み上げ長だけ表示し、無い動画シーンはクリップ自身の尺と音声を使う。
+出力は 1080x1920。画像は背景ぼかしでフィット、動画は左右をトリムして全画面。
 
 音声エンジン:
-  - VOICEVOX が起動していれば speaker 13 (青山龍星) を使う(本番・高品質)
-  - 無ければ pyopenjtalk(オフライン)で生成し、男性寄りにピッチを下げる(試聴用)
+  - VOICEVOX が起動していれば config.VOICEVOX_SPEAKER を使う(本番・高品質)
+  - 無ければ pyopenjtalk(オフライン)で生成(ローカル試聴用)。VOICE_STYLE で声色。
 """
 
 import json
@@ -18,11 +19,18 @@ from pathlib import Path
 import config
 
 W, H, FPS = 1080, 1920, 30
-# STORY 環境変数で対象ストーリーを切替 (drafts/<STORY>/manifest.json)
 STORY = os.getenv("STORY", "voiceover_story")
 STORY_DIR = config.BASE_DIR / "drafts" / STORY
-# ローカル試聴の pyopenjtalk のピッチ。female=可愛い寄り / male=低い男性寄り
 VOICE_STYLE = os.getenv("VOICE_STYLE", "female").lower()
+
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+VIDEO_EXTS = (".mov", ".mp4", ".mkv", ".webm", ".m4v")
+
+
+def _run(cmd: list) -> None:
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"ffmpeg失敗: {' '.join(map(str, cmd[:6]))}…\n{p.stderr[-1200:]}")
 
 
 def _wav_duration(path: Path) -> float:
@@ -30,10 +38,29 @@ def _wav_duration(path: Path) -> float:
         return w.getnframes() / float(w.getframerate())
 
 
+def _media_duration(path: Path) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=nk=1:nw=1", str(path)],
+        capture_output=True, text=True,
+    )
+    return float(out.stdout.strip() or 0)
+
+
+def _has_audio(path: Path) -> bool:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+         "stream=index", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True,
+    )
+    return bool(out.stdout.strip())
+
+
+# --- 音声合成 ---------------------------------------------------------------
+
 def _voicevox_available() -> bool:
     try:
         import requests
-
         requests.get(f"{config.VOICEVOX_URL.rstrip('/')}/version", timeout=3)
         return True
     except Exception:
@@ -42,7 +69,6 @@ def _voicevox_available() -> bool:
 
 def _synth_voicevox(text: str, out_wav: Path) -> None:
     import requests
-
     base = config.VOICEVOX_URL.rstrip("/")
     spk = config.VOICEVOX_SPEAKER
     q = requests.post(f"{base}/audio_query", params={"text": text, "speaker": spk}, timeout=30)
@@ -55,42 +81,59 @@ def _synth_voicevox(text: str, out_wav: Path) -> None:
 
 
 def _synth_openjtalk(text: str, out_wav: Path) -> None:
-    """pyopenjtalk(オフライン)で合成。VOICE_STYLE でピッチを調整して保存。
-
-    本番はクラウドの VOICEVOX を使うため、これはローカル試聴専用。
-    """
     import numpy as np
     import pyopenjtalk
-
     wav, sr = pyopenjtalk.tts(text)
     wav = wav / (np.abs(wav).max() + 1e-9) * 0.95
     pcm = (wav * 32767).astype(np.int16)
     raw = out_wav.with_suffix(".raw.wav")
     with wave.open(str(raw), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(sr)
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
         w.writeframes(pcm.tobytes())
-    if VOICE_STYLE == "male":
-        rate, tempo = 0.82, 1.22   # 低い男性寄り
-    else:
-        rate, tempo = 1.08, 0.926  # 可愛い女性寄り
-    # asetrate でピッチを変え、atempo で長さを戻す。整音も少し。
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", str(raw), "-af",
-         f"asetrate={sr}*{rate},aresample=44100,atempo={tempo},"
-         "highpass=f=90,lowpass=f=11000,dynaudnorm",
-         "-ar", "44100", "-ac", "1", str(out_wav)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-    )
+    rate, tempo = (0.82, 1.22) if VOICE_STYLE == "male" else (1.08, 0.926)
+    _run(["ffmpeg", "-y", "-i", str(raw), "-af",
+          f"asetrate={sr}*{rate},aresample=44100,atempo={tempo},"
+          "highpass=f=90,lowpass=f=11000,dynaudnorm", "-ar", "44100", "-ac", "1", str(out_wav)])
     raw.unlink(missing_ok=True)
 
 
-def synth_scene(text: str, out_wav: Path, use_vv: bool) -> None:
+def _synth(text: str, out_wav: Path, use_vv: bool) -> None:
     if use_vv:
         _synth_voicevox(text, out_wav)
     else:
         _synth_openjtalk(text, out_wav)
+
+
+# --- シーンの正規化 (1080x1920 クリップ + Dぴったりの音声) -------------------
+
+def _audio_exact(src: Path | None, D: float, out: Path) -> None:
+    """src 音声を長さ D ぴったり(不足は無音パディング)で書き出す。src=None は無音。"""
+    if src is None:
+        _run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+              "-t", f"{D:.2f}", "-ar", "44100", "-ac", "2", str(out)])
+    else:
+        _run(["ffmpeg", "-y", "-i", str(src), "-af", "aresample=44100,apad",
+              "-t", f"{D:.2f}", "-ar", "44100", "-ac", "2", str(out)])
+
+
+def _image_clip(img: Path, D: float, out: Path) -> None:
+    fc = (
+        f"[0:v]split=2[a][b];"
+        f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=24:2,setsar=1[bg];"
+        f"[b]scale={W}:{H}:force_original_aspect_ratio=decrease,setsar=1[fg];"
+        f"[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p,fps={FPS}[v]"
+    )
+    _run(["ffmpeg", "-y", "-loop", "1", "-framerate", str(FPS), "-t", f"{D:.2f}",
+          "-i", str(img), "-filter_complex", fc, "-map", "[v]",
+          "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-r", str(FPS), str(out)])
+
+
+def _video_clip(vid: Path, D: float, out: Path) -> None:
+    # 左右をトリムして縦全画面に(ピラーボックスの黒帯を除去)
+    _run(["ffmpeg", "-y", "-t", f"{D:.2f}", "-i", str(vid), "-an",
+          "-vf", f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                 f"setsar=1,fps={FPS},format=yuv420p",
+          "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-r", str(FPS), str(out)])
 
 
 def main() -> int:
@@ -102,88 +145,90 @@ def main() -> int:
     eng = f"VOICEVOX(speaker={config.VOICEVOX_SPEAKER})" if use_vv else f"pyopenjtalk({VOICE_STYLE})"
     print(f"ストーリー: {STORY} / 音声エンジン: {eng}")
 
-    seg_wavs, durations = [], []
-    for sc in scenes:
-        text = sc["narration"]
-        wav = work / f"vo_seg{sc['index']}.wav"
-        synth_scene(text, wav, use_vv)
-        dur = _wav_duration(wav)
+    clip_paths, aud_paths, total = [], [], 0.0
+    for i, sc in enumerate(scenes):
+        media = STORY_DIR / sc["image"]
+        is_video = media.suffix.lower() in VIDEO_EXTS
+        narration = (sc.get("narration") or "").strip()
         min_sec = float(sc.get("min_sec") or 0)
-        if min_sec > dur + 0.05:
-            padded = work / f"vo_seg{sc['index']}_pad.wav"
-            subprocess.run(
-                ["ffmpeg", "-y", "-i", str(wav), "-af",
-                 f"apad=pad_dur={min_sec - dur:.2f}", "-t", f"{min_sec:.2f}",
-                 "-ar", "44100", "-ac", "1", str(padded)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-            )
-            wav, dur = padded, min_sec
-        # 各シーン末尾に軽い間(0.35秒)
-        gap = 0.35
-        padded2 = work / f"vo_seg{sc['index']}_g.wav"
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", str(wav), "-af", f"apad=pad_dur={gap}",
-             "-ar", "44100", "-ac", "2", str(padded2)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-        )
-        seg_wavs.append(padded2)
-        durations.append(dur + gap)
-        print(f"  シーン{sc['index']}: {dur + gap:.2f}秒  「{text}」")
+        gap = 0.3
 
-    # ナレーション結合
-    voice = work / "voiceover_full.wav"
+        narr_wav = None
+        if narration:
+            narr_wav = work / f"{STORY}_n{i}.wav"
+            _synth(narration, narr_wav, use_vv)
+            L = _wav_duration(narr_wav)
+            D = max(L, min_sec) + gap
+        elif is_video:
+            D = max(_media_duration(media), min_sec or 0.5)
+        else:
+            D = max(min_sec, 3.0)
+
+        # 映像クリップ
+        clip = work / f"{STORY}_v{i}.mp4"
+        if is_video:
+            _video_clip(media, D, clip)
+        else:
+            _image_clip(media, D, clip)
+        clip_paths.append(clip)
+
+        # 音声(長さ D ぴったり)
+        aud = work / f"{STORY}_a{i}.wav"
+        if narr_wav is not None:
+            _audio_exact(narr_wav, D, aud)
+        elif is_video and sc.get("keep_audio") and _has_audio(media):
+            tmp = work / f"{STORY}_va{i}.wav"
+            _run(["ffmpeg", "-y", "-i", str(media), "-vn", "-ar", "44100", "-ac", "2", str(tmp)])
+            _audio_exact(tmp, D, aud)
+            tmp.unlink(missing_ok=True)
+        else:
+            _audio_exact(None, D, aud)
+        aud_paths.append(aud)
+
+        total += D
+        label = narration or ("[動画]" if is_video else "[無音]")
+        print(f"  シーン{sc.get('index', i+1)}: {D:.2f}秒  「{label}」")
+
+    # 映像を連結 (同一設定なのでコピー連結)
+    listf = work / f"{STORY}_list.txt"
+    listf.write_text("".join(f"file '{p}'\n" for p in clip_paths), encoding="utf-8")
+    video_only = work / f"{STORY}_video.mp4"
+    _run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listf),
+          "-c", "copy", str(video_only)])
+
+    # ナレーション/音声を連結
+    voice = work / f"{STORY}_voice.wav"
     cmd = ["ffmpeg", "-y"]
-    for p in seg_wavs:
+    for p in aud_paths:
         cmd += ["-i", str(p)]
-    n = len(seg_wavs)
+    n = len(aud_paths)
     cmd += ["-filter_complex",
             "".join(f"[{i}:a]" for i in range(n)) + f"concat=n={n}:v=0:a=1[a]",
             "-map", "[a]", "-ar", "44100", "-ac", "2", str(voice)]
-    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-    total = sum(durations)
+    _run(cmd)
 
-    # 各シーン画像を 1080x1920 にフィット(背景ぼかし)してクリップ化
-    parts, filters = [], []
-    cmd = ["ffmpeg", "-y"]
-    for i, sc in enumerate(scenes):
-        img = STORY_DIR / sc["image"]
-        cmd += ["-loop", "1", "-framerate", str(FPS), "-t", f"{durations[i]:.2f}", "-i", str(img)]
-    for i in range(n):
-        # bg: cover してぼかし / fg: contain / 重ねる
-        filters.append(
-            f"[{i}:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},boxblur=24:2,setsar=1[bg{i}];"
-            f"[{i}:v]scale={W}:{H}:force_original_aspect_ratio=decrease,setsar=1[fg{i}];"
-            f"[bg{i}][fg{i}]overlay=(W-w)/2:(H-h)/2:format=auto,"
-            f"format=yuv420p,fps={FPS}[v{i}]"
-        )
-    concat = "".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[v]"
-    filter_complex = ";".join(filters) + ";" + concat
-
-    # BGM(任意)
-    bgm = Path(config.BGM_PATH)
-    voice_idx = n
-    cmd += ["-i", str(voice)]
-    if bgm.exists():
-        cmd += ["-stream_loop", "-1", "-i", str(bgm)]
-        bgm_idx = n + 1
-        filter_complex += (
-            f";[{voice_idx}:a]volume=1.0[na];"
-            f"[{bgm_idx}:a]volume={min(config.BGM_VOLUME,0.18)}[bg];"
-            f"[na][bg]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]"
-        )
-    else:
-        filter_complex += f";[{voice_idx}:a]volume=1.0[a]"
-
+    # 最終合成 (映像 + 音声 + BGM)
     out = config.VIDEOS_DIR / f"{STORY}.mp4"
-    cmd += ["-filter_complex", filter_complex, "-map", "[v]", "-map", "[a]",
-            "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "medium",
-            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+    bgm = Path(config.BGM_PATH)
+    cmd = ["ffmpeg", "-y", "-i", str(video_only), "-i", str(voice)]
+    if bgm.exists():
+        cmd += ["-stream_loop", "-1", "-i", str(bgm),
+                "-filter_complex",
+                f"[1:a]volume=1.0[na];[2:a]volume={min(config.BGM_VOLUME,0.16)}[bg];"
+                "[na][bg]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]",
+                "-map", "0:v", "-map", "[a]"]
+    else:
+        cmd += ["-map", "0:v", "-map", "1:a"]
+    cmd += ["-t", f"{total:.2f}", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", str(out)]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if proc.returncode != 0:
-        print(proc.stderr[-1500:])
-        return 1
+    _run(cmd)
+
+    # 中間ファイル掃除
+    for p in clip_paths + aud_paths + [video_only, voice, listf]:
+        Path(p).unlink(missing_ok=True)
+    for sc_i in range(len(scenes)):
+        (work / f"{STORY}_n{sc_i}.wav").unlink(missing_ok=True)
+
     print(f"完成: {out}  (合計 {total:.1f}秒)")
     return 0
 

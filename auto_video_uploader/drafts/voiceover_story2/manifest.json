@@ -37,6 +37,55 @@
       "subtitle": "ぶどうもいいぞ?! / ぶどう確率5.35",
       "narration": "ぶどうもいいぞ?! ぶどう確率、5.35!",
       "min_sec": 4.0
+    },
+    {
+      "index": 6,
+      "image": "scene_06.png",
+      "subtitle": "その後と言うと…",
+      "narration": "その後と言うと…",
+      "min_sec": 2.2
+    },
+    {
+      "index": 7,
+      "image": "scene_07.mov",
+      "subtitle": "(実機プレイ→フラッシュ演出)",
+      "narration": "",
+      "keep_audio": true
+    },
+    {
+      "index": 8,
+      "image": "scene_08.png",
+      "subtitle": "順調にペカっていく!",
+      "narration": "順調にペカっていく!",
+      "min_sec": 2.2
+    },
+    {
+      "index": 9,
+      "image": "scene_09.png",
+      "subtitle": "最終結果は?",
+      "narration": "最終結果は…?",
+      "min_sec": 2.6
+    },
+    {
+      "index": 10,
+      "image": "scene_10.png",
+      "subtitle": "やってやったぜ! 予想設定5! 投資500枚→回収3280枚 プラス55,000円!!",
+      "narration": "やってやったぜ! 予想設定5! 投資500枚から、回収3280枚ほど! プラス55,000円!",
+      "min_sec": 5.5
+    },
+    {
+      "index": 11,
+      "image": "scene_11.png",
+      "subtitle": "グラフも綺麗 右肩上がりで最高すぎる!",
+      "narration": "グラフも綺麗! 右肩上がりで、最高すぎる!",
+      "min_sec": 3.5
+    },
+    {
+      "index": 12,
+      "image": "scene_12.png",
+      "subtitle": "毎日ショート動画あげるので登録してね / じゃないと…ペカらせなくするぞ",
+      "narration": "毎日ショート動画あげるので、登録してね! じゃないと…ペカらせなくするぞ!",
+      "min_sec": 4.5
     }
   ]
 }
