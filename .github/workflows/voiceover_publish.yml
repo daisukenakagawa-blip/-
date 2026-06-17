@@ -76,6 +76,8 @@ jobs:
           FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc
           FONT_NAME: Noto Sans CJK JP
           TTS_ENGINE: auto
+          # 0 = 四国めたん(あまあま) 可愛い系の女性声。今後のアフレコ動画の既定。
+          VOICEVOX_SPEAKER: "0"
           PUBLISH_AT_JST: ${{ github.event.inputs.publish_at_jst || '2026-06-18 12:00' }}
         run: python publish_voiceover.py
 
