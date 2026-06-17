@@ -1,0 +1,69 @@
+# 可愛い系の女性 VOICEVOX ボイスのサンプル音声を生成してブランチにコミットする。
+# samples_now.txt の更新、または手動実行で起動する。
+
+name: voice-samples
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - claude/pensive-carson-i2hqgr
+    paths:
+      - auto_video_uploader/samples_now.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voice-samples
+  cancel-in-progress: false
+
+jobs:
+  samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: auto_video_uploader
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: FFmpeg をインストール
+        working-directory: .
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg
+
+      - name: VOICEVOX エンジンを起動
+        working-directory: .
+        run: |
+          docker run -d --name voicevox -p 50021:50021 \
+            voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+          for i in $(seq 1 90); do
+            if curl -fs http://127.0.0.1:50021/version > /dev/null; then
+              echo "VOICEVOX ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::VOICEVOX が起動しませんでした"; exit 1
+
+      - name: Python パッケージをインストール
+        run: pip install -q -r requirements.txt
+
+      - name: サンプル音声を生成
+        run: python voice_samples.py
+
+      - name: サンプルをコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add voice_samples/*.mp3
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: 女性ボイスのサンプル音声を生成 [skip ci]"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
