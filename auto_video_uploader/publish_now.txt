@@ -1,2 +1,2 @@
-publish at 2026-06-18 12:00 JST
-triggered: 2026-06-16 (retry pip fix)
+publish voiceover_story2 (女性声・四国めたん) at 2026-06-18 12:00 JST
+triggered: 2026-06-17
