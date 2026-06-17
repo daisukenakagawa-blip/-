@@ -84,8 +84,8 @@ jobs:
           VOICEVOX_SPEAKER: "0"
           # 対象ストーリー(既定は最新の voiceover_story2)
           STORY: ${{ github.event.inputs.story || 'voiceover_story2' }}
-          # 公開時刻(空なら publishAt 無し)。安全のため未指定時は非公開で上げる。
-          PUBLISH_AT_JST: ${{ github.event.inputs.publish_at_jst || '' }}
+          # 公開時刻 JST。空なら publishAt 無し(非公開のまま)。
+          PUBLISH_AT_JST: ${{ github.event.inputs.publish_at_jst || '2026-06-18 12:00' }}
           PRIVACY_STATUS: private
         run: python publish_voiceover.py
 
