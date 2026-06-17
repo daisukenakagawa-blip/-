@@ -1,2 +1,2 @@
-generate cute female voice samples
-2026-06-16
+regenerate samples (retry, runner hung)
+2026-06-17
