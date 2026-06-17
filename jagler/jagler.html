@@ -3762,7 +3762,9 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
   const sr=srAll.filter(r=>r.date<targetDate); if(sr.length<2) return null;
   const CU=learnCusp(sr,d=>isEventDate(d,store),maxDate(sr)); const x=inj4Ctx(sr,targetDate,store,CU);
   const biz=bizType(learned.dayClass); const overall=CU.overallHi||0; const out=[];
-  // 改修⑧：重要度 複合(3>2) ＞ 機種別 ＞ 店舗単体 の順に重み付け
+  // 期待設定(4/5/6)の事前分布：店全体・イベント日での高設定の設定内訳
+  const distOf=arr=>{let a=0,b=0,c=0;arr.forEach(r=>{const e=estimateSetting(r);if(e){if(e.setting===4)a++;else if(e.setting===5)b++;else if(e.setting===6)c++;}});return{s4:a,s5:b,s6:c,n:a+b+c};};
+  const Sdist=distOf(sr), Edist=distOf(sr.filter(r=>isEventDate(r.date,store)));
   const LP=(ml&&ml.learnPts)||{};
   for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
     const {F,sig,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x); const ld=x.lastDay[mno];
@@ -3798,16 +3800,23 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     // 根拠：点数付き（例 前日据え置き +10）
     const reasons = sideWhy.slice(0,6).map(w=>w.label+" "+(w.pts>=0?"+":"")+w.pts);
     if(rescueHits) reasons.unshift("🔧取りこぼし救済（"+rescueWhy.join("・")+"）");
+    // この台の過去の設定4/5/6回数 ＋ 期待設定（店全体・イベント日の分布を事前分布に合成）
     let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
-    const honmei=(s6>=s5&&s6>=s4&&s6>0)?6:(s5>=s4&&s5>0)?5:4;
+    const sw=Sdist.n||1, prW=4; let n4=(Sdist.s4/sw)*prW+s4, n5=(Sdist.s5/sw)*prW+s5, n6=(Sdist.s6/sw)*prW+s6;
+    if(x.eventDay&&Edist.n>=3){ n4+=Edist.s4/Edist.n*3; n5+=Edist.s5/Edist.n*3; n6+=Edist.s6/Edist.n*3; }
+    const nt=(n4+n5+n6)||1; const e4=n4/nt, e5=n5/nt, e6=n6/nt; const honmei=(e6>=e5&&e6>=e4)?6:(e5>=e4)?5:4;
     const hiDates=hist.filter(CU.isHi).map(r=>r.date).sort(); const gaps=[]; for(let i=1;i<hiDates.length;i++)gaps.push(dayDiff(hiDates[i-1],hiDates[i]));
     const avgGap=gaps.length?+avg(gaps).toFixed(1):null;
-    // 据え置いた日数（前日まで高設定が連続した日数）と、据え置き元データ（前日の合算/BIG/REG）
-    let keepRun=0; for(let j=hist.length-1;j>=0;j--){ if(CU.isHi(hist[j]))keepRun++; else break; }
+    // 据え置いた日数と、据え置いた各日のデータ（合算/BIG/REG/総回転）
+    let keepRun=0; const keptData=[];
+    for(let j=hist.length-1;j>=0 && CU.isHi(hist[j]);j--){ keepRun++; const r=hist[j];
+      if(keptData.length<5) keptData.unshift({date:r.date, comb:r.combined, big:r.big_prob, reg:r.reg_prob, tot:r.total, sete:(estimateSetting(r)||{}).setting}); }
     const prevComb=ld?ld.combined:null, prevBig=ld?ld.big_prob:null, prevReg=ld?ld.reg_prob:null, prevTot=ld?ld.total:null;
-    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
-      prevState,prevHi,streak,keepRun,prevComb,prevBig,prevReg,prevTot,
-      s4,s5,s6,honmei,aim:aimInfo(hist),days:hist.length,avgGap});
+    // 高設定が入りやすい度（0-100）：その台の状況に応じた最良経路の期待度
+    const hiExp = prevState==="keep"?keepScore : prevState==="up"?upScore : Math.max(resetScore, Math.round((keepScore+upScore)/2));
+    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiExp,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
+      prevState,prevHi,streak,keepRun,keptData,prevComb,prevBig,prevReg,prevTot,
+      s4,s5,s6,e4,e5,e6,honmei,aim:aimInfo(hist),days:hist.length,avgGap});
   }
   // 改修⑥：機種平均と差分・★評価（機種平均は総合期待度ベース）
   const machAvg={}, machGroups={}; out.forEach(o=>{(machGroups[o.mname]=machGroups[o.mname]||[]).push(o.total);});
@@ -3997,22 +4006,40 @@ function renderInjection4Inner(){
       "</table></div></details>";
     // 実戦ランキング：スコア順ではなく「一致したクセの数（根拠の強さ）」順
     const kuBg=v=>v.indexOf("本命")>=0?"#7CFC00":v.indexOf("救済")>=0?"#ffd9a0":v.indexOf("有力")>=0||v.indexOf("候補")>=0?"#b6f5a0":v.indexOf("寄り")>=0?"#d8f5c0":"#ffe066";
-    // 据え置き狙い台の据え置きデータ（据え置いた日数・合算・BIG確率・REG確率）
-    const keepData=o=>{ if(o.side==="keep") return "据え置き<b>"+o.keepRun+"日</b>連続<br>合算1/"+(o.prevComb?Math.round(o.prevComb):"-")+
-        " B1/"+(o.prevBig?Math.round(o.prevBig):"-")+" R1/"+(o.prevReg?Math.round(o.prevReg):"-");
+    // 据え置き狙い台の据え置きデータ（据え置いた日数＋据え置いた各日の合算/BIG/REG）
+    const keepData=o=>{ if(o.side==="keep"){ let s="据え置き<b>"+o.keepRun+"日</b>連続：<table style='font-size:10px;margin-top:2px'><tr><th>日</th><th>設定</th><th>合算</th><th>BIG</th><th>REG</th></tr>"+
+        (o.keptData||[]).map(d=>"<tr><td>"+d.date.slice(5)+"</td><td>"+(d.sete||"-")+"</td><td>1/"+(d.comb?Math.round(d.comb):"-")+"</td><td>1/"+(d.big?Math.round(d.big):"-")+"</td><td>1/"+(d.reg?Math.round(d.reg):"-")+"</td></tr>").join("")+"</table>"; return s; }
       if(o.side==="reset") return "<span style='color:#7c3aed'>新規投入(前日なし)</span>";
       return "<span class='muted'>上げ狙い／不発"+o.streak+"日</span>"; };
+    const pc4=x=>Math.round((x||0)*100)+"%";
+    const expCell=o=>{ const hc={4:"#e6f8d8",5:"#b6f5a0",6:"#7CFC00"}[o.honmei]||"#eee";
+      return "<b style='background:"+hc+";padding:1px 4px;border-radius:4px'>設定"+o.honmei+"</b><br><span style='font-size:10px'>4:"+pc4(o.e4)+" 5:"+pc4(o.e5)+" 6:"+pc4(o.e6)+"</span>"; };
     const matchCell=o=>{ const c=o.matchCount; const col=c>=6?"#7c3aed":c>=4?"#1a7f37":c>=2?"#6366f1":"#999";
       return "<b style='color:"+col+";font-size:15px'>"+c+"個</b>"+(o.rescueHits?"<br><span style='color:#d97706;font-size:10px'>🔧救済"+o.rescueHits+"</span>":"")+(o.comboHits?"<br><span class='muted' style='font-size:10px'>複合"+o.comboHits+"・機種"+o.machHits+"</span>":""); };
+    // 🔥 高設定が入りやすいランキング（0-100点・スコア順）＋期待設定
+    const hiRank=KR.out.slice().sort((a,b)=>b.hiExp-a.hiExp||b.total-a.total);
+    const heBg=v=>v>=70?"#7CFC00":v>=55?"#b6f5a0":v>=40?"#d8f5c0":v>=25?"#ffe066":"#ffd0d0";
+    h+="<h3 style='margin:16px 0 4px;background:#dc2626;color:#fff;padding:7px 10px;border-radius:6px'>🔥 高設定が入りやすいランキング（0〜100点）＋ 期待設定(4/5/6)</h3>"+
+      "<p class='muted' style='font-size:12px'>「クセの一致数」ではなく<b>高設定が入る確率そのもの（0-100点）</b>で並べたランキング。各台が今日 <b>設定4・5・6 のどれを狙えるか</b>も表示。</p>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>高設定<br>期待度</th><th>期待設定<br>(4/5/6)</th><th>狙い</th><th>判定</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>据え置きデータ</th></tr>"+
+      hiRank.slice(0,20).map((o,i)=>{ const ps=o.prevState==="keep"?"据え置き":o.prevState==="up"?"上げ":"新規";
+        return "<tr><td><b>"+(i+1)+"</b></td><td><b>"+o.mno+"</b></td><td style='text-align:left'>"+o.mname+"</td>"+
+          "<td style='background:"+heBg(o.hiExp)+";font-weight:bold;font-size:15px'>"+o.hiExp+"</td>"+
+          "<td style='white-space:nowrap'>"+expCell(o)+"</td>"+
+          "<td>"+ps+"</td><td style='background:"+kuBg(o.verdict)+";white-space:nowrap;font-size:11px'>"+o.verdict+"</td>"+
+          "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td><td style='color:#7c3aed'>"+o.resetScore+"</td>"+
+          "<td style='text-align:left;font-size:11px'>"+keepData(o)+"</td></tr>"; }).join("")+
+      "</table></div>";
     const ranked=KR.out.slice();   // 既に「一致クセ数→強さ→総合」でソート済み
     const pickC=p=>p==="本命候補"?"#1a7f37":p==="対抗"?"#b35900":p==="注目"?"#6366f1":"#999";
     h+="<h3 style='margin:16px 0 4px;background:#7c3aed;color:#fff;padding:7px 10px;border-radius:6px'>⭐ 実戦ランキング（一致したクセの数＝根拠の強い順）</h3>"+
       "<p class='muted' style='font-size:12px'>点数テーブル（成功率→点／信頼度補正／MISS自己学習／複合ボーナス）で <b>据え置き・上げ・リセット期待度</b>を算出。並びは<b>一致クセ数＝根拠の強さ</b>順。据え置き狙い台は<b>連続日数・合算・BIG・REG</b>を明記。根拠は点数付き（例 前日据え置き +10）。</p>"+
-      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>一致<br>クセ数</th><th>判定</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>総合</th><th>平均差</th><th>評価</th><th>最終<br>判定</th><th>据え置きデータ<br>(連続/合算/B/R)</th><th>根拠（点数）</th></tr>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>一致<br>クセ数</th><th>判定</th><th>期待設定<br>(4/5/6)</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>総合</th><th>平均差</th><th>評価</th><th>最終<br>判定</th><th>据え置きデータ</th><th>根拠（点数）</th></tr>"+
       ranked.slice(0,20).map((o,i)=>{
         return "<tr><td><b>"+(i+1)+"</b></td><td><b>"+o.mno+"</b></td><td style='text-align:left'>"+o.mname+"</td>"+
           "<td>"+matchCell(o)+"</td>"+
           "<td style='background:"+kuBg(o.verdict)+";white-space:nowrap;font-weight:bold'>"+o.verdict+"</td>"+
+          "<td style='white-space:nowrap'>"+expCell(o)+"</td>"+
           "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td><td style='color:#7c3aed'>"+o.resetScore+"</td>"+
           "<td style='font-weight:bold;font-size:14px'>"+o.total+"</td><td style='color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td>"+
           "<td style='color:"+pickC(o.pick)+";font-weight:bold;white-space:nowrap'>"+o.pick+"</td>"+
