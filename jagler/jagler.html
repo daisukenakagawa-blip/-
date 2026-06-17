@@ -3687,19 +3687,22 @@ function keepUpLearn(srAll, store, targetDate){
     btHiTotal,btCaught,btMissed,missSig,missRate};
 }
 // 本日（最新営業日）の投入タイプを推定（明日の予想にバイアスをかける）
-// 改修⑤：1日を営業タイプに分類
-function dayBizLabel(dc){ if(!dc||!dc.hi) return "回収営業";
+// 改修⑤：1日を営業タイプに分類（据え置き/上げ60%以上・回収＝高設定率が平均以下）
+function dayBizLabel(dc, avgHiRate){ if(!dc||!dc.hi) return "回収営業";
+  const hiRate=dc.total?dc.hi/dc.total:0;
+  if(avgHiRate!=null && hiRate < avgHiRate*0.6) return "回収営業";
   if(dc.hi<=Math.max(1,Math.round(dc.total*0.05))) return "回収営業";
   const k=dc.keep/dc.hi, u=dc.up/dc.hi;
-  if(k>=0.7) return "据え置き営業"; if(u>=0.7) return "上げ営業"; return "混合営業"; }
+  if(k>=0.6) return "据え置き営業"; if(u>=0.6) return "上げ営業"; return "混合営業"; }
 // 改修⑤：直近営業の各タイプ確率を推定（直近日を重く）し、明日のバイアスを返す
 function bizType(dayClass){
   const recent=(dayClass||[]).slice(-10); if(!recent.length) return {type:"不明",probs:{},note:"データ不足",keepBias:0,upBias:0};
+  const avgHi=avg((dayClass||[]).map(d=>d.total?d.hi/d.total:0));
   const cnt={"据え置き営業":0,"上げ営業":0,"混合営業":0,"回収営業":0}; let wsum=0;
-  recent.forEach((dc,i)=>{ const w=1+i*0.3; wsum+=w; cnt[dayBizLabel(dc)]+=w; });
+  recent.forEach((dc,i)=>{ const w=1+i*0.3; wsum+=w; cnt[dayBizLabel(dc,avgHi)]+=w; });
   const probs={}; for(const k in cnt) probs[k]=wsum?cnt[k]/wsum:0;
   const type=Object.entries(probs).sort((a,b)=>b[1]-a[1])[0][0];
-  const last=recent[recent.length-1], lastType=dayBizLabel(last);
+  const last=recent[recent.length-1], lastType=dayBizLabel(last,avgHi);
   let keepBias=0,upBias=0,note="";
   if(lastType==="据え置き営業"){ keepBias=7; upBias=-2; note="本日は据え置き営業→明日も据え置き継続を加点"; }
   else if(lastType==="上げ営業"){ keepBias=-2; upBias=7; note="本日は上げ営業→明日は上げ狙いを優先"; }
@@ -3707,44 +3710,75 @@ function bizType(dayClass){
   else { note="本日は混合営業→バランス重視"; }
   return {type,probs,lastType,note,keepBias,upBias};
 }
+// ===== 自己学習型スコアリング（点数テーブル＋MISS自己学習）=====
+// 成功率→点数（特徴量スコア化）
+function ratePoints(r){ return r>=0.50?10:r>=0.45?8:r>=0.40?6:r>=0.35?4:r>=0.30?2:0; }
+// 複合特徴量ボーナス（2条件／3条件）
+function comboBonus(r,nC){ if(nC>=3) return r>=0.70?20:r>=0.60?15:r>=0.50?10:0; return r>=0.70?12:r>=0.60?8:r>=0.50?5:0; }
+// 1台×1サイド(keep/up/reset)の加点スコア：Σ(特徴量点×信頼度×学習補正)＋Σ複合ボーナス
+function kuScore(feats, mname, learned, learnPts, side){
+  const nOf=s=>side==="keep"?s.keepN:side==="up"?s.upN:s.resetN;
+  const rOf=s=>side==="keep"?s.keepRate:side==="up"?s.upRate:s.resetRate;
+  let sum=0; const why=[];
+  feats.forEach(k=>{
+    const mf=learned.byMachine[mname]&&learned.byMachine[mname].feats[k];
+    const useM=mf&&nOf(mf)>=30; const st=useM?mf:learned.feats[k]; if(!st)return;
+    const n=nOf(st); if(n<20)return;
+    let pts=ratePoints(rOf(st))*confCoef(n); if(useM)pts*=1.1;        // 特徴量スコア化×信頼度補正
+    const lp=(learnPts&&learnPts[k])||0; const net=pts+lp;            // 学習補正（MISS_HIGH/-、MISS_LOW/+）
+    if(Math.abs(net)>=0.5){ sum+=net; why.push({label:useM?k+"〔機種〕":k, pts:+net.toFixed(1), rate:rOf(st), n, src:useM?"機種":"店"}); }
+  });
+  comboKeys(feats).forEach(ck=>{ const st=learned.combo[ck]; if(!st)return; const n=nOf(st); if(n<50)return;   // 件数50未満=無効
+    const nC=(ck.match(/＋/g)||[]).length+1; let b=comboBonus(rOf(st),nC); if(!b)return; if(n<100)b*=0.5;       // 件数100未満=半減
+    sum+=b; why.push({label:ck, pts:+b.toFixed(1), rate:rOf(st), n, src:"複合"+nC}); });
+  why.sort((a,b)=>b.pts-a.pts);
+  return {score:Math.max(0,Math.min(100,Math.round(sum))), why};
+}
+// MISS自己学習：点数テーブルで各日を採点し、高スコア外し(MISS_HIGH)/低スコア取りこぼし(MISS_LOW)を特徴量別に集計→学習補正点
+function missLearn(srAll, store, targetDate, learned){
+  const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
+  const start=Math.max(1,dates.length-btDays());
+  const missHigh={}, missLow={}; let mhTot=0, mlTot=0;
+  for(let i=start;i<dates.length;i++){ const DD=dates[i]; const sr=srAll.filter(r=>r.date<DD); if(sr.length<2)continue;
+    const CU=learnCusp(sr,d=>isEventDate(d,store),maxDate(sr)); const x=inj4Ctx(sr,DD,store,CU);
+    const act={}; srAll.filter(r=>r.date===DD).forEach(r=>act[r.machine_no]=r);
+    for(const mno in CU.byM){ const a=act[mno]; if(!a||(CU.byM[mno]||[]).length<2)continue;
+      const ff=inj4Feats(+mno,CU,x); const ld=x.lastDay[mno]; const ps=!ld?"reset":(CU.isHi(ld)?"keep":"up");
+      const sc=kuScore(ff.F, ff.mname, learned, null, ps).score;   // 学習補正なしの素点で判定
+      const hi=CU.isHi(a);
+      if(sc>=65 && !hi){ mhTot++; ff.F.forEach(k=>missHigh[k]=(missHigh[k]||0)+1); }
+      else if(sc<65 && hi){ mlTot++; ff.F.forEach(k=>missLow[k]=(missLow[k]||0)+1); }
+    }
+  }
+  const featN={}; for(const k in learned.feats){ const s=learned.feats[k]; featN[k]=s.keepN+s.upN+s.resetN; }
+  const learnPts={}; const ks=new Set([...Object.keys(missHigh),...Object.keys(missLow)]);
+  ks.forEach(k=>{ const lowR=mlTot?(missLow[k]||0)/mlTot:0, highR=mhTot?(missHigh[k]||0)/mhTot:0;
+    const cm=featN[k]>=1000?2.0:featN[k]>=300?1.5:featN[k]>=100?1.2:1.0;   // 件数による補正倍率
+    learnPts[k]=Math.max(-5,Math.min(5, +((lowR-highR)*20*cm).toFixed(1))); });
+  return {missHigh,missLow,learnPts,mhTot,mlTot,featN};
+}
 // 改修①〜④⑥⑦：複合特徴量＋機種別＋信頼度補正で 据え置き/上げ/総合 を算出
-function computeKeepUp(srAll, store, targetDate, learned){
+function computeKeepUp(srAll, store, targetDate, learned, ml){
   const sr=srAll.filter(r=>r.date<targetDate); if(sr.length<2) return null;
   const CU=learnCusp(sr,d=>isEventDate(d,store),maxDate(sr)); const x=inj4Ctx(sr,targetDate,store,CU);
   const biz=bizType(learned.dayClass); const overall=CU.overallHi||0; const out=[];
   // 改修⑧：重要度 複合(3>2) ＞ 機種別 ＞ 店舗単体 の順に重み付け
-  const W={combo3:3.0,combo2:2.2,machine:1.6,store:1.0};
+  const LP=(ml&&ml.learnPts)||{};
   for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
     const {F,sig,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x); const ld=x.lastDay[mno];
     const prevState = !ld?"reset":(prevHi?"keep":"up");
-    const mStat=learned.byMachine[mname]; const mFeats=mStat&&mStat.feats;
-    const nOf=(s,side)=>side==="keep"?s.keepN:side==="up"?s.upN:s.resetN;
-    const rOf=(s,side)=>side==="keep"?s.keepRate:side==="up"?s.upRate:s.resetRate;
-    // side ("keep"/"up"/"reset") の証拠を収集 → 補正成功率の重み付き平均（取りこぼし対策で閾値を緩和）
-    const evid=(side)=>{ let wsum=0,vsum=0; const why=[];
-      const push=(stat,baseW,label,src)=>{ if(!stat)return; const n=nOf(stat,side); if(n<20)return;
-        const rate=rOf(stat,side); const coef=confCoef(n); const adj=Math.min(1,rate*coef);
-        const w=baseW*coef; wsum+=w; vsum+=adj*w; why.push({label,rate,n,src,score:w*adj}); };
-      // ② 機種別単体（あれば優先）／無ければ店舗単体（閾値20に緩和）
-      F.forEach(k=>{ const ms=mFeats&&mFeats[k]; const useM=ms&&(nOf(ms,side)>=20);
-        if(useM) push(ms,W.machine,k+"〔機種〕","機種"); else push(learned.feats[k],W.store,k,"店"); });
-      // ① 複合特徴量（参考50件以上から採用＝取りこぼし対策で緩和）
-      comboKeys(F).forEach(ck=>{ const st=learned.combo[ck]; if(!st)return; const n=nOf(st,side); const tier=comboTier(n); if(!tier||n<50)return;
-        const nC=(ck.match(/＋/g)||[]).length+1; push(st,(nC>=3?W.combo3:W.combo2)*tier.w,ck,"複合"+nC); });
-      const score = wsum? Math.max(0,Math.min(100, vsum/wsum*100)) : null;
-      why.sort((a,b)=>b.score-a.score); return {score,why}; };
-    const kE=evid("keep"), uE=evid("up"), rE=evid("reset");
-    const mPriorKeep=(mStat&&(mStat.keepCnt+mStat.upCnt)>=10)?mStat.keepRatio:learned.keepRatio;
-    let keepScore = kE.score!=null?Math.round(kE.score):Math.round(overall*100*(0.6+mPriorKeep*0.8));
-    let upScore = uE.score!=null?Math.round(uE.score):Math.round(overall*100*(0.6+(1-mPriorKeep)*0.8));
-    let resetScore = rE.score!=null?Math.round(rE.score):Math.round(overall*100);
+    const mStat=learned.byMachine[mname];
+    // 点数テーブルで keep/up/reset を採点（特徴量スコア化×信頼度補正×学習補正＋複合ボーナス）
+    const kE=kuScore(F,mname,learned,LP,"keep"), uE=kuScore(F,mname,learned,LP,"up"), rE=kuScore(F,mname,learned,LP,"reset");
+    let keepScore=kE.score, upScore=uE.score, resetScore=rE.score;
     keepScore=Math.max(0,Math.min(100,keepScore+biz.keepBias));
     upScore=Math.max(0,Math.min(100,upScore+biz.upBias));
+    const mPriorKeep=(mStat&&(mStat.keepCnt+mStat.upCnt)>=10)?mStat.keepRatio:learned.keepRatio;
     // 取りこぼし救済：過去取りこぼした手がかりに一致したら加点・救済フラグ
     const mr=learned.missRate||{}; let rescueHits=0; const rescueWhy=[];
     sig.forEach(k=>{ if(mr[k]>=0.12){ rescueHits++; rescueWhy.push((MISS_LABEL[k]||k)+Math.round(mr[k]*100)+"%"); } });
     if(!sig.length && mr["前兆なし"]>=0.12){ rescueHits++; rescueWhy.push("前兆なし"+Math.round(mr["前兆なし"]*100)+"%"); }
-    // 総合期待度：前日状態側を採用。リセット(新規投入)は割引せずreset成功率で評価（取りこぼし対策）
+    // 総合期待度：前日状態側を採用。リセット(新規投入)は割引せずreset成功率で評価
     let total = prevState==="keep"?keepScore : prevState==="up"?upScore : resetScore;
     if(mPriorKeep>=0.6&&prevState==="keep") total=Math.min(100,total+3);
     if(mPriorKeep<=0.4&&prevState==="up") total=Math.min(100,total+3);
@@ -3758,12 +3792,12 @@ function computeKeepUp(srAll, store, targetDate, learned){
     const sideWhy = (side==="keep"?kE.why:side==="up"?uE.why:rE.why);
     // 一致したクセの数＝根拠の強さ。取りこぼし救済の一致も加える。
     const matchCount = sideWhy.length + rescueHits;
-    let matchStrength = +(sideWhy.reduce((s,w)=>s+w.score,0)+rescueHits*1.5).toFixed(1);
+    let matchStrength = +(sideWhy.reduce((s,w)=>s+Math.abs(w.pts),0)+rescueHits*5).toFixed(1);
     const comboHits = sideWhy.filter(w=>w.src&&w.src.indexOf("複合")>=0).length;
     const machHits = sideWhy.filter(w=>w.src==="機種").length;
-    const sideRate = side==="keep"?"据え置き率":side==="up"?"上げ率":"投入率";
-    const reasons = sideWhy.slice(0,6).map(w=>w.label+" "+sideRate+Math.round(w.rate*100)+"%（"+w.n+"件）");
-    if(rescueHits) reasons.unshift("🔧取りこぼし救済：過去ここで取りこぼした手がかり("+rescueWhy.join("・")+")に一致");
+    // 根拠：点数付き（例 前日据え置き +10）
+    const reasons = sideWhy.slice(0,6).map(w=>w.label+" "+(w.pts>=0?"+":"")+w.pts);
+    if(rescueHits) reasons.unshift("🔧取りこぼし救済（"+rescueWhy.join("・")+"）");
     let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
     const honmei=(s6>=s5&&s6>=s4&&s6>0)?6:(s5>=s4&&s5>0)?5:4;
     const hiDates=hist.filter(CU.isHi).map(r=>r.date).sort(); const gaps=[]; for(let i=1;i<hiDates.length;i++)gaps.push(dayDiff(hiDates[i-1],hiDates[i]));
@@ -3771,16 +3805,16 @@ function computeKeepUp(srAll, store, targetDate, learned){
     // 据え置いた日数（前日まで高設定が連続した日数）と、据え置き元データ（前日の合算/BIG/REG）
     let keepRun=0; for(let j=hist.length-1;j>=0;j--){ if(CU.isHi(hist[j]))keepRun++; else break; }
     const prevComb=ld?ld.combined:null, prevBig=ld?ld.big_prob:null, prevReg=ld?ld.reg_prob:null, prevTot=ld?ld.total:null;
-    out.push({mno,mname,tail,keepScore,upScore,total,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
+    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
       prevState,prevHi,streak,keepRun,prevComb,prevBig,prevReg,prevTot,
       s4,s5,s6,honmei,aim:aimInfo(hist),days:hist.length,avgGap});
   }
   // 改修⑥：機種平均と差分・★評価（機種平均は総合期待度ベース）
   const machAvg={}, machGroups={}; out.forEach(o=>{(machGroups[o.mname]=machGroups[o.mname]||[]).push(o.total);});
   for(const m in machGroups) machAvg[m]=avg(machGroups[m]);
-  const stars=d=>d>=15?"★★★★★":d>=10?"★★★★☆":d>=5?"★★★☆☆":d>=3?"★★☆☆☆":"★☆☆☆☆";
+  const stars=d=>d>=20?"★★★★★":d>=15?"★★★★☆":d>=10?"★★★☆☆":d>=5?"★★☆☆☆":"★☆☆☆☆";
   out.forEach(o=>{ o.machAvg=Math.round(machAvg[o.mname]||0); o.diff=o.total-o.machAvg; o.stars=stars(o.diff);
-    o.pick = (o.diff>=5 && o.total>=Math.round((machAvg[o.mname]||0))) ? (o.diff>=10?"本命":"対抗") : (o.diff>=3?"注目":"様子見"); });
+    o.pick = (o.diff>=15&&o.total>=60) ? "本命候補" : (o.diff>=10||o.total>=55) ? "対抗" : (o.diff>=5) ? "注目" : "様子見"; });
   // ★ランキングはスコア順ではなく「一致したクセの数（根拠の強さ）」順
   out.sort((a,b)=> b.matchCount-a.matchCount || b.matchStrength-a.matchStrength || b.total-a.total);
   return {targetDate,store,out,biz,storeType:learned.storeType,machAvg,CU};
@@ -3826,7 +3860,8 @@ function renderInjection4Inner(){
 
   // ===== 据え置き／上げ 投入パターン分析（「どう入れる店か」を学習）=====
   const KU=keepUpLearn(srAll,store,targetDate);
-  const KR=computeKeepUp(srAll,store,targetDate,KU);
+  const ML=missLearn(srAll,store,targetDate,KU);   // MISS自己学習（高スコア外し/低スコア取りこぼし→学習補正）
+  const KR=computeKeepUp(srAll,store,targetDate,KU,ML);
   if(KU.hiTotal>=5 && KR){
     const stc=KU.storeType==="据え置き型"?"#1a7f37":KU.storeType==="上げ型"?"#b35900":"#555";
     h+="<div class='note' style='background:#ecfdf5;border-color:#10b981;font-size:13px'>"+
@@ -3970,18 +4005,27 @@ function renderInjection4Inner(){
     const matchCell=o=>{ const c=o.matchCount; const col=c>=6?"#7c3aed":c>=4?"#1a7f37":c>=2?"#6366f1":"#999";
       return "<b style='color:"+col+";font-size:15px'>"+c+"個</b>"+(o.rescueHits?"<br><span style='color:#d97706;font-size:10px'>🔧救済"+o.rescueHits+"</span>":"")+(o.comboHits?"<br><span class='muted' style='font-size:10px'>複合"+o.comboHits+"・機種"+o.machHits+"</span>":""); };
     const ranked=KR.out.slice();   // 既に「一致クセ数→強さ→総合」でソート済み
+    const pickC=p=>p==="本命候補"?"#1a7f37":p==="対抗"?"#b35900":p==="注目"?"#6366f1":"#999";
     h+="<h3 style='margin:16px 0 4px;background:#7c3aed;color:#fff;padding:7px 10px;border-radius:6px'>⭐ 実戦ランキング（一致したクセの数＝根拠の強い順）</h3>"+
-      "<p class='muted' style='font-size:12px'>スコアの高さではなく<b>「いくつのクセ（特徴量・複合条件・機種傾向）が一致したか」</b>で根拠の強い順に並べています。据え置き狙いの台には<b>据え置いた日数・合算・BIG確率・REG確率</b>を明記。</p>"+
-      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>一致<br>クセ数</th><th>判定</th><th>据え置き<br>期待</th><th>上げ<br>期待</th><th>総合</th><th>平均差</th><th>評価</th><th>据え置きデータ<br>(連続日数/合算/B/R)</th><th>一致したクセ（根拠）</th></tr>"+
+      "<p class='muted' style='font-size:12px'>点数テーブル（成功率→点／信頼度補正／MISS自己学習／複合ボーナス）で <b>据え置き・上げ・リセット期待度</b>を算出。並びは<b>一致クセ数＝根拠の強さ</b>順。据え置き狙い台は<b>連続日数・合算・BIG・REG</b>を明記。根拠は点数付き（例 前日据え置き +10）。</p>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>一致<br>クセ数</th><th>判定</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>総合</th><th>平均差</th><th>評価</th><th>最終<br>判定</th><th>据え置きデータ<br>(連続/合算/B/R)</th><th>根拠（点数）</th></tr>"+
       ranked.slice(0,20).map((o,i)=>{
         return "<tr><td><b>"+(i+1)+"</b></td><td><b>"+o.mno+"</b></td><td style='text-align:left'>"+o.mname+"</td>"+
           "<td>"+matchCell(o)+"</td>"+
           "<td style='background:"+kuBg(o.verdict)+";white-space:nowrap;font-weight:bold'>"+o.verdict+"</td>"+
-          "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td>"+
-          "<td style='font-weight:bold'>"+o.total+"</td><td style='color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td>"+
+          "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td><td style='color:#7c3aed'>"+o.resetScore+"</td>"+
+          "<td style='font-weight:bold;font-size:14px'>"+o.total+"</td><td style='color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td>"+
+          "<td style='color:"+pickC(o.pick)+";font-weight:bold;white-space:nowrap'>"+o.pick+"</td>"+
           "<td style='text-align:left;font-size:11px'>"+keepData(o)+"</td>"+
           "<td style='text-align:left;font-size:11px'>"+(o.reasons.length?o.reasons.slice(0,5).join("<br>"):"<span class='muted'>一致クセなし</span>")+"</td></tr>"; }).join("")+
       "</table></div>";
+    // MISS自己学習（高スコア外し／低スコア取りこぼし）→ 学習補正点
+    if(ML.mhTot+ML.mlTot>0){ const lp=Object.entries(ML.learnPts).filter(e=>Math.abs(e[1])>=0.5).sort((a,b)=>b[1]-a[1]);
+      h+="<details class='note' style='background:#fffbeb;border-color:#f59e0b;font-size:13px'><summary><b>🤖 自己学習：高スコア外し("+ML.mhTot+"件)／低スコア取りこぼし("+ML.mlTot+"件) → 学習補正点</b></summary>"+
+        "<p class='muted' style='font-size:12px'>点数テーブルで過去を採点し、65点以上で外した特徴量は減点(空振り)、65点未満で当てた特徴量は加点(取りこぼし)。件数100/300/1000で補正×1.2/1.5/2.0。次回スコアに反映済み。</p>"+
+        "<div class='scroll'><table style='font-size:12px'><tr><th>特徴量</th><th>取りこぼし回数</th><th>空振り回数</th><th>学習補正点</th></tr>"+
+        lp.slice(0,15).map(([k,v])=>"<tr><td style='text-align:left'>"+k+"</td><td style='color:#1a7f37'>"+(ML.missLow[k]||0)+"</td><td style='color:#c00'>"+(ML.missHigh[k]||0)+"</td><td style='font-weight:bold;color:"+(v>=0?'#1a7f37':'#c00')+"'>"+(v>=0?"+":"")+v+"</td></tr>").join("")+
+        "</table></div></details>"; }
     // 据え置き/上げ 台別予想（機種ごと・一致クセ数順）
     const byM2={}; KR.out.forEach(o=>{(byM2[o.mname]=byM2[o.mname]||[]).push(o);});
     const mn2=Object.keys(byM2).sort((a,b)=>(KR.machAvg[b]||0)-(KR.machAvg[a]||0));
