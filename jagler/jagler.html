@@ -3733,21 +3733,32 @@ function computeKeepUp(srAll, store, targetDate, learned){
     if(keepScore>=upScore+margin){ side="keep"; verdict = keepScore>=55?"据え置き本命":keepScore>=42?"据え置き有力":"据え置き寄り"; }
     else if(upScore>=keepScore+margin){ side="up"; verdict = upScore>=55?"上げ本命":upScore>=42?"上げ有力":"上げ寄り"; }
     else { side=prevState==="up"?"up":"keep"; verdict="混合・様子見"; }
-    const reasons = (side==="keep"?kE.why:uE.why).slice(0,5).map(w=>w.label+" "+(side==="keep"?"据え置き率":"上げ率")+Math.round(w.rate*100)+"%（"+w.n+"件）");
+    const sideWhy = side==="keep"?kE.why:uE.why;
+    // 一致したクセの数＝根拠の強さ（採用された証拠の本数）。複合・機種別は重く数える。
+    const matchCount = sideWhy.length;
+    const matchStrength = +sideWhy.reduce((s,w)=>s+w.score,0).toFixed(1);
+    const comboHits = sideWhy.filter(w=>w.src&&w.src.indexOf("複合")>=0).length;
+    const machHits = sideWhy.filter(w=>w.src==="機種").length;
+    const reasons = sideWhy.slice(0,6).map(w=>w.label+" "+(side==="keep"?"据え置き率":"上げ率")+Math.round(w.rate*100)+"%（"+w.n+"件）");
     let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
     const honmei=(s6>=s5&&s6>=s4&&s6>0)?6:(s5>=s4&&s5>0)?5:4;
     const hiDates=hist.filter(CU.isHi).map(r=>r.date).sort(); const gaps=[]; for(let i=1;i<hiDates.length;i++)gaps.push(dayDiff(hiDates[i-1],hiDates[i]));
     const avgGap=gaps.length?+avg(gaps).toFixed(1):null;
-    out.push({mno,mname,tail,keepScore,upScore,total,verdict,side,reasons,prevState,prevHi,streak,
+    // 据え置いた日数（前日まで高設定が連続した日数）と、据え置き元データ（前日の合算/BIG/REG）
+    let keepRun=0; for(let j=hist.length-1;j>=0;j--){ if(CU.isHi(hist[j]))keepRun++; else break; }
+    const prevComb=ld?ld.combined:null, prevBig=ld?ld.big_prob:null, prevReg=ld?ld.reg_prob:null, prevTot=ld?ld.total:null;
+    out.push({mno,mname,tail,keepScore,upScore,total,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,
+      prevState,prevHi,streak,keepRun,prevComb,prevBig,prevReg,prevTot,
       s4,s5,s6,honmei,aim:aimInfo(hist),days:hist.length,avgGap});
   }
-  // 改修⑥：機種平均と差分・★評価
+  // 改修⑥：機種平均と差分・★評価（機種平均は総合期待度ベース）
   const machAvg={}, machGroups={}; out.forEach(o=>{(machGroups[o.mname]=machGroups[o.mname]||[]).push(o.total);});
   for(const m in machGroups) machAvg[m]=avg(machGroups[m]);
   const stars=d=>d>=15?"★★★★★":d>=10?"★★★★☆":d>=5?"★★★☆☆":d>=3?"★★☆☆☆":"★☆☆☆☆";
   out.forEach(o=>{ o.machAvg=Math.round(machAvg[o.mname]||0); o.diff=o.total-o.machAvg; o.stars=stars(o.diff);
     o.pick = (o.diff>=5 && o.total>=Math.round((machAvg[o.mname]||0))) ? (o.diff>=10?"本命":"対抗") : (o.diff>=3?"注目":"様子見"); });
-  out.sort((a,b)=>b.total-a.total);
+  // ★ランキングはスコア順ではなく「一致したクセの数（根拠の強さ）」順
+  out.sort((a,b)=> b.matchCount-a.matchCount || b.matchStrength-a.matchStrength || b.total-a.total);
   return {targetDate,store,out,biz,storeType:learned.storeType,machAvg,CU};
 }
 let _inj4Bt=null;
@@ -3917,36 +3928,42 @@ function renderInjection4Inner(){
           "<td style='color:#b35900'>"+(s.upN>=5?Math.round(s.upRate*100)+"%<span class='muted'>→"+Math.round(s.upRate*confCoef(s.upN)*100)+" ("+s.upN+")</span>":"-")+"</td>"+
           "<td style='color:"+lc+";font-weight:bold'>"+lean+"</td></tr>"; }).join("")+
       "</table></div></details>";
-    // 改修⑥⑦：実戦抽出（平均との差順）＝ 実際に打つ価値のある台
+    // 実戦ランキング：スコア順ではなく「一致したクセの数（根拠の強さ）」順
     const kuBg=v=>v==="据え置き本命"||v==="上げ本命"?"#7CFC00":v.indexOf("有力")>=0?"#b6f5a0":v.indexOf("寄り")>=0?"#d8f5c0":"#ffe066";
-    const pickC=p=>p==="本命"?"#1a7f37":p==="対抗"?"#b35900":p==="注目"?"#6366f1":"#999";
-    const byDiff=KR.out.slice().sort((a,b)=>b.diff-a.diff||b.total-a.total).slice(0,15);
-    h+="<h3 style='margin:16px 0 4px;background:#7c3aed;color:#fff;padding:7px 10px;border-radius:6px'>⭐ 実戦おすすめ抽出（機種平均との差順）— 打つ価値のある台</h3>"+
-      "<p class='muted' style='font-size:12px'>総合点の高さより「機種平均をどれだけ上回るか（＝その機種の中で突出しているか）」を重視。複合特徴量・機種別傾向で評価しています。</p>"+
-      "<div class='scroll'><table style='font-size:12px'><tr><th>台</th><th>機種</th><th>総合<br>期待度</th><th>機種<br>平均</th><th>平均との差</th><th>評価</th><th>据え置き</th><th>上げ</th><th>判定</th><th>狙い</th><th>根拠</th></tr>"+
-      byDiff.map(o=>{ const ps=o.prevState==="keep"?"前日高設定":o.prevState==="up"?"前日低設定":"前日不明";
-        return "<tr><td><b>"+o.mno+"</b></td><td style='text-align:left'>"+o.mname+"</td>"+
-          "<td style='background:"+kuBg(o.verdict)+";font-weight:bold;font-size:14px'>"+o.total+"</td><td>"+o.machAvg+"</td>"+
-          "<td style='font-weight:bold;color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td>"+
-          "<td style='font-size:13px'>"+o.stars+"</td>"+
+    // 据え置き狙い台の据え置きデータ（据え置いた日数・合算・BIG確率・REG確率）
+    const keepData=o=>{ if(o.side!=="keep") return "<span class='muted'>—</span>";
+      return "据え置き<b>"+o.keepRun+"日</b>連続<br>合算1/"+(o.prevComb?Math.round(o.prevComb):"-")+
+        " B1/"+(o.prevBig?Math.round(o.prevBig):"-")+" R1/"+(o.prevReg?Math.round(o.prevReg):"-"); };
+    const matchCell=o=>{ const c=o.matchCount; const col=c>=6?"#7c3aed":c>=4?"#1a7f37":c>=2?"#6366f1":"#999";
+      return "<b style='color:"+col+";font-size:15px'>"+c+"個</b>"+(o.comboHits?"<br><span class='muted' style='font-size:10px'>複合"+o.comboHits+"・機種"+o.machHits+"</span>":""); };
+    const ranked=KR.out.slice();   // 既に「一致クセ数→強さ→総合」でソート済み
+    h+="<h3 style='margin:16px 0 4px;background:#7c3aed;color:#fff;padding:7px 10px;border-radius:6px'>⭐ 実戦ランキング（一致したクセの数＝根拠の強い順）</h3>"+
+      "<p class='muted' style='font-size:12px'>スコアの高さではなく<b>「いくつのクセ（特徴量・複合条件・機種傾向）が一致したか」</b>で根拠の強い順に並べています。据え置き狙いの台には<b>据え置いた日数・合算・BIG確率・REG確率</b>を明記。</p>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>一致<br>クセ数</th><th>判定</th><th>据え置き<br>期待</th><th>上げ<br>期待</th><th>総合</th><th>平均差</th><th>評価</th><th>据え置きデータ<br>(連続日数/合算/B/R)</th><th>一致したクセ（根拠）</th></tr>"+
+      ranked.slice(0,20).map((o,i)=>{
+        return "<tr><td><b>"+(i+1)+"</b></td><td><b>"+o.mno+"</b></td><td style='text-align:left'>"+o.mname+"</td>"+
+          "<td>"+matchCell(o)+"</td>"+
+          "<td style='background:"+kuBg(o.verdict)+";white-space:nowrap;font-weight:bold'>"+o.verdict+"</td>"+
           "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td>"+
-          "<td style='white-space:nowrap;font-weight:bold'>"+o.verdict+"</td><td style='color:"+pickC(o.pick)+";font-weight:bold'>"+o.pick+"</td>"+
-          "<td style='text-align:left;font-size:11px'>"+(o.reasons.length?o.reasons.slice(0,3).join("<br>"):"—")+"</td></tr>"; }).join("")+
+          "<td style='font-weight:bold'>"+o.total+"</td><td style='color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td>"+
+          "<td style='text-align:left;font-size:11px'>"+keepData(o)+"</td>"+
+          "<td style='text-align:left;font-size:11px'>"+(o.reasons.length?o.reasons.slice(0,5).join("<br>"):"<span class='muted'>一致クセなし</span>")+"</td></tr>"; }).join("")+
       "</table></div>";
-    // 据え置き/上げ/総合 の台別予想（機種ごと・総合期待度順）
+    // 据え置き/上げ 台別予想（機種ごと・一致クセ数順）
     const byM2={}; KR.out.forEach(o=>{(byM2[o.mname]=byM2[o.mname]||[]).push(o);});
     const mn2=Object.keys(byM2).sort((a,b)=>(KR.machAvg[b]||0)-(KR.machAvg[a]||0));
-    h+="<h3 style='margin:16px 0 4px;background:#065f46;color:#fff;padding:7px 10px;border-radius:6px'>🎯 据え置き／上げ 台別予想（機種ごと・総合期待度順）</h3>";
-    for(const mname of mn2){ const list=byM2[mname].slice().sort((a,b)=>b.total-a.total);
+    h+="<h3 style='margin:16px 0 4px;background:#065f46;color:#fff;padding:7px 10px;border-radius:6px'>🎯 据え置き／上げ 台別予想（機種ごと・一致クセ数順）</h3>";
+    for(const mname of mn2){ const list=byM2[mname].slice().sort((a,b)=>b.matchCount-a.matchCount||b.matchStrength-a.matchStrength||b.total-a.total);
       h+="<h4 style='margin:10px 0 3px'>🎰 "+mname+" <span class='muted' style='font-weight:normal;font-size:12px'>（機種平均 "+Math.round(KR.machAvg[mname]||0)+"）</span></h4>"+
-        "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>総合</th><th>平均差</th><th>評価</th><th>据え置き</th><th>上げ</th><th>判定</th><th>前日<br>状態</th><th>根拠（成功率）</th></tr>";
-      list.forEach((o,i)=>{ const ps=o.prevState==="keep"?"前日高設定":o.prevState==="up"?"前日低設定":"前日不明";
+        "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>一致<br>クセ数</th><th>判定</th><th>据え置き</th><th>上げ</th><th>総合</th><th>平均差</th><th>据え置きデータ<br>(連続/合算/B/R)</th><th>一致したクセ（根拠）</th></tr>";
+      list.forEach((o,i)=>{
         h+="<tr><td>"+(i+1)+"</td><td><b>"+o.mno+"</b></td>"+
-          "<td style='background:"+kuBg(o.verdict)+";font-weight:bold;font-size:14px'>"+o.total+"</td>"+
-          "<td style='font-weight:bold;color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td>"+
+          "<td>"+matchCell(o)+"</td>"+
+          "<td style='background:"+kuBg(o.verdict)+";white-space:nowrap;font-weight:bold'>"+o.verdict+"</td>"+
           "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td>"+
-          "<td style='white-space:nowrap;font-weight:bold'>"+o.verdict+"</td><td style='white-space:nowrap'>"+ps+"</td>"+
-          "<td style='text-align:left;font-size:11px'>"+(o.reasons.length?o.reasons.join("<br>"):"—")+"</td></tr>"; });
+          "<td style='font-weight:bold'>"+o.total+"</td><td style='color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td>"+
+          "<td style='text-align:left;font-size:11px'>"+keepData(o)+"</td>"+
+          "<td style='text-align:left;font-size:11px'>"+(o.reasons.length?o.reasons.join("<br>"):"<span class='muted'>一致クセなし</span>")+"</td></tr>"; });
       h+="</table></div>";
     }
   } else {
