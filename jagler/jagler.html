@@ -3616,6 +3616,7 @@ function keepUpLearn(srAll, store, targetDate){
   const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
   const start=Math.max(1,dates.length-btDays());
   const F={}, COMBO={}, MACH={}; let keepCnt=0,upCnt=0,resetCnt=0,hiTotal=0; const dayClass=[];
+  const upDays={}, keepDays={};   // 何日不発後に上げたか／何日連続据え置きしたか（日数別のクセ）
   const bump=(o,prevState,hi)=>{ if(prevState==="keep"){o.keepN++; if(hi)o.keepHi++;} else if(prevState==="up"){o.upN++; if(hi)o.upHi++;} else {o.resetN++; if(hi)o.resetHi++;} };
   const blank=()=>({keepN:0,keepHi:0,upN:0,upHi:0,resetN:0,resetHi:0});
   for(let i=start;i<dates.length;i++){ const D=dates[i];
@@ -3624,13 +3625,17 @@ function keepUpLearn(srAll, store, targetDate){
     const act=srAll.filter(r=>r.date===D); let dk=0,du=0,dr=0,dhi=0;
     act.forEach(a=>{ const mno=a.machine_no; const hi=CU.isHi(a);
       const ld=x.lastDay[mno]; const prevState = !ld?"reset":(CU.isHi(ld)?"keep":"up");
-      const {F:feats,mname}=inj4Feats(mno,CU,x);
+      const {F:feats,mname,streak}=inj4Feats(mno,CU,x);
       feats.forEach(k=>{ bump(F[k]=F[k]||blank(),prevState,hi); });
       // 複合特徴量
       comboKeys(feats).forEach(ck=>{ bump(COMBO[ck]=COMBO[ck]||blank(),prevState,hi); });
       // 機種別（改修③）：機種ごとの keep/up と機種別特徴量
       const M=MACH[mname]=MACH[mname]||{keepCnt:0,upCnt:0,resetCnt:0,feats:{}};
       feats.forEach(k=>{ bump(M.feats[k]=M.feats[k]||blank(),prevState,hi); });
+      // 日数別のクセ：上げ＝前日不発の連続日数(streak)／据え置き＝前日まで高設定が続いた連続日数(keepRun)
+      const hist=CU.byM[mno]||[]; let keepRun=0; for(let j=hist.length-1;j>=0;j--){ if(CU.isHi(hist[j]))keepRun++; else break; }
+      if(prevState==="up" && streak>=1){ const b=Math.min(streak,8); const o=upDays[b]=upDays[b]||{n:0,hi:0}; o.n++; if(hi)o.hi++; }
+      if(prevState==="keep" && keepRun>=1){ const b=Math.min(keepRun,8); const o=keepDays[b]=keepDays[b]||{n:0,hi:0}; o.n++; if(hi)o.hi++; }
       if(hi){ hiTotal++; dhi++;
         if(prevState==="keep"){keepCnt++; dk++; M.keepCnt++;} else if(prevState==="up"){upCnt++; du++; M.upCnt++;} else {resetCnt++; dr++; M.resetCnt++;} } });
     dayClass.push({date:D,keep:dk,up:du,reset:dr,hi:dhi,total:act.length});
@@ -3644,7 +3649,7 @@ function keepUpLearn(srAll, store, targetDate){
   const byMachine={}; for(const m in MACH){ const M=MACH[m]; const mf={}; for(const k in M.feats) mf[k]=fin(M.feats[k]);
     const md=M.keepCnt+M.upCnt||1; byMachine[m]={keepCnt:M.keepCnt,upCnt:M.upCnt,resetCnt:M.resetCnt,
       keepRatio:M.keepCnt/md,upRatio:M.upCnt/md,feats:mf}; }
-  return {feats,combo,byMachine,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass};
+  return {feats,combo,byMachine,upDays,keepDays,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass};
 }
 // 本日（最新営業日）の投入タイプを推定（明日の予想にバイアスをかける）
 // 改修⑤：1日を営業タイプに分類
@@ -3771,6 +3776,25 @@ function renderInjection4Inner(){
       "🏷️ <b>この店の投入パターン：<span style='color:"+stc+"'>"+KU.storeType+"</span></b>"+
       "（高設定投入 計"+KU.hiTotal+"件 ／ 据え置き <b>"+KU.keepCnt+"件</b>("+Math.round(KU.keepRatio*100)+"%) ・ 上げ <b>"+KU.upCnt+"件</b>("+Math.round(KU.upRatio*100)+"%) ・ リセット/その他 "+KU.resetCnt+"件)<br>"+
       "<span class='muted'>「高設定かどうか」ではなく「店長がどのパターンで入れる店か」を学習しています。</span></div>";
+    // 日数別のク세：何日不発後に上げたか／何日連続据え置きしたか
+    const dayRow=(o,label,unit)=>{ const rate=o.n?Math.round(o.hi/o.n*100):0; const rc=rate>=40?"#1a7f37":rate>=25?"#b35900":"#888";
+      return "<tr><td style='text-align:left'>"+label+"</td><td>"+o.hi+"件</td><td>"+o.n+"回</td><td style='color:"+rc+";font-weight:bold'>"+rate+"%</td></tr>"; };
+    const upK=Object.keys(KU.upDays).map(Number).sort((a,b)=>a-b);
+    const kpK=Object.keys(KU.keepDays).map(Number).sort((a,b)=>a-b);
+    h+="<div class='row' style='gap:10px'>";
+    // 上げ：何日不発後に投入したか
+    h+="<div style='flex:1;min-width:260px'><details class='note' open style='background:#fff7ed;border-color:#fb923c'><summary><b>📈 上げのクセ（何日不発後に設定を上げたか）</b></summary>"+
+      "<p class='muted' style='font-size:12px'>前日まで不発が続いた台が翌日に高設定へ上がった件数と成功率。何日空けてから投入する店かが分かります。</p>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>不発日数</th><th>上げ投入数</th><th>該当回数</th><th>上げ成功率</th></tr>"+
+      (upK.length?upK.map(d=>dayRow(KU.upDays[d],(d>=8?"8日以上":d+"日")+"不発後")).join(""):"<tr><td colspan='4' class='muted'>データなし</td></tr>")+
+      "</table></div></details></div>";
+    // 据え置き：何日連続で据え置いたか
+    h+="<div style='flex:1;min-width:260px'><details class='note' open style='background:#ecfdf5;border-color:#10b981'><summary><b>📉 据え置きのクセ（何日連続で据え置いたか）</b></summary>"+
+      "<p class='muted' style='font-size:12px'>前日まで高設定が連続していた台が翌日も高設定を維持した件数と継続成功率。何日まで据え置く店かが分かります。</p>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>連続据え置き</th><th>継続投入数</th><th>該当回数</th><th>継続成功率</th></tr>"+
+      (kpK.length?kpK.map(d=>dayRow(KU.keepDays[d],(d>=8?"8日以上":d+"日")+"連続後")).join(""):"<tr><td colspan='4' class='muted'>データなし</td></tr>")+
+      "</table></div></details></div>";
+    h+="</div>";
     // 改修⑤：本日の営業タイプ確率 → 明日へバイアス
     const bz=KR.biz; const bzc=bz.type==="据え置き営業"?"#1a7f37":bz.type==="上げ営業"?"#b35900":bz.type==="回収営業"?"#c00":"#555";
     const pp=k=>Math.round((bz.probs[k]||0)*100);
