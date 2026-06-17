@@ -22,6 +22,8 @@ W, H, FPS = 1080, 1920, 30
 STORY = os.getenv("STORY", "voiceover_story")
 STORY_DIR = config.BASE_DIR / "drafts" / STORY
 VOICE_STYLE = os.getenv("VOICE_STYLE", "female").lower()
+# BGM の音量(ナレーション=1.0 に対する比)。env で調整可。
+BGM_VOL = float(os.getenv("VO_BGM_VOLUME", "0.32"))
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 VIDEO_EXTS = (".mov", ".mp4", ".mkv", ".webm", ".m4v")
@@ -214,7 +216,7 @@ def main() -> int:
     if bgm.exists():
         cmd += ["-stream_loop", "-1", "-i", str(bgm),
                 "-filter_complex",
-                f"[1:a]volume=1.0[na];[2:a]volume={min(config.BGM_VOLUME,0.16)}[bg];"
+                f"[1:a]volume=1.0[na];[2:a]volume={BGM_VOL}[bg];"
                 "[na][bg]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a]",
                 "-map", "0:v", "-map", "[a]"]
     else:
