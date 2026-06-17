@@ -6,8 +6,12 @@ name: voiceover-publish
 on:
   workflow_dispatch:
     inputs:
+      story:
+        description: "対象ストーリー (drafts 配下のフォルダ名)"
+        required: false
+        default: "voiceover_story2"
       publish_at_jst:
-        description: "公開時刻 JST (例: 2026-06-18 12:00)。空なら即時公開"
+        description: "公開時刻 JST (例: 2026-06-18 12:00)。空なら非公開のまま"
         required: false
         default: ""
   push:
@@ -78,7 +82,11 @@ jobs:
           TTS_ENGINE: auto
           # 0 = 四国めたん(あまあま) 可愛い系の女性声。今後のアフレコ動画の既定。
           VOICEVOX_SPEAKER: "0"
-          PUBLISH_AT_JST: ${{ github.event.inputs.publish_at_jst || '2026-06-18 12:00' }}
+          # 対象ストーリー(既定は最新の voiceover_story2)
+          STORY: ${{ github.event.inputs.story || 'voiceover_story2' }}
+          # 公開時刻(空なら publishAt 無し)。安全のため未指定時は非公開で上げる。
+          PUBLISH_AT_JST: ${{ github.event.inputs.publish_at_jst || '' }}
+          PRIVACY_STATUS: private
         run: python publish_voiceover.py
 
       - name: 失敗時はエラー内容をログに表示

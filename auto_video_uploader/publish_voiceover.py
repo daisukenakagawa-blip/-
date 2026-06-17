@@ -13,21 +13,28 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import config
+from make_voiceover_video import STORY, STORY_DIR
 from make_voiceover_video import main as build_video
 from modules.logger import get_logger
 from modules.youtube_uploader import YouTubeUploader
 
-TITLE = "この台6確定レベルだったのに…まさかの結末【ジャグラー】#shorts"
-DESCRIPTION = (
-    "ぶどう4.8分の1、1ゲーム連まで…6確定レベルだと思ったジャグラーの実戦結果。\n"
-    "あなたならどう打つ?コメントで教えてください。\n\n"
+_DEFAULT_TITLE = "ジャグラー実戦【shorts】"
+_DEFAULT_DESC = (
+    "ジャグラーの実戦記録。あなたならどう打つ?コメントで教えてください。\n\n"
     "※本動画は予想・考察であり、結果を保証するものではありません。\n\n"
     "#Shorts #ジャグラー #マイジャグラー #パチスロ #スロット #実戦"
 )
-TAGS = [
-    "Shorts", "ジャグラー", "マイジャグラー", "パチスロ", "スロット",
-    "実戦", "ジャグラーマン", "設定6", "スランプグラフ",
-]
+_DEFAULT_TAGS = ["Shorts", "ジャグラー", "マイジャグラー", "パチスロ", "スロット", "実戦"]
+
+
+def _load_meta() -> tuple[str, str, list]:
+    """manifest.json から title/description/tags を読む(無ければ既定)。"""
+    m = json.loads((STORY_DIR / "manifest.json").read_text(encoding="utf-8"))
+    return (
+        m.get("title", _DEFAULT_TITLE),
+        m.get("description", _DEFAULT_DESC),
+        m.get("tags", _DEFAULT_TAGS),
+    )
 
 
 def _compute_publish_at() -> str | None:
@@ -45,20 +52,21 @@ def main() -> int:
     if build_video() != 0:
         logger.error("動画のレンダリングに失敗しました")
         return 1
-    video = config.VIDEOS_DIR / "voiceover_story.mp4"
+    video = config.VIDEOS_DIR / f"{STORY}.mp4"
     if not video.exists():
         logger.error("レンダリング済み動画が見つかりません: %s", video)
         return 1
 
+    title, description, tags = _load_meta()
     publish_at = _compute_publish_at()
-    logger.info("アップロード開始 (publish_at=%s)", publish_at or "即時")
+    logger.info("アップロード開始 story=%s (publish_at=%s)", STORY, publish_at or "即時")
 
     uploader = YouTubeUploader()
     result = uploader.upload(
         video_path=video,
-        title=TITLE,
-        description=DESCRIPTION,
-        tags=TAGS,
+        title=title,
+        description=description,
+        tags=tags,
         thumbnail_path=None,  # 電話番号認証が無いためサムネは設定しない
         publish_at=publish_at,
     )

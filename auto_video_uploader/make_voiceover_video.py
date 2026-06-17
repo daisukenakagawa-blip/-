@@ -9,6 +9,7 @@
 """
 
 import json
+import os
 import subprocess
 import sys
 import wave
@@ -17,7 +18,11 @@ from pathlib import Path
 import config
 
 W, H, FPS = 1080, 1920, 30
-STORY_DIR = config.BASE_DIR / "drafts" / "voiceover_story"
+# STORY 環境変数で対象ストーリーを切替 (drafts/<STORY>/manifest.json)
+STORY = os.getenv("STORY", "voiceover_story")
+STORY_DIR = config.BASE_DIR / "drafts" / STORY
+# ローカル試聴の pyopenjtalk のピッチ。female=可愛い寄り / male=低い男性寄り
+VOICE_STYLE = os.getenv("VOICE_STYLE", "female").lower()
 
 
 def _wav_duration(path: Path) -> float:
@@ -50,7 +55,10 @@ def _synth_voicevox(text: str, out_wav: Path) -> None:
 
 
 def _synth_openjtalk(text: str, out_wav: Path) -> None:
-    """pyopenjtalk で合成し、男性寄りにピッチを下げて保存する。"""
+    """pyopenjtalk(オフライン)で合成。VOICE_STYLE でピッチを調整して保存。
+
+    本番はクラウドの VOICEVOX を使うため、これはローカル試聴専用。
+    """
     import numpy as np
     import pyopenjtalk
 
@@ -63,11 +71,15 @@ def _synth_openjtalk(text: str, out_wav: Path) -> None:
         w.setsampwidth(2)
         w.setframerate(sr)
         w.writeframes(pcm.tobytes())
-    # asetrate でピッチを下げ、atempo で長さを戻す(=低い男性声)。整音も少し。
+    if VOICE_STYLE == "male":
+        rate, tempo = 0.82, 1.22   # 低い男性寄り
+    else:
+        rate, tempo = 1.08, 0.926  # 可愛い女性寄り
+    # asetrate でピッチを変え、atempo で長さを戻す。整音も少し。
     subprocess.run(
         ["ffmpeg", "-y", "-i", str(raw), "-af",
-         f"asetrate={sr}*0.82,aresample=44100,atempo=1.22,"
-         "highpass=f=80,lowpass=f=9000,dynaudnorm",
+         f"asetrate={sr}*{rate},aresample=44100,atempo={tempo},"
+         "highpass=f=90,lowpass=f=11000,dynaudnorm",
          "-ar", "44100", "-ac", "1", str(out_wav)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
     )
@@ -87,7 +99,8 @@ def main() -> int:
     config.ensure_dirs()
     work = config.AUDIO_DIR
     use_vv = _voicevox_available()
-    print(f"音声エンジン: {'VOICEVOX(青山龍星)' if use_vv else 'pyopenjtalk(男性ピッチ)'}")
+    eng = f"VOICEVOX(speaker={config.VOICEVOX_SPEAKER})" if use_vv else f"pyopenjtalk({VOICE_STYLE})"
+    print(f"ストーリー: {STORY} / 音声エンジン: {eng}")
 
     seg_wavs, durations = [], []
     for sc in scenes:
@@ -162,7 +175,7 @@ def main() -> int:
     else:
         filter_complex += f";[{voice_idx}:a]volume=1.0[a]"
 
-    out = config.VIDEOS_DIR / "voiceover_story.mp4"
+    out = config.VIDEOS_DIR / f"{STORY}.mp4"
     cmd += ["-filter_complex", filter_complex, "-map", "[v]", "-map", "[a]",
             "-t", f"{total:.2f}", "-c:v", "libx264", "-preset", "medium",
             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
