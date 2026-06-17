@@ -3633,12 +3633,23 @@ function keepUpLearn(srAll, store, targetDate){
   const upDays={}, keepDays={};   // 何日不発後に上げたか／何日連続据え置きしたか（日数別のクセ）
   const condCat={};   // 条件ラベル→カテゴリ
   const dateTail={matchN:0,matchHi:0,nonN:0,nonHi:0, keepN:0,keepHi:0,upN:0,upHi:0};  // 日付と末尾の一致
+  let btHiTotal=0,btCaught=0,btMissed=0; const missSig={};   // 取りこぼし計測（その時点までの学習で採点＝未来不使用）
   const bump=(o,prevState,hi)=>{ if(prevState==="keep"){o.keepN++; if(hi)o.keepHi++;} else if(prevState==="up"){o.upN++; if(hi)o.upHi++;} else {o.resetN++; if(hi)o.resetHi++;} };
   const blank=()=>({keepN:0,keepHi:0,upN:0,upHi:0,resetN:0,resetHi:0});
   for(let i=start;i<dates.length;i++){ const D=dates[i];
     const sr=srAll.filter(r=>r.date<D); if(sr.length<2) continue;
     const CU=learnCusp(sr,d=>isEventDate(d,store),maxDate(sr)); const x=inj4Ctx(sr,D,store,CU);
     const act=srAll.filter(r=>r.date===D); let dk=0,du=0,dr=0,dhi=0;
+    // 取りこぼし計測：今日より前の学習(F/COMBO)で一致クセ数を採点し、上位に入らなかった高設定台を取りこぼしとして記録
+    if(Object.keys(F).length>8){
+      const scored=act.map(a=>{ const mno=a.machine_no; const ff=inj4Feats(mno,CU,x); let mc=0;
+        ff.F.forEach(k=>{ const s=F[k]; if(s&&(s.keepN>=20||s.upN>=20))mc++; });
+        comboKeys(ff.F).forEach(ck=>{ const s=COMBO[ck]; if(s&&(s.keepN+s.upN)>=50)mc++; });
+        return {mno,mc,hi:CU.isHi(a),sig:ff.sig}; });
+      scored.sort((p,q)=>q.mc-p.mc);
+      const K=Math.max(6,Math.ceil(scored.length*0.30));
+      scored.forEach((s,idx)=>{ if(s.hi){ btHiTotal++; if(idx<K)btCaught++; else { btMissed++; (s.sig.length?s.sig:["前兆なし"]).forEach(k=>missSig[k]=(missSig[k]||0)+1); } } });
+    }
     act.forEach(a=>{ const mno=a.machine_no; const hi=CU.isHi(a);
       const ld=x.lastDay[mno]; const prevState = !ld?"reset":(CU.isHi(ld)?"keep":"up");
       const {F:feats,mname,streak,tail}=inj4Feats(mno,CU,x);
@@ -3671,7 +3682,9 @@ function keepUpLearn(srAll, store, targetDate){
     const md=M.keepCnt+M.upCnt||1; byMachine[m]={keepCnt:M.keepCnt,upCnt:M.upCnt,resetCnt:M.resetCnt,
       keepRatio:M.keepCnt/md,upRatio:M.upCnt/md,feats:mf}; }
   const cond={}; for(const k in COND){ const f=fin(COND[k]); f.cat=condCat[k]; cond[k]=f; }
-  return {feats,combo,byMachine,cond,upDays,keepDays,dateTail,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass};
+  const missRate={}; for(const k in missSig) missRate[k]=btMissed?missSig[k]/btMissed:0;
+  return {feats,combo,byMachine,cond,upDays,keepDays,dateTail,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass,
+    btHiTotal,btCaught,btMissed,missSig,missRate};
 }
 // 本日（最新営業日）の投入タイプを推定（明日の予想にバイアスをかける）
 // 改修⑤：1日を営業タイプに分類
@@ -3702,44 +3715,55 @@ function computeKeepUp(srAll, store, targetDate, learned){
   // 改修⑧：重要度 複合(3>2) ＞ 機種別 ＞ 店舗単体 の順に重み付け
   const W={combo3:3.0,combo2:2.2,machine:1.6,store:1.0};
   for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
-    const {F,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x); const ld=x.lastDay[mno];
+    const {F,sig,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x); const ld=x.lastDay[mno];
     const prevState = !ld?"reset":(prevHi?"keep":"up");
     const mStat=learned.byMachine[mname]; const mFeats=mStat&&mStat.feats;
-    // side ("keep"/"up") の証拠を収集 → 補正成功率の重み付き平均
+    const nOf=(s,side)=>side==="keep"?s.keepN:side==="up"?s.upN:s.resetN;
+    const rOf=(s,side)=>side==="keep"?s.keepRate:side==="up"?s.upRate:s.resetRate;
+    // side ("keep"/"up"/"reset") の証拠を収集 → 補正成功率の重み付き平均（取りこぼし対策で閾値を緩和）
     const evid=(side)=>{ let wsum=0,vsum=0; const why=[];
-      const push=(stat,baseW,label,src)=>{ if(!stat)return; const n=side==="keep"?stat.keepN:stat.upN; if(n<50)return;
-        const rate=side==="keep"?stat.keepRate:stat.upRate; const coef=confCoef(n); const adj=Math.min(1,rate*coef);
+      const push=(stat,baseW,label,src)=>{ if(!stat)return; const n=nOf(stat,side); if(n<20)return;
+        const rate=rOf(stat,side); const coef=confCoef(n); const adj=Math.min(1,rate*coef);
         const w=baseW*coef; wsum+=w; vsum+=adj*w; why.push({label,rate,n,src,score:w*adj}); };
-      // ② 機種別単体（あれば優先＝重み大）／無ければ店舗単体
-      F.forEach(k=>{ const ms=mFeats&&mFeats[k]; const useM=ms&&((side==="keep"?ms.keepN:ms.upN)>=50);
+      // ② 機種別単体（あれば優先）／無ければ店舗単体（閾値20に緩和）
+      F.forEach(k=>{ const ms=mFeats&&mFeats[k]; const useM=ms&&(nOf(ms,side)>=20);
         if(useM) push(ms,W.machine,k+"〔機種〕","機種"); else push(learned.feats[k],W.store,k,"店"); });
-      // ① 複合特徴量（採用＝件数100以上）
-      comboKeys(F).forEach(ck=>{ const st=learned.combo[ck]; if(!st)return; const n=side==="keep"?st.keepN:st.upN; const tier=comboTier(n); if(!tier||n<100)return;
+      // ① 複合特徴量（参考50件以上から採用＝取りこぼし対策で緩和）
+      comboKeys(F).forEach(ck=>{ const st=learned.combo[ck]; if(!st)return; const n=nOf(st,side); const tier=comboTier(n); if(!tier||n<50)return;
         const nC=(ck.match(/＋/g)||[]).length+1; push(st,(nC>=3?W.combo3:W.combo2)*tier.w,ck,"複合"+nC); });
       const score = wsum? Math.max(0,Math.min(100, vsum/wsum*100)) : null;
       why.sort((a,b)=>b.score-a.score); return {score,why}; };
-    const kE=evid("keep"), uE=evid("up");
-    // 機種別keep/up比率を事前分布として、データ無し時のフォールバック
+    const kE=evid("keep"), uE=evid("up"), rE=evid("reset");
     const mPriorKeep=(mStat&&(mStat.keepCnt+mStat.upCnt)>=10)?mStat.keepRatio:learned.keepRatio;
     let keepScore = kE.score!=null?Math.round(kE.score):Math.round(overall*100*(0.6+mPriorKeep*0.8));
     let upScore = uE.score!=null?Math.round(uE.score):Math.round(overall*100*(0.6+(1-mPriorKeep)*0.8));
+    let resetScore = rE.score!=null?Math.round(rE.score):Math.round(overall*100);
     keepScore=Math.max(0,Math.min(100,keepScore+biz.keepBias));
     upScore=Math.max(0,Math.min(100,upScore+biz.upBias));
-    // 総合期待度：その台の前日状態側を採用。リセットは高い方を割引。機種傾向で微調整
-    let total = prevState==="keep"?keepScore : prevState==="up"?upScore : Math.round(Math.max(keepScore,upScore)*0.75);
+    // 取りこぼし救済：過去取りこぼした手がかりに一致したら加点・救済フラグ
+    const mr=learned.missRate||{}; let rescueHits=0; const rescueWhy=[];
+    sig.forEach(k=>{ if(mr[k]>=0.12){ rescueHits++; rescueWhy.push((MISS_LABEL[k]||k)+Math.round(mr[k]*100)+"%"); } });
+    if(!sig.length && mr["前兆なし"]>=0.12){ rescueHits++; rescueWhy.push("前兆なし"+Math.round(mr["前兆なし"]*100)+"%"); }
+    // 総合期待度：前日状態側を採用。リセット(新規投入)は割引せずreset成功率で評価（取りこぼし対策）
+    let total = prevState==="keep"?keepScore : prevState==="up"?upScore : resetScore;
     if(mPriorKeep>=0.6&&prevState==="keep") total=Math.min(100,total+3);
     if(mPriorKeep<=0.4&&prevState==="up") total=Math.min(100,total+3);
+    if(rescueHits) total=Math.min(100,total+rescueHits*4);
     const margin=12; let verdict, side;
-    if(keepScore>=upScore+margin){ side="keep"; verdict = keepScore>=55?"据え置き本命":keepScore>=42?"据え置き有力":"据え置き寄り"; }
+    if(prevState==="reset"){ side="reset"; verdict = resetScore>=45?"新規投入本命":resetScore>=32?"新規投入候補":"新規投入薄"; }
+    else if(keepScore>=upScore+margin){ side="keep"; verdict = keepScore>=55?"据え置き本命":keepScore>=42?"据え置き有力":"据え置き寄り"; }
     else if(upScore>=keepScore+margin){ side="up"; verdict = upScore>=55?"上げ本命":upScore>=42?"上げ有力":"上げ寄り"; }
-    else { side=prevState==="up"?"up":"keep"; verdict="混合・様子見"; }
-    const sideWhy = side==="keep"?kE.why:uE.why;
-    // 一致したクセの数＝根拠の強さ（採用された証拠の本数）。複合・機種別は重く数える。
-    const matchCount = sideWhy.length;
-    const matchStrength = +sideWhy.reduce((s,w)=>s+w.score,0).toFixed(1);
+    else { side=prevHi?"keep":"up"; verdict="混合・様子見"; }
+    if(rescueHits>=1 && verdict.indexOf("本命")<0) verdict="🔧救済・"+verdict;
+    const sideWhy = (side==="keep"?kE.why:side==="up"?uE.why:rE.why);
+    // 一致したクセの数＝根拠の強さ。取りこぼし救済の一致も加える。
+    const matchCount = sideWhy.length + rescueHits;
+    let matchStrength = +(sideWhy.reduce((s,w)=>s+w.score,0)+rescueHits*1.5).toFixed(1);
     const comboHits = sideWhy.filter(w=>w.src&&w.src.indexOf("複合")>=0).length;
     const machHits = sideWhy.filter(w=>w.src==="機種").length;
-    const reasons = sideWhy.slice(0,6).map(w=>w.label+" "+(side==="keep"?"据え置き率":"上げ率")+Math.round(w.rate*100)+"%（"+w.n+"件）");
+    const sideRate = side==="keep"?"据え置き率":side==="up"?"上げ率":"投入率";
+    const reasons = sideWhy.slice(0,6).map(w=>w.label+" "+sideRate+Math.round(w.rate*100)+"%（"+w.n+"件）");
+    if(rescueHits) reasons.unshift("🔧取りこぼし救済：過去ここで取りこぼした手がかり("+rescueWhy.join("・")+")に一致");
     let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
     const honmei=(s6>=s5&&s6>=s4&&s6>0)?6:(s5>=s4&&s5>0)?5:4;
     const hiDates=hist.filter(CU.isHi).map(r=>r.date).sort(); const gaps=[]; for(let i=1;i<hiDates.length;i++)gaps.push(dayDiff(hiDates[i-1],hiDates[i]));
@@ -3747,7 +3771,7 @@ function computeKeepUp(srAll, store, targetDate, learned){
     // 据え置いた日数（前日まで高設定が連続した日数）と、据え置き元データ（前日の合算/BIG/REG）
     let keepRun=0; for(let j=hist.length-1;j>=0;j--){ if(CU.isHi(hist[j]))keepRun++; else break; }
     const prevComb=ld?ld.combined:null, prevBig=ld?ld.big_prob:null, prevReg=ld?ld.reg_prob:null, prevTot=ld?ld.total:null;
-    out.push({mno,mname,tail,keepScore,upScore,total,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,
+    out.push({mno,mname,tail,keepScore,upScore,total,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
       prevState,prevHi,streak,keepRun,prevComb,prevBig,prevReg,prevTot,
       s4,s5,s6,honmei,aim:aimInfo(hist),days:hist.length,avgGap});
   }
@@ -3809,6 +3833,14 @@ function renderInjection4Inner(){
       "🏷️ <b>この店の投入パターン：<span style='color:"+stc+"'>"+KU.storeType+"</span></b>"+
       "（高設定投入 計"+KU.hiTotal+"件 ／ 据え置き <b>"+KU.keepCnt+"件</b>("+Math.round(KU.keepRatio*100)+"%) ・ 上げ <b>"+KU.upCnt+"件</b>("+Math.round(KU.upRatio*100)+"%) ・ リセット/その他 "+KU.resetCnt+"件)<br>"+
       "<span class='muted'>「高設定かどうか」ではなく「店長がどのパターンで入れる店か」を学習しています。</span></div>";
+    // 取りこぼしバックテスト（その時点までの学習で採点＝未来不使用）＋ 救済学習の結果
+    if(KU.btHiTotal>=5){ const catch_=Math.round(KU.btCaught/KU.btHiTotal*100), miss=Math.round(KU.btMissed/KU.btHiTotal*100);
+      const ms=Object.entries(KU.missSig).sort((a,b)=>b[1]-a[1]).slice(0,6);
+      const mc=miss<=25?"#1a7f37":miss<=40?"#b35900":"#c00";
+      h+="<div class='note' style='background:#fff4f4;border-color:#f87171;font-size:13px'>🧪 <b>取りこぼしバックテスト</b>（過去の実高設定 "+KU.btHiTotal+"台中）："+
+        "上位30%で捕捉 <b style='color:#1a7f37'>"+catch_+"%</b> ／ 取りこぼし <b style='color:"+mc+"'>"+miss+"%</b>（"+KU.btMissed+"台）。"+
+        (ms.length?"<br><b>取りこぼした台によくあった手がかり</b>："+ms.map(e=>(MISS_LABEL[e[0]]||e[0])+" "+(KU.btMissed?Math.round(e[1]/KU.btMissed*100):0)+"%").join(" ／ ")+
+        "<br><span class='muted'>↑これらに一致する台を「🔧取りこぼし救済」として加点・上位化し、取りこぼしを減らしています（新規投入台も割引せずreset成功率で評価）。</span>":"")+"</div>"; }
     // 🧠 バックテストで分かったこの店のクセ（自然文の要約）
     { const sm=[];
       sm.push("この店は <b>"+KU.storeType+"</b>（高設定投入のうち据え置き"+Math.round(KU.keepRatio*100)+"%・上げ"+Math.round(KU.upRatio*100)+"%）。");
@@ -3929,13 +3961,14 @@ function renderInjection4Inner(){
           "<td style='color:"+lc+";font-weight:bold'>"+lean+"</td></tr>"; }).join("")+
       "</table></div></details>";
     // 実戦ランキング：スコア順ではなく「一致したクセの数（根拠の強さ）」順
-    const kuBg=v=>v==="据え置き本命"||v==="上げ本命"?"#7CFC00":v.indexOf("有力")>=0?"#b6f5a0":v.indexOf("寄り")>=0?"#d8f5c0":"#ffe066";
+    const kuBg=v=>v.indexOf("本命")>=0?"#7CFC00":v.indexOf("救済")>=0?"#ffd9a0":v.indexOf("有力")>=0||v.indexOf("候補")>=0?"#b6f5a0":v.indexOf("寄り")>=0?"#d8f5c0":"#ffe066";
     // 据え置き狙い台の据え置きデータ（据え置いた日数・合算・BIG確率・REG確率）
-    const keepData=o=>{ if(o.side!=="keep") return "<span class='muted'>—</span>";
-      return "据え置き<b>"+o.keepRun+"日</b>連続<br>合算1/"+(o.prevComb?Math.round(o.prevComb):"-")+
-        " B1/"+(o.prevBig?Math.round(o.prevBig):"-")+" R1/"+(o.prevReg?Math.round(o.prevReg):"-"); };
+    const keepData=o=>{ if(o.side==="keep") return "据え置き<b>"+o.keepRun+"日</b>連続<br>合算1/"+(o.prevComb?Math.round(o.prevComb):"-")+
+        " B1/"+(o.prevBig?Math.round(o.prevBig):"-")+" R1/"+(o.prevReg?Math.round(o.prevReg):"-");
+      if(o.side==="reset") return "<span style='color:#7c3aed'>新規投入(前日なし)</span>";
+      return "<span class='muted'>上げ狙い／不発"+o.streak+"日</span>"; };
     const matchCell=o=>{ const c=o.matchCount; const col=c>=6?"#7c3aed":c>=4?"#1a7f37":c>=2?"#6366f1":"#999";
-      return "<b style='color:"+col+";font-size:15px'>"+c+"個</b>"+(o.comboHits?"<br><span class='muted' style='font-size:10px'>複合"+o.comboHits+"・機種"+o.machHits+"</span>":""); };
+      return "<b style='color:"+col+";font-size:15px'>"+c+"個</b>"+(o.rescueHits?"<br><span style='color:#d97706;font-size:10px'>🔧救済"+o.rescueHits+"</span>":"")+(o.comboHits?"<br><span class='muted' style='font-size:10px'>複合"+o.comboHits+"・機種"+o.machHits+"</span>":""); };
     const ranked=KR.out.slice();   // 既に「一致クセ数→強さ→総合」でソート済み
     h+="<h3 style='margin:16px 0 4px;background:#7c3aed;color:#fff;padding:7px 10px;border-radius:6px'>⭐ 実戦ランキング（一致したクセの数＝根拠の強い順）</h3>"+
       "<p class='muted' style='font-size:12px'>スコアの高さではなく<b>「いくつのクセ（特徴量・複合条件・機種傾向）が一致したか」</b>で根拠の強い順に並べています。据え置き狙いの台には<b>据え置いた日数・合算・BIG確率・REG確率</b>を明記。</p>"+
