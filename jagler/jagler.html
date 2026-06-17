@@ -87,6 +87,7 @@
     <button data-t="inject">💉 投入期待</button>
     <button data-t="forecast">🔮 明日の投入予想</button>
     <button data-t="inject3">🧠 投入予想3</button>
+    <button data-t="inject4">🔢 投入予想4</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
     <button data-t="myplay">📝 実戦収支</button>
@@ -387,6 +388,20 @@
     <div id="t-inject3"></div>
   </div>
 
+  <!-- 投入予想4（命中率ベース） -->
+  <div class="panel" id="p-inject4">
+    <h2>🔢 投入予想4（純粋・命中率ベース）</h2>
+    <p class="muted">各特徴量の<b>出現回数・高設定件数・命中率(高設定率)</b>を実測し、<b>命中率の高い順</b>に並べます。手作りの加点表は使わず、各台のスコアは
+      <b>出ている特徴量の命中率の信頼度重み付き平均（＝推定高設定確率）</b>。加点は<b>命中率×サンプル信頼度</b>から自動算出。<b>予想日より前のみ使用（未来不使用）。</b></p>
+    <div class="row">
+      <div><label>店舗</label><select id="inj4-store" onchange="render()"></select></div>
+      <div><label>予想する日（空欄＝最新の翌日）</label><input id="inj4-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">🔢 投入予想4を計算する</button>
+    <div id="t-inject4"></div>
+  </div>
+
   <!-- 実戦予想（総合） -->
   <div class="panel" id="p-battle">
     <h2>🥇 実戦予想（総合）</h2>
@@ -414,6 +429,7 @@
         <option value="inject">投入期待スコア</option>
         <option value="forecast">🔮 明日の投入予想（学習反映）</option>
         <option value="inject3">🧠 投入予想3（学習反映）</option>
+        <option value="inject4">🔢 投入予想4（命中率ベース）</option>
       </select></div>
     </div>
     <button class="primary" onclick="render()">🔍 答え合わせする</button>
@@ -1457,6 +1473,7 @@ function refreshAll(){
   fillSelect("inj-store",stores.length?stores:["（データなし）"]);
   fillSelect("fc-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj3-store",stores.length?stores:["（データなし）"]);
+  fillSelect("inj4-store",stores.length?stores:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1482,7 +1499,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -2791,12 +2808,15 @@ function renderAnswerDetailInner(){
   const md=maxDate(sr); const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
   const CU=learnCusp(sr,d=>isEventDate(d,store),md);
   const mAvgs=machineAverages(recent(sr,30));
-  const engine=val("ad-engine")||"rank";   // 採点エンジン：通常予想／投入期待／明日の投入予想／投入予想3(学習反映)
+  const engine=val("ad-engine")||"rank";   // 採点エンジン：通常予想／投入期待／明日の投入予想／投入予想3／投入予想4(命中率)
+  // 投入予想4は命中率(featStats)が必要なので先に学習しておく
+  const inj4FS = engine==="inject4" ? injectionBacktest4(srAll,store,D).featStats : null;
   // 集計ループ用は base（軽い）。選択日の本予想は forecast/inject3 なら学習反映を適用。
-  const predict=(dd)=> engine==="inject3" ? computeInjection3(srAll,store,dd)
+  const predict=(dd)=> engine==="inject4" ? computeInjection4(srAll,store,dd,{featStats:inj4FS})
+    : engine==="inject3" ? computeInjection3(srAll,store,dd)
     : (engine==="inject"||engine==="forecast") ? computeInjection(srAll,store,dd)
     : computeRanking(srAll,store,dd,false,null);
-  const engLabel=engine==="inject3"?"投入予想3スコア":engine==="forecast"?"明日の投入予想スコア":engine==="inject"?"投入期待スコア":"予想スコア";
+  const engLabel=engine==="inject4"?"命中率スコア":engine==="inject3"?"投入予想3スコア":engine==="forecast"?"明日の投入予想スコア":engine==="inject"?"投入期待スコア":"予想スコア";
   let R;
   if(engine==="forecast"){ const bt=injectionBacktest(srAll,store,D);
     R=computeInjection(srAll,store,D,{missPattern:{missN:bt.missN,missRate:bt.missRate},factorWeights:bt.factorWeights}); }
@@ -3452,6 +3472,197 @@ function renderInjection3Inner(){
   el.innerHTML=h;
 }
 
+// ========== 投入予想4（純粋・命中率ベース：加点は命中率×サンプルから自動算出）==========
+// 各特徴量について「出現回数・高設定件数・高設定率(命中率)」を実測し、命中率順に並べる。
+// 手作りの加点表は一切使わず、各台のスコア＝出ている特徴量の命中率の信頼度重み付き平均（=推定高設定確率）。
+// 特徴量ごとの自動加点 ＝ 命中率 × サンプル信頼度（出現が多いほど命中率を信頼）。
+const INJ4_KEYS=["前日据え置き","前日設定5+","前日REG先行","前日ぶどう優秀","前日合算良好","前日高稼働","前日低回転",
+  "不発明け1-2日","不発明け3日+","イベント日","イベント翌日据置","角台","角2","角3","並び投入",
+  "末尾実績高","島実績高","曜日実績高","台番号実績高","機種ローテ期","月初投入傾向","月中投入傾向","月末投入傾向"];
+function inj4Ctx(sr, D, store, CU){
+  const md=maxDate(sr); const nd=new Date(D+"T00:00:00"); const nextWd=WD[nd.getDay()];
+  const lastDay={}; sr.filter(r=>r.date===md).forEach(r=>lastDay[r.machine_no]=r);
+  const eventDay=isEventDate(D,store), mdEvent=isEventDate(md,store);
+  const baseReg=avg(sr.map(r=>r.reg_prob)), baseComb=avg(sr.map(r=>r.combined)), baseBud=avg(sr.map(r=>budouDen(r.budou)).filter(x=>x!=null));
+  const overall=CU.overallHi||0, phase=CU.phase(D);
+  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase};
+}
+function inj4Feats(mno, CU, x){
+  const hist=CU.byM[mno]||[]; const tail=mno%10, isl=Math.floor(mno/10);
+  const mname=hist.length?hist[hist.length-1].machine_name:""; const ld=x.lastDay[mno];
+  const prevHi=ld?CU.isHi(ld):false; let streak=0; for(let i=hist.length-1;i>=0;i--){ if(!CU.isHi(hist[i]))streak++; else break; }
+  const e=ld?estimateSetting(ld):null; const bd=ld?budouDen(ld.budou):null;
+  const F=[];
+  if(prevHi)F.push("前日据え置き");
+  if(e&&e.setting>=5)F.push("前日設定5+");
+  if(x.baseReg&&ld&&ld.reg_prob&&ld.reg_prob<x.baseReg)F.push("前日REG先行");
+  if(x.baseBud&&bd&&bd<x.baseBud)F.push("前日ぶどう優秀");
+  if(x.baseComb&&ld&&ld.combined&&ld.combined<x.baseComb)F.push("前日合算良好");
+  if(ld&&ld.total!=null&&ld.total>=5000)F.push("前日高稼働");
+  if(ld&&ld.total!=null&&ld.total<3000)F.push("前日低回転");
+  if(streak>=1&&streak<=2)F.push("不発明け1-2日");
+  if(streak>=3)F.push("不発明け3日+");
+  if(x.eventDay)F.push("イベント日");
+  if(prevHi&&x.mdEvent)F.push("イベント翌日据置");
+  if(CU.cornerSet.has(mno))F.push("角台"); else if(CU.c2Set.has(mno))F.push("角2"); else if(CU.c3Set.has(mno))F.push("角3");
+  const nb=(x.lastDay[mno-1]&&CU.isHi(x.lastDay[mno-1]))||(x.lastDay[mno+1]&&CU.isHi(x.lastDay[mno+1])); if(nb)F.push("並び投入");
+  const th=CU.tailHiMap[tail]; if(th&&th.n>=3&&th.hi>x.overall+0.05)F.push("末尾実績高");
+  const ih=CU.islHiMap[isl]; if(ih&&ih.n>=3&&ih.hi>x.overall+0.05)F.push("島実績高");
+  const wh=CU.wdHiMap[x.nextWd]; if(wh&&wh.n>=3&&wh.hi>x.overall+0.05)F.push("曜日実績高");
+  const mh=CU.machHi[mno]; if(mh&&mh.n>=3&&mh.hi>x.overall+0.05)F.push("台番号実績高");
+  const ro=CU.rotate[mname]; if(ro&&ro.due)F.push("機種ローテ期");
+  const ph=CU.phaseRate[x.phase]; if(ph&&ph.hi>x.overall+0.03)F.push(x.phase+"投入傾向");
+  // 取りこぼし集計用の sig（MISS_LABELキー）
+  const sig=[]; if(x.eventDay)sig.push("eventDay"); if(streak>=3)sig.push("newInjection");
+  if(ld&&ld.total!=null&&ld.total<3000)sig.push("lowSpinPrevDay"); if(prevHi)sig.push("highSettingCarry");
+  if(th&&th.n>=3&&th.hi>x.overall+0.05)sig.push("tailStrong"); if(ih&&ih.n>=3&&ih.hi>x.overall+0.05)sig.push("islandStrong");
+  if(wh&&wh.n>=3&&wh.hi>x.overall+0.05)sig.push("weekdayStrong"); if(CU.cornerSet.has(mno))sig.push("corner"); else if(CU.c2Set.has(mno))sig.push("corner2"); else if(CU.c3Set.has(mno))sig.push("corner3");
+  if(mh&&mh.n>=3&&mh.hi>x.overall+0.05)sig.push("machineNoStrong"); if(ro&&ro.due)sig.push("rotationStrong");
+  return {F,sig,prevHi,streak,hist,tail,mname};
+}
+// 特徴量の出現/高設定/命中率を accumulate に集計（その日より前のみ使用）
+function inj4Accum(srAll, store, D, acc){
+  const sr=srAll.filter(r=>r.date<D); if(sr.length<2) return;
+  const CU=learnCusp(sr,d=>isEventDate(d,store),maxDate(sr)); const x=inj4Ctx(sr,D,store,CU);
+  const act={}; srAll.filter(r=>r.date===D).forEach(r=>act[r.machine_no]=r);
+  for(const mno in CU.byM){ if((CU.byM[mno]||[]).length<2) continue; const a=act[mno]; if(!a) continue;
+    const hi=CU.isHi(a); const {F}=inj4Feats(+mno,CU,x);
+    F.forEach(k=>{ const s=acc[k]=acc[k]||{n:0,hi:0}; s.n++; if(hi)s.hi++; }); }
+}
+// 命中率ベースの本予想：スコア＝出ている特徴量の命中率の信頼度重み付き平均×100
+function computeInjection4(srAll, store, targetDate, opts){
+  const sr=srAll.filter(r=>r.date<targetDate); if(sr.length<2) return null;
+  const FS=(opts&&opts.featStats)||{};
+  const md=maxDate(sr); const nd=new Date(targetDate+"T00:00:00"); const nextWd=WD[nd.getDay()];
+  const CU=learnCusp(sr,d=>isEventDate(d,store),md); const x=inj4Ctx(sr,targetDate,store,CU);
+  const eventDay=x.eventDay; const overall=CU.overallHi||0;
+  const dist=(arr)=>{let a=0,b=0,c=0;arr.forEach(r=>{const e=estimateSetting(r);if(e){if(e.setting===4)a++;else if(e.setting===5)b++;else if(e.setting===6)c++;}});return{s4:a,s5:b,s6:c,n:a+b+c};};
+  const Sdist=dist(sr), Edist=dist(sr.filter(r=>isEventDate(r.date,store)));
+  const out=[];
+  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
+    const {F,sig,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x);
+    let wsum=0,rsum=0; const C={}; const reasons=[];
+    F.forEach(k=>{ const st=FS[k]; if(!st||!st.n) return; const conf=st.n/(st.n+15), rate=st.hi/st.n;
+      wsum+=conf; rsum+=rate*conf; const pts=+(rate*100*conf).toFixed(1); C[k]=pts;
+      reasons.push(k+" 命中率"+Math.round(rate*100)+"%(出現"+st.n+")(+"+pts.toFixed(1)+")"); });
+    const prob = wsum? rsum/wsum : overall;
+    const score = +Math.max(0,Math.min(100,prob*100)).toFixed(1);
+    const hiCount=hist.filter(CU.isHi).length;
+    const hiDates=hist.filter(CU.isHi).map(r=>r.date).sort(); const gaps=[]; for(let i=1;i<hiDates.length;i++)gaps.push(dayDiff(hiDates[i-1],hiDates[i]));
+    const avgGap=gaps.length?+avg(gaps).toFixed(1):null;
+    let runs=[],cur=0; hist.forEach(r=>{ if(CU.isHi(r))cur++; else {if(cur>0)runs.push(cur);cur=0;} }); if(cur>0)runs.push(cur);
+    const avgKeepDays=runs.length?+avg(runs).toFixed(1):0;
+    let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
+    const sw=Sdist.n||1, pr=4; let n4=(Sdist.s4/sw)*pr+s4, n5=(Sdist.s5/sw)*pr+s5, n6=(Sdist.s6/sw)*pr+s6;
+    if(eventDay&&Edist.n>=3){ n4+=Edist.s4/Edist.n*3; n5+=Edist.s5/Edist.n*3; n6+=Edist.s6/Edist.n*3; }
+    const nt=(n4+n5+n6)||1; const e4=n4/nt, e5=n5/nt, e6=n6/nt; const honmei=(e6>=e5&&e6>=e4)?6:(e5>=e4?5:4);
+    const keepExp=prevHi&&CU.keepRate!=null?CU.keepRate:null;
+    const upExp=!prevHi?((streak>=1&&CU.missRate[Math.min(streak,6)])?CU.missRate[Math.min(streak,6)].hi:CU.lowUpRate):null;
+    out.push({mno,mname,tail,score,contrib:C,reasons:reasons.slice(),cons:[],aim:aimInfo(hist),
+      s4,s5,s6,e4,e5,e6,honmei,sig:sig.slice(),expectRate:prob,keepExp,upExp,streak,hiCount,days:hist.length,avgKeepDays,avgGap,prevHi,
+      plusTop:Object.entries(C).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,5).map(e=>e[0]+" +"+e[1].toFixed(1)),
+      minusTop:[]});
+  }
+  out.sort((a,b)=>b.score-a.score);
+  out.forEach(o=>{ const s=o.score; o.mark = s>=70?"SS 本命":s>=55?"S 本命":s>=45?"A 対抗":s>=35?"B 狙い目":s>=25?"C 注意":s>=15?"D 低期待":"見送り"; });
+  return {targetDate,nextWd,eventDay,evLabel:eventsOn(targetDate,store).map(e=>e.name||eventDesc(e)).join("・"),days:CU.dates.length,types:CU.types,out,CU};
+}
+// 投入予想4バックテスト：単一パスで命中率を学習しつつ、その時点までの学習で各日を採点（未来不使用）
+function injectionBacktest4(srAll, store, targetDate){
+  const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
+  const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+  const start=Math.max(1,dates.length-btDays());
+  const acc={}; let n=0,t1=0,t3=0,t5=0, missLow=0,missLowHi=0; const missSig={}; let missN=0;
+  for(let i=start;i<dates.length;i++){ const D=dates[i];
+    // まずその時点までの学習(acc)で採点（acc は D より前の日だけを含む＝未来不使用）
+    if(Object.keys(acc).length){
+      const R=computeInjection4(srAll,store,D,{featStats:acc});
+      if(R&&R.out.length){ const act={}; srAll.filter(r=>r.date===D).forEach(r=>act[r.machine_no]=r);
+        if(Object.values(act).some(isHi)){ n++; const ranked=R.out; const inTop=N=>ranked.slice(0,N).some(o=>act[o.mno]&&isHi(act[o.mno]));
+          if(inTop(1))t1++; if(inTop(3))t3++; if(inTop(5))t5++;
+          const sB={}; ranked.forEach(o=>sB[o.mno]=o);
+          ranked.forEach(o=>{ if(o.score<25&&act[o.mno]){ missLow++; if(isHi(act[o.mno]))missLowHi++; } });
+          srAll.filter(r=>r.date===D).forEach(a=>{ const e=estimateSetting(a); if(!(e&&e.high>=0.5))return; const o=sB[a.machine_no]; if(!o||o.score>=45)return; missN++; (o.sig||[]).forEach(k=>missSig[k]=(missSig[k]||0)+1); }); } } }
+    // その日の結果で acc を更新
+    inj4Accum(srAll,store,D,acc);
+  }
+  const missRate={}; for(const k in missSig) missRate[k]=missN?missSig[k]/missN:0;
+  // 命中率順に並べた特徴量表（出現・高設定・命中率・自動加点重み）
+  let totN=0,totHi=0; for(const k in acc){ totN+=acc[k].n; totHi+=acc[k].hi; }
+  const featStats={}, featList=[];
+  for(const k in acc){ const s=acc[k], rate=s.n?s.hi/s.n:0, conf=s.n/(s.n+15), w=+(rate*100*conf).toFixed(1);
+    featStats[k]={n:s.n,hi:s.hi,rate,conf,weight:w}; featList.push({key:k,n:s.n,hi:s.hi,rate,weight:w}); }
+  featList.sort((a,b)=>b.rate-a.rate||b.n-a.n);
+  const base=totN?totHi/totN:0;
+  return {n,t1,t3,t5,missLow,missLowHi,missN,missSig,missRate,featStats,featList,base};
+}
+let _inj4Bt=null;
+function renderInjection4(){
+  const el=document.getElementById("t-inject4"); if(!el) return;
+  const panel=document.getElementById("p-inject4");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと計算します（重い処理のため）。</p>"; return; }
+  try{ renderInjection4Inner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+function renderInjection4Inner(){
+  const el=document.getElementById("t-inject4"); const store=val("inj4-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("inj4-date")||fmtDate(ndDef);
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  if(!_inj4Bt||_inj4Bt.key!==key){ _inj4Bt={key,bt:injectionBacktest4(srAll,store,targetDate)}; }
+  const bt=_inj4Bt.bt; const pc=x=>x==null?"-":Math.round(x*100)+"%";
+  const R=computeInjection4(srAll,store,targetDate,{featStats:bt.featStats});
+  if(!R||!R.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（その日より前のデータ不足）。</p>"; return; }
+  let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+R.nextWd+"曜)"+(R.eventDay?" 🎉"+R.evLabel:"")+
+    " ／ 学習"+R.days+"日分（未来不使用）／ 店舗タイプ："+R.types.map(x=>"【"+x+"】").join("")+"</p>"+
+    "<div class='note' style='background:#eef2ff;border-color:#6366f1;font-size:13px'>🔢 <b>投入予想4：純粋な命中率ベース。</b>各特徴量の<b>出現回数・高設定件数・命中率(高設定率)</b>を実測し、手作りの加点表を使いません。各台のスコア＝出ている特徴量の<b>命中率の信頼度重み付き平均（推定高設定確率×100）</b>。加点は<b>命中率×サンプル信頼度</b>から自動算出します。</div>";
+  // ① 特徴量ランキング（命中率順）— 本要望の中心
+  h+="<details class='note' open style='background:#f8fafc;border-color:#6366f1'><summary><b>📊 特徴量ランキング（命中率順）— 出現／高設定／命中率／自動加点</b></summary>"+
+    "<p class='muted' style='font-size:12px'>全特徴量を実測。命中率の高い順。加点重み＝命中率×サンプル信頼度(n/(n+15))。サンプルが少ない特徴量は重みが自動的に小さくなります。</p>"+
+    "<div class='scroll'><table style='font-size:13px'><tr><th>順位</th><th>特徴量</th><th>出現回数</th><th>高設定件数</th><th>命中率</th><th>自動加点</th></tr>"+
+    bt.featList.map((f,i)=>{ const rc=f.rate>=0.5?"#1a7f37":f.rate>=0.3?"#b35900":"#888";
+      return "<tr><td>"+(i+1)+"</td><td style='text-align:left'><b>"+f.key+"</b></td><td>"+f.n+"</td><td>"+f.hi+"</td>"+
+        "<td style='color:"+rc+";font-weight:bold;font-size:15px'>"+Math.round(f.rate*100)+"%</td><td>+"+f.weight.toFixed(1)+"</td></tr>"; }).join("")+
+    "</table></div><p class='muted' style='font-size:12px'>全体高設定率（ベース）："+pc(bt.base)+"。命中率がベースを大きく上回る特徴量ほど投入の手がかりとして有効です。</p></details>";
+  // バックテスト
+  if(bt.n>=3){ const p=x=>bt.n?Math.round(x/bt.n*100)+"%":"-";
+    h+="<div class='note' style='background:#eef7ff;border-color:#9cc8ff'>🧪 <b>バックテスト</b>（過去"+bt.n+"日・高設定あり日／その時点までの学習で採点＝未来不使用）：上位的中 1位"+p(bt.t1)+" / 3位内"+p(bt.t3)+" / 5位内"+p(bt.t5)+
+      " ／ 低スコア(25未満)台の高設定率 "+(bt.missLow?Math.round(bt.missLowHi/bt.missLow*100)+"%":"-")+"（低いほど良い）</div>"; }
+  else h+="<div class='note'>🧪 バックテスト：検証データ不足（3日以上で表示）</div>";
+  if(bt.missN>=1){ const ms=Object.entries(bt.missSig).sort((a,b)=>b[1]-a[1]);
+    h+="<div class='note' style='background:#fff4f4;border-color:#f3a;font-size:13px'>🧭 <b>取りこぼし手がかり</b>（スコア45未満なのに高設定 "+bt.missN+"件）：<br>"+
+      ms.map(e=>(MISS_LABEL[e[0]]||e[0])+" <b>"+(bt.missN?Math.round(e[1]/bt.missN*100):0)+"%</b>").join(" ／ ")+"</div>"; }
+  const judBg=m=>m.indexOf("SS")>=0||m.indexOf("S ")>=0?"#7CFC00":m.indexOf("A")>=0?"#b6f5a0":m.indexOf("B")>=0?"#d8f5c0":m.indexOf("C")>=0?"#ffe066":m.indexOf("D")>=0?"#ffd0d0":"#eee";
+  const byMach={}; R.out.forEach(o=>{(byMach[o.mname]=byMach[o.mname]||[]).push(o);});
+  const machNames=Object.keys(byMach).sort((a,b)=>Math.max(...byMach[b].map(o=>o.score))-Math.max(...byMach[a].map(o=>o.score)));
+  for(const mname of machNames){
+    const list=byMach[mname].slice().sort((a,b)=>b.score-a.score);
+    const t4=list.reduce((s,o)=>s+o.s4,0), t5=list.reduce((s,o)=>s+o.s5,0), t6=list.reduce((s,o)=>s+o.s6,0);
+    h+="<h3 style='margin:14px 0 4px;background:#312e81;color:#fff;padding:6px 10px;border-radius:6px'>🎰 "+mname+
+      " <span style='font-weight:normal;font-size:12px'>（"+list.length+"台 ／ 設定4: "+t4+"回・設定5: "+t5+"回・設定6: "+t6+"回）</span></h3>";
+    h+="<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>命中率<br>スコア</th><th>判定</th><th>狙い方</th>"+
+      "<th>推定<br>高設定率</th><th>今回の<br>期待設定</th><th>据え置き<br>期待率</th><th>上げ<br>期待率</th><th>不発<br>日数</th>"+
+      "<th style='background:#e6f8d8'>設定4<br>回数</th><th style='background:#b6f5a0'>設定5<br>回数</th><th style='background:#7CFC00'>設定6<br>回数</th>"+
+      "<th>平均<br>投入間隔</th><th>根拠（特徴量×命中率）</th></tr>";
+    list.forEach((o,i)=>{
+      const hc={4:"#e6f8d8",5:"#b6f5a0",6:"#7CFC00"}[o.honmei]||"#eee";
+      const exp="<b style='background:"+hc+";padding:1px 4px;border-radius:4px'>本命 設定"+o.honmei+"</b><br><span style='font-size:11px'>4:"+pc(o.e4)+" 5:"+pc(o.e5)+" 6:"+pc(o.e6)+"</span>";
+      h+="<tr><td>"+(i+1)+"</td><td>"+o.mno+"</td>"+
+        "<td style='background:"+judBg(o.mark)+";font-weight:bold;font-size:14px'>"+o.score.toFixed(0)+"</td><td style='white-space:nowrap'>"+o.mark+"</td>"+
+        "<td style='text-align:left'>"+aimCellHTML(o.aim)+"</td>"+
+        "<td style='font-weight:bold'>"+pc(o.expectRate)+"</td><td style='text-align:left;white-space:nowrap'>"+exp+"</td><td>"+pc(o.keepExp)+"</td><td>"+pc(o.upExp)+"</td>"+
+        "<td>"+o.streak+"日</td>"+
+        "<td style='background:#f1fae8;font-weight:bold'>"+o.s4+"</td><td style='background:#dcf7c8;font-weight:bold'>"+o.s5+"</td><td style='background:#caf5a0;font-weight:bold'>"+o.s6+"</td>"+
+        "<td>"+(o.avgGap!=null?o.avgGap+"日":"-")+"</td>"+
+        "<td style='text-align:left;color:#1a7f37'>"+(o.reasons.length?o.reasons.join("<br>"):"—")+"</td></tr>";
+    });
+    h+="</table></div>";
+  }
+  el.innerHTML=h;
+}
+
 // ========== 明日の投入予想（読みやすいカード版）==========
 function renderForecast(){
   const el=document.getElementById("t-forecast"); if(!el) return;
@@ -3816,6 +4027,7 @@ document.getElementById("tabs").addEventListener("click",e=>{
   else if(t==="inject") renderInjection();
   else if(t==="forecast") renderForecast();
   else if(t==="inject3") renderInjection3();
+  else if(t==="inject4") renderInjection4();
 });
 
 // ---------- 初期化 ----------
