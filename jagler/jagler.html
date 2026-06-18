@@ -3848,7 +3848,14 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     const nbHi=!!((x.lastDay[mno-1]&&CU.isHi(x.lastDay[mno-1]))||(x.lastDay[mno+1]&&CU.isHi(x.lastDay[mno+1]))); const nbRate=CU.nbRate;
     // 高設定が入りやすい度（0-100）：その台の状況に応じた最良経路の期待度
     const hiExp = prevState==="keep"?keepScore : prevState==="up"?upScore : Math.max(resetScore, Math.round((keepScore+upScore)/2));
-    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiExp,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
+    // 過去統計での経験的な高設定期待率（％の根拠）：その状況で実際どれだけ高設定だったか
+    let expRate=overall, expWhy="店全体の高設定率";
+    if(prevState==="keep"){ const kd=learned.keepDays[Math.min(keepRun,8)]; if(kd&&kd.n>=4){ expRate=kd.hi/kd.n; expWhy=keepRun+"日連続据え置き後の継続率"; }
+      else if(mStat&&mStat.keepCnt+mStat.upCnt>=8){ expRate=mStat.keepRatio*((CU.keepRate!=null?CU.keepRate:overall)); expWhy=mname+"の据え置き傾向"; } }
+    else if(prevState==="up"){ const ud=learned.upDays[Math.min(streak,8)]; if(ud&&ud.n>=4){ expRate=ud.hi/ud.n; expWhy=streak+"日不発後の上げ率"; } }
+    else { const nt=learned.keepCnt+learned.upCnt+learned.resetCnt; expRate = nt?learned.resetCnt/nt*overall*3:overall; expWhy="新規投入の発生率"; }
+    expRate=Math.max(0,Math.min(1,expRate));
+    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiExp,expRate,expWhy,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
       prevState,prevHi,streak,keepRun,keptData,prevComb,prevBig,prevReg,prevTot,nbHi,nbRate,
       s4,s5,s6,e4,e5,e6,honmei,aim:aimInfo(hist),days:hist.length,avgGap,
       score:total, mark:verdict, sig:sig.slice(), pros:reasons.slice(), cons:[],
@@ -4105,6 +4112,45 @@ function renderInjection4Inner(){
           "<td style='font-weight:bold'>設定"+o.honmei+"</td>"+
           "<td style='text-align:left;font-size:11px'>"+whyLines(o).map(s=>"・"+s).join("<br>")+"</td></tr>"; }).join("")+
       "</table></div>";
+
+    // ===== 機種ごとに 据え置き候補／上げ狙い候補 に分けて（期待%＋理由）=====
+    const erC=v=>v>=0.45?"#1a7f37":v>=0.32?"#b35900":"#777";
+    const shortWhy=o=>{ const r=(o.reasons||[]).filter(s=>s.indexOf("🔧")<0).slice(0,2).join(" / ");
+      return (o.expWhy?o.expWhy+" "+Math.round(o.expRate*100)+"%":"")+(r?"／"+r:""); };
+    h+="<h3 style='margin:18px 0 4px;background:#0369a1;color:#fff;padding:7px 10px;border-radius:6px'>🎰 機種ごと：翌日の 据え置き候補／上げ狙い候補（期待%・理由つき）</h3>";
+    const byMm={}; KR.out.forEach(o=>{(byMm[o.mname]=byMm[o.mname]||[]).push(o);});
+    const mmNames=Object.keys(byMm).sort((a,b)=>(KR.machAvg[b]||0)-(KR.machAvg[a]||0));
+    for(const mname of mmNames){ const list=byMm[mname];
+      const keeps=list.filter(o=>o.prevState==="keep").sort((a,b)=>b.expRate-a.expRate||b.total-a.total);
+      const ups=list.filter(o=>o.prevState!=="keep").sort((a,b)=>b.expRate-a.expRate||b.total-a.total);
+      const mst=KU.byMachine[mname];
+      h+="<h4 style='margin:12px 0 3px'>🎰 "+mname+(mst?" <span class='muted' style='font-weight:normal;font-size:12px'>（この機種：据え置き率"+Math.round(mst.keepRatio*100)+"%・上げ率"+Math.round(mst.upRatio*100)+"%）</span>":"")+"</h4>";
+      const tbl=(title,arr,col)=>{ if(!arr.length) return "<div style='font-size:12px;color:#999'>"+title+"：候補なし</div>";
+        return "<div style='font-weight:bold;color:"+col+";margin:4px 0 2px'>"+title+"（"+arr.length+"台）</div>"+
+          "<div class='scroll'><table style='font-size:12px'><tr><th>台</th><th>高設定<br>期待%</th><th>本命<br>設定</th><th>判定</th><th>理由</th></tr>"+
+          arr.map(o=>"<tr><td><b>"+o.mno+"</b></td><td style='font-weight:bold;color:"+erC(o.expRate)+";font-size:14px'>"+Math.round(o.expRate*100)+"%</td>"+
+            "<td>設定"+o.honmei+"</td><td style='white-space:nowrap;font-size:11px'>"+o.verdict+"</td>"+
+            "<td style='text-align:left;font-size:11px'>"+shortWhy(o)+"</td></tr>").join("")+"</table></div>"; };
+      h+="<div class='row' style='gap:10px'><div style='flex:1;min-width:280px'>"+tbl("🟢 据え置き候補（前日高設定）",keeps,"#1a7f37")+"</div>"+
+        "<div style='flex:1;min-width:280px'>"+tbl("🟠 上げ狙い候補（前日低設定・新規）",ups,"#b35900")+"</div></div>";
+    }
+
+    // ===== 前日の合算・差枚 → 翌日は据え置き？上げ？（投入タイプの内訳を学習）=====
+    const injSplit=(cats,title,note)=>{ const rows=Object.entries(KU.cond).filter(([l,s])=>s.cat&&cats.includes(s.cat)&&(s.keepHi+s.upHi)>=3);
+      if(!rows.length) return "";
+      rows.sort((a,b)=>a[0]<b[0]?-1:1);
+      return "<div style='font-weight:bold;margin:8px 0 2px'>■ "+title+"</div>"+
+        "<div class='scroll'><table style='font-size:12px'><tr><th>前日の状態</th><th>据え置き投入</th><th>上げ投入</th><th>投入の内訳</th><th>翌日の傾向</th></tr>"+
+        rows.map(([l,s])=>{ const kh=s.keepHi,uh=s.upHi,tot=kh+uh; const kp=tot?Math.round(kh/tot*100):0;
+          const lean=kp>=60?"据え置きされやすい":kp<=40?"上げ（新規投入）されやすい":"両方";
+          const lc=kp>=60?"#1a7f37":kp<=40?"#b35900":"#555";
+          return "<tr><td style='text-align:left'>"+l+"</td><td style='color:#1a7f37'>"+kh+"件</td><td style='color:#b35900'>"+uh+"件</td>"+
+            "<td>据え置き<b>"+kp+"%</b>／上げ"+(100-kp)+"%</td><td style='color:"+lc+";font-weight:bold'>"+lean+"</td></tr>"; }).join("")+
+        "</table></div>"; };
+    const csHtml=injSplit(["合算"],"前日の合算で翌日どうなったか","")+injSplit(["差枚"],"前日の差枚で翌日どうなったか","");
+    if(csHtml){ h+="<details class='note' open style='background:#fef9c3;border-color:#eab308'><summary><b>📈 前日の合算・差枚 → 翌日は据え置き？上げ？（投入タイプを学習）</b></summary>"+
+      "<p class='muted' style='font-size:12px'>高設定が入った台について、前日の合算・差枚がどの範囲だったとき「据え置き投入」だったか「上げ（新規投入）」だったかの内訳。"+
+      "前日好調(合算良い/差枚プラス)＝据え置き、前日不調(合算悪い/差枚マイナス)＝上げ、という店のクセが分かります。</p>"+csHtml+"</details>"; }
 
     const ranked=KR.out.slice();   // 既に「一致クセ数→強さ→総合」でソート済み
     const pickC=p=>p==="本命候補"?"#1a7f37":p==="対抗"?"#b35900":p==="注目"?"#6366f1":"#999";
