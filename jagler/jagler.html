@@ -3532,10 +3532,10 @@ function inj4Feats(mno, CU, x){
 function inj4Cond(ld){ if(!ld) return [];
   const C=[]; const t=ld.total, cm=ld.combined, rg=ld.reg_prob, bd=budouDen(ld.budou), sb=ld.sabe, bg=ld.big_prob;
   if(t!=null) C.push(["回転数", t<2000?"前日回転 <2000G（超低稼働）":t<3000?"前日回転 2000〜3000G（低稼働）":t<5000?"前日回転 3000〜5000G（中稼働）":t<8000?"前日回転 5000〜8000G（高稼働）":"前日回転 8000G以上（超高稼働）"]);
-  if(cm!=null) C.push(["合算", cm<=130?"前日合算 1/130以下（優秀）":cm<=170?"前日合算 1/131〜170（良）":cm<=220?"前日合算 1/171〜220（中）":cm<=300?"前日合算 1/221〜300（低調）":"前日合算 1/300超（不調）"]);
+  if(cm!=null){ const lo=Math.floor(cm/20)*20; C.push(["合算", cm<=80?"前日合算 1/80以下（最優秀）":cm>400?"前日合算 1/400超（不調）":"前日合算 1/"+lo+"〜"+(lo+20)]); }
   if(rg!=null) C.push(["REG", rg<=170?"前日REG 1/170以下（優秀）":rg<=250?"前日REG 1/171〜250（良）":rg<=400?"前日REG 1/251〜400（中）":"前日REG 1/400超（不調）"]);
   if(bd!=null) C.push(["ぶどう", bd<=6.0?"前日ぶどう 1/6.0以下（優秀）":bd<=6.3?"前日ぶどう 1/6.0〜6.3（良）":bd<=6.6?"前日ぶどう 1/6.3〜6.6（中）":"前日ぶどう 1/6.6超（不調）"]);
-  if(sb!=null) C.push(["差枚", sb<=-2000?"前日差枚 -2000以下（大負け）":sb<0?"前日差枚 マイナス":sb<2000?"前日差枚 0〜+2000":sb<5000?"前日差枚 +2000〜+5000":"前日差枚 +5000以上（大勝ち）"]);
+  if(sb!=null){ const lo=Math.floor(sb/500)*500; C.push(["差枚", sb<=-3000?"前日差枚 -3000以下（大負け）":sb>=5000?"前日差枚 +5000以上（大勝ち）":"前日差枚 "+(lo>=0?"+":"")+lo+"〜"+((lo+500>=0?"+":"")+(lo+500))]); }
   if(bg!=null) C.push(["BIG", bg<=240?"前日BIG 1/240以下（先行）":bg<=320?"前日BIG 1/241〜320（標準）":"前日BIG 1/320超（不調）"]);
   return C;
 }
@@ -3628,7 +3628,9 @@ function comboKeys(feats){ const base=feats.filter(f=>COMBO_BASE.includes(f)).so
     for(let k=j+1;k<base.length;k++) out.push(base[i]+"＋"+base[j]+"＋"+base[k]); } return out; }
 // 前日回転数のビン（翌日どうなったか分析用）
 function rotBin(t){ return t==null?"不明":t<2000?"<2000G":t<3000?"2000〜3000G":t<5000?"3000〜5000G":t<8000?"5000〜8000G":"8000G以上"; }
-function combBinLabel(cm){ return cm==null?null:cm<=130?"前日合算 1/130以下（優秀）":cm<=170?"前日合算 1/131〜170（良）":cm<=220?"前日合算 1/171〜220（中）":cm<=300?"前日合算 1/221〜300（低調）":"前日合算 1/300超（不調）"; }
+function combBinLabel(cm){ if(cm==null)return null; const lo=Math.floor(cm/20)*20; return cm<=80?"前日合算 1/80以下（最優秀）":cm>400?"前日合算 1/400超（不調）":"前日合算 1/"+lo+"〜"+(lo+20); }
+// 条件ラベルから数値を取り出して昇順ソート（合算は1/X、差枚は±枚数）
+function condSortVal(l){ const m1=l.match(/1\/(\d+)/); if(m1)return +m1[1]; const m2=l.match(/([+-]?\d{2,})/); if(m2)return +m2[1]; return 0; }
 // 高設定投入を 据え置き(前日も高設定)／上げ(前日低設定)／リセット(前日不明) に分類し、
 // 単体・複合・機種別 の据え置き成功率／上げ成功率を別々に算出する。
 function keepUpLearn(srAll, store, targetDate){
@@ -3988,7 +3990,7 @@ function renderInjection4Inner(){
         "<p class='muted' style='font-size:12px'>前日の回転数・合算・REG・ぶどう・差枚・BIGが、どの範囲のとき据え置き／上げが成立しやすいか。"+
         "据え置き成功率＝前日高設定だった台がその条件で翌日も高設定だった率。上げ成功率＝前日低設定だった台がその条件で翌日高設定に上がった率。</p>";
       catOrder.forEach(cat=>{ const rows=condByCat[cat]; if(!rows)return;
-        rows.sort((a,b)=>a[0]<b[0]?-1:1);
+        rows.sort((a,b)=>condSortVal(a[0])-condSortVal(b[0]));
         h+="<div style='font-weight:bold;margin:8px 0 2px'>■ "+cat+"</div>"+
           "<div class='scroll'><table style='font-size:12px'><tr><th>条件</th><th>据え置き成功率<br>(該当数)</th><th>上げ成功率<br>(該当数)</th><th>どちら寄り</th></tr>"+
           rows.map(([label,s])=>{ const kr=Math.round(s.keepRate*100),ur=Math.round(s.upRate*100);
@@ -4138,7 +4140,7 @@ function renderInjection4Inner(){
     // ===== 前日の合算・差枚 → 翌日は据え置き？上げ？（投入タイプの内訳を学習）=====
     const injSplit=(cats,title,note)=>{ const rows=Object.entries(KU.cond).filter(([l,s])=>s.cat&&cats.includes(s.cat)&&(s.keepHi+s.upHi)>=3);
       if(!rows.length) return "";
-      rows.sort((a,b)=>a[0]<b[0]?-1:1);
+      rows.sort((a,b)=>condSortVal(a[0])-condSortVal(b[0]));
       return "<div style='font-weight:bold;margin:8px 0 2px'>■ "+title+"</div>"+
         "<div class='scroll'><table style='font-size:12px'><tr><th>前日の状態</th><th>据え置き投入</th><th>上げ投入</th><th>投入の内訳</th><th>翌日の傾向</th></tr>"+
         rows.map(([l,s])=>{ const kh=s.keepHi,uh=s.upHi,tot=kh+uh; const kp=tot?Math.round(kh/tot*100):0;
