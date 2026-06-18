@@ -24,6 +24,8 @@ STORY_DIR = config.BASE_DIR / "drafts" / STORY
 VOICE_STYLE = os.getenv("VOICE_STYLE", "female").lower()
 # BGM の音量(ナレーション=1.0 に対する比)。env で調整可。
 BGM_VOL = float(os.getenv("VO_BGM_VOLUME", "0.32"))
+# アフレコの話速(早口目)。VOICEVOX の speedScale / pyopenjtalk の atempo に反映。
+VO_SPEED = float(os.getenv("VO_SPEED", "1.3"))
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 VIDEO_EXTS = (".mov", ".mp4", ".mkv", ".webm", ".m4v")
@@ -76,7 +78,7 @@ def _synth_voicevox(text: str, out_wav: Path) -> None:
     q = requests.post(f"{base}/audio_query", params={"text": text, "speaker": spk}, timeout=30)
     q.raise_for_status()
     payload = q.json()
-    payload["speedScale"] = config.VOICEVOX_SPEED
+    payload["speedScale"] = VO_SPEED
     s = requests.post(f"{base}/synthesis", params={"speaker": spk}, json=payload, timeout=300)
     s.raise_for_status()
     out_wav.write_bytes(s.content)
@@ -93,6 +95,7 @@ def _synth_openjtalk(text: str, out_wav: Path) -> None:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
         w.writeframes(pcm.tobytes())
     rate, tempo = (0.82, 1.22) if VOICE_STYLE == "male" else (1.08, 0.926)
+    tempo = max(0.5, min(2.0, tempo * VO_SPEED))  # 早口目を反映
     _run(["ffmpeg", "-y", "-i", str(raw), "-af",
           f"asetrate={sr}*{rate},aresample=44100,atempo={tempo},"
           "highpass=f=90,lowpass=f=11000,dynaudnorm", "-ar", "44100", "-ac", "1", str(out_wav)])
