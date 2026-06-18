@@ -1,2 +1,2 @@
-publish voiceover_story2 (女性声・四国めたん) at 2026-06-18 12:00 JST
-triggered: 2026-06-17
+publish voiceover_story3 (四国めたん早口) at 2026-06-19 21:00 JST
+triggered: 2026-06-18
