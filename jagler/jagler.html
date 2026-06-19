@@ -88,6 +88,7 @@
     <button data-t="forecast">🔮 明日の投入予想</button>
     <button data-t="inject3">🧠 投入予想3</button>
     <button data-t="inject4">🔢 投入予想4</button>
+    <button data-t="inject5">🧠 投入ツール5</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
     <button data-t="myplay">📝 実戦収支</button>
@@ -400,6 +401,21 @@
     </div>
     <button class="primary" onclick="render()">🔢 投入予想4を計算する</button>
     <div id="t-inject4"></div>
+  </div>
+
+  <!-- 投入ツール5（全クセ統合＋店長思考） -->
+  <div class="panel" id="p-inject5">
+    <h2>🧠 投入ツール5（全クセ統合・機種別100点・店長思考）</h2>
+    <p class="muted">投入予想4の全クセ（前日据え置き/合算/差枚/回転数/不発日数/据え置き日数/並び/末尾/島/機種別/イベント等）を統合し、
+      機種別に<b>100点満点</b>で採点。<b>据え置き狙いか上げ狙いか</b>、据え置きなら何日目＋据え置き中の合算/BIG/REG、上げなら何日不発＋不発中データ、
+      <b>設定4/5/6の期待%</b>、クセを全明記。さらに<b>店長思考</b>で「今日どこに入れるか」を言葉で説明します。<b>予想日より前のみ使用（未来不使用）。</b></p>
+    <div class="row">
+      <div><label>店舗</label><select id="inj5-store" onchange="render()"></select></div>
+      <div><label>予想する日（空欄＝最新の翌日）</label><input id="inj5-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">🧠 投入ツール5を計算する</button>
+    <div id="t-inject5"></div>
   </div>
 
   <!-- 実戦予想（総合） -->
@@ -1474,6 +1490,7 @@ function refreshAll(){
   fillSelect("fc-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj3-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj4-store",stores.length?stores:["（データなし）"]);
+  fillSelect("inj5-store",stores.length?stores:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1499,7 +1516,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -3846,6 +3863,10 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     const keptData=[];
     for(let j=hist.length-1;j>=0 && CU.isHi(hist[j]);j--){ const r=hist[j];
       if(keptData.length<5) keptData.unshift({date:r.date, comb:r.combined, big:r.big_prob, reg:r.reg_prob, tot:r.total, sete:(estimateSetting(r)||{}).setting}); }
+    // 不発中の各日のデータ（上げ狙い台の不発分データ）
+    const missData=[];
+    for(let j=hist.length-1;j>=0 && !CU.isHi(hist[j]);j--){ const r=hist[j];
+      if(missData.length<5) missData.unshift({date:r.date, comb:r.combined, big:r.big_prob, reg:r.reg_prob, tot:r.total, sete:(estimateSetting(r)||{}).setting}); }
     const prevComb=ld?ld.combined:null, prevBig=ld?ld.big_prob:null, prevReg=ld?ld.reg_prob:null, prevTot=ld?ld.total:null;
     const nbHi=!!((x.lastDay[mno-1]&&CU.isHi(x.lastDay[mno-1]))||(x.lastDay[mno+1]&&CU.isHi(x.lastDay[mno+1]))); const nbRate=CU.nbRate;
     // 高設定が入りやすい度（0-100）：その台の状況に応じた最良経路の期待度
@@ -3858,7 +3879,7 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     else { const nt=learned.keepCnt+learned.upCnt+learned.resetCnt; expRate = nt?learned.resetCnt/nt*overall*3:overall; expWhy="新規投入の発生率"; }
     expRate=Math.max(0,Math.min(1,expRate));
     out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiExp,expRate,expWhy,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
-      prevState,prevHi,streak,keepRun,keptData,prevComb,prevBig,prevReg,prevTot,nbHi,nbRate,
+      prevState,prevHi,streak,keepRun,keptData,missData,prevComb,prevBig,prevReg,prevTot,nbHi,nbRate,
       s4,s5,s6,e4,e5,e6,honmei,aim:aimInfo(hist),days:hist.length,avgGap,
       score:total, mark:verdict, sig:sig.slice(), pros:reasons.slice(), cons:[],
       contrib:(()=>{const c={}; sideWhy.forEach(w=>{c[w.label]=(c[w.label]||0)+w.pts;}); return c;})()});
@@ -4228,6 +4249,109 @@ function renderInjection4Inner(){
   el.innerHTML=h;
 }
 
+// ========== 投入ツール5（全クセ統合・機種別100点・店長思考）==========
+let _inj5=null;
+function renderInjection5(){
+  const el=document.getElementById("t-inject5"); if(!el) return;
+  const panel=document.getElementById("p-inject5");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと計算します（重い処理のため）。</p>"; return; }
+  try{ renderInjection5Inner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+// 店長思考：学習結果から「今日どこに設定を入れるか」をロジカルに言葉で説明
+function managerThought(KU,KR,targetDate,eventDay,evLabel){
+  const T=[]; const pc=v=>Math.round((v||0)*100)+"%"; const nm=n=>n;
+  const kp=Math.round(KU.keepRatio*100), up=Math.round(KU.upRatio*100);
+  const rs=KU.hiTotal?Math.round(KU.resetCnt/KU.hiTotal*100):0;
+  T.push("【この店の性格】"+KU.storeType+"。過去の高設定投入"+KU.hiTotal+"件の内訳は、据え置き"+kp+"％・上げ"+up+"％・新規投入"+rs+"％。"+
+    (KU.storeType==="据え置き型"?"基本は前日の高設定台をそのまま続行する店。前日好調台の続行を最優先で見る。":
+     KU.storeType==="上げ型"?"前日の高設定を切って別の台へ新規投入してくる店。前日不発・低設定台の中から上げを狙う。":
+     "据え置きと上げが半々。前日状況と当日の状況証拠を両にらみで判断する。"));
+  const bz=KR.biz; if(bz&&bz.type){ const pp=k=>Math.round((bz.probs[k]||0)*100);
+    T.push("【本日の営業読み】直近の傾向は"+bz.type+"（据え置き営業"+pp("据え置き営業")+"％／上げ営業"+pp("上げ営業")+"％／混合"+pp("混合営業")+"％／回収"+pp("回収営業")+"％）。"+bz.note+"。"); }
+  if(eventDay) T.push("【イベント】本日はイベント日（"+(evLabel||"")+"）。イベント時は通常日と投入パターンが変わりやすいので、過去同イベントの据え置き/上げ傾向を重視する。");
+  // 据え置きの読み
+  { const kd=Object.entries(KU.keepDays).map(([d,s])=>({d:+d,n:s.n,r:s.n?s.hi/s.n:0})).filter(o=>o.n>=5);
+    if(kd.length){ const best=kd.slice().sort((a,b)=>b.r-a.r)[0]; const maxd=Math.max(...kd.filter(o=>o.r>=0.4).map(o=>o.d).concat(0));
+      T.push("【据え置きの読み】前日高設定だった台は"+(maxd>=2?maxd+"日連続":"1日")+"くらいまでは据え置かれやすい（継続率は"+best.d+"日目で最大"+pc(best.r)+"）。連続日数が伸びるほど切られやすくなる。"); } }
+  // 据え置きされる合算条件
+  { const cond=Object.entries(KU.cond).filter(([l,s])=>s.cat==="合算"&&s.keepHi+s.upHi>=4).map(([l,s])=>({l,kp:(s.keepHi)/(s.keepHi+s.upHi),tot:s.keepHi+s.upHi}));
+    const keepBin=cond.filter(o=>o.kp>=0.6).sort((a,b)=>condSortVal(a.l)-condSortVal(b.l))[0];
+    const upBin=cond.filter(o=>o.kp<=0.4).sort((a,b)=>condSortVal(a.l)-condSortVal(b.l))[0];
+    if(keepBin) T.push("【据え置きの合算ライン】"+keepBin.l.replace("前日","")+"くらいまで回っていた台は据え置き濃厚（この帯の投入の"+Math.round(keepBin.kp*100)+"％が据え置き）。");
+    if(upBin) T.push("【上げに切り替わるライン】"+upBin.l.replace("前日","")+"まで落ちていた台は据え置かれず、新規投入（上げ）対象になりやすい（この帯の投入の"+Math.round((1-upBin.kp)*100)+"％が上げ）。"); }
+  // 上げ／新規の読み
+  { const ud=Object.entries(KU.upDays).map(([d,s])=>({d:+d,n:s.n,r:s.n?s.hi/s.n:0})).filter(o=>o.n>=5);
+    if(ud.length){ const best=ud.slice().sort((a,b)=>b.r-a.r)[0];
+      T.push("【上げ／新規の読み】不発が続いた台は"+best.d+"日不発後あたりで新規投入が入りやすい（上げ率"+pc(best.r)+"）。前日低回転で実態が隠れていた台もリセット投入の的になりやすい。"); } }
+  // 並び
+  if(KU.narabi&&KU.narabi.n>=4){ const nr=KU.narabi.hi/KU.narabi.n; const cr=KU.narabi.cornerN>=3?KU.narabi.cornerHi/KU.narabi.cornerN:null;
+    T.push("【並び】隣が前日高設定だった台は翌日も高設定が入りやすい（"+pc(nr)+"）"+(cr!=null&&cr>nr?"。特に角台と並ぶと強い（"+pc(cr)+"）":"")+"。"); }
+  // 機種別
+  { const ms=Object.entries(KU.byMachine).filter(e=>e[1].keepCnt+e[1].upCnt>=6);
+    if(ms.length){ const kk=ms.slice().sort((a,b)=>b[1].keepRatio-a[1].keepRatio)[0]; const uu=ms.slice().sort((a,b)=>b[1].upRatio-a[1].upRatio)[0];
+      T.push("【機種の傾向】"+kk[0]+"は据え置き寄り（据え置き"+pc(kk[1].keepRatio)+"）、"+uu[0]+"は上げ寄り（上げ"+pc(uu[1].upRatio)+"）。機種で狙い方を変える。"); } }
+  // 結論：具体的な狙い台
+  const keeps=KR.out.filter(o=>o.side==="keep").slice(0,3).map(o=>"台"+o.mno+"("+o.total+"点)");
+  const ups=KR.out.filter(o=>o.side==="up"||o.side==="reset").slice(0,3).map(o=>"台"+o.mno+"("+o.total+"点)");
+  const top=KR.out.slice().sort((a,b)=>b.total-a.total)[0];
+  T.push("【結論：今日の狙い】据え置き狙いなら "+(keeps.length?keeps.join("・"):"該当薄")+"。上げ／新規狙いなら "+(ups.length?ups.join("・"):"該当薄")+"。"+
+    (top?"総合本命は 台"+top.mno+"（"+top.mname+"・"+top.total+"点・"+top.verdict+"／本命設定"+top.honmei+"）。":""));
+  return T;
+}
+function renderInjection5Inner(){
+  const el=document.getElementById("t-inject5"); const store=val("inj5-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("inj5-date")||fmtDate(ndDef);
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  if(!_inj5||_inj5.key!==key){ const KU=keepUpLearn(srAll,store,targetDate); const ML=missLearn(srAll,store,targetDate,KU);
+    const KR=computeKeepUp(srAll,store,targetDate,KU,ML); _inj5={key,KU,ML,KR}; }
+  const {KU,ML,KR}=_inj5; if(!KR||!KR.out.length){ el.innerHTML="<p class='muted'>判定できる台がありません（データ不足）。</p>"; return; }
+  const autoEv=eventsOn(targetDate,store); const eventDay=autoEv.length>0; const evLabel=autoEv.map(e=>e.name||eventDesc(e)).join("・");
+  const nd=new Date(targetDate+"T00:00:00"); const nextWd=WD[nd.getDay()]; const pc=v=>Math.round((v||0)*100)+"%";
+  let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"("+nextWd+"曜)"+(eventDay?" 🎉"+evLabel:"")+" ／ 学習"+KU.dayClass.length+"日分（未来不使用）／ 店タイプ：【"+KU.storeType+"】</p>";
+  // 取りこぼし注意
+  if(KU.btHiTotal>=5){ const miss=Math.round(KU.btMissed/KU.btHiTotal*100);
+    h+="<div class='note' style='background:#eef7ff;border-color:#9cc8ff;font-size:12px'>🧪 バックテスト：過去の高設定"+KU.btHiTotal+"台中 上位捕捉"+Math.round(KU.btCaught/KU.btHiTotal*100)+"%／取りこぼし"+miss+"%（新規投入は前兆が出にくく台単位の特定は限界あり。店レベルのクセで状況を狙う）</div>"; }
+  // ★ 店長思考
+  const TH=managerThought(KU,KR,targetDate,eventDay,evLabel);
+  h+="<div class='note' style='background:#0f172a;color:#e2e8f0;border-color:#334155'><div style='font-size:15px;font-weight:bold;margin-bottom:6px'>🧠 店長思考（今日どこに設定を入れるか）</div>"+
+    TH.map(t=>{ const m=t.match(/^【(.+?)】(.*)$/); return m?"<div style='margin:5px 0'><b style='color:#fbbf24'>"+m[1]+"</b>：<span>"+m[2]+"</span></div>":"<div>"+t+"</div>"; }).join("")+"</div>";
+  // 機種別 100点 カード
+  const byM={}; KR.out.forEach(o=>{(byM[o.mname]=byM[o.mname]||[]).push(o);});
+  const mn=Object.keys(byM).sort((a,b)=>Math.max(...byM[b].map(o=>o.total))-Math.max(...byM[a].map(o=>o.total)));
+  const sideTag=o=>o.side==="keep"?"<span style='color:#1a7f37;font-weight:bold'>🟢 据え置き狙い</span>":o.side==="up"?"<span style='color:#b35900;font-weight:bold'>🟠 上げ狙い</span>":o.side==="reset"?"<span style='color:#7c3aed;font-weight:bold'>🟣 新規投入</span>":"<span class='muted'>様子見</span>";
+  const dataTbl=(arr,label)=>{ if(!arr||!arr.length)return ""; return "<div style='font-size:11px;margin-top:2px'>"+label+"：<table style='font-size:10px'><tr><th>日</th><th>設定</th><th>合算</th><th>BIG</th><th>バケ</th><th>回転</th></tr>"+
+    arr.map(d=>"<tr><td>"+d.date.slice(5)+"</td><td>"+(d.sete||"-")+"</td><td>1/"+(d.comb?Math.round(d.comb):"-")+"</td><td>1/"+(d.big?Math.round(d.big):"-")+"</td><td>1/"+(d.reg?Math.round(d.reg):"-")+"</td><td>"+(d.tot?Math.round(d.tot)+"G":"-")+"</td></tr>").join("")+"</table></div>"; };
+  const scoreCol=v=>v>=75?"#16a34a":v>=60?"#65a30d":v>=45?"#ca8a04":v>=30?"#ea580c":"#dc2626";
+  for(const mname of mn){ const list=byM[mname].slice().sort((a,b)=>b.total-a.total);
+    const mst=KU.byMachine[mname]; const mx=Math.max(...list.map(o=>o.total));
+    h+="<h3 style='margin:16px 0 4px;background:#1e3a8a;color:#fff;padding:7px 10px;border-radius:6px'>🎰 "+mname+
+      " <span style='font-weight:normal;font-size:12px'>（機種最高 "+mx+"点"+(mst?" ／ 据え置き率"+Math.round(mst.keepRatio*100)+"%・上げ率"+Math.round(mst.upRatio*100)+"%":"")+"）</span></h3>";
+    // 上位台をカード表示（最大8台）
+    list.slice(0,8).forEach(o=>{
+      const hc={4:"#e6f8d8",5:"#b6f5a0",6:"#7CFC00"}[o.honmei]||"#eee";
+      h+="<div class='note' style='border-color:"+scoreCol(o.total)+";font-size:12px;margin:6px 0'>"+
+        "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'>"+
+          "<span style='font-size:18px;font-weight:bold;color:"+scoreCol(o.total)+"'>"+o.total+"<span style='font-size:11px'>/100</span></span>"+
+          "<b style='font-size:15px'>台"+o.mno+"</b>"+sideTag(o)+"<span style='font-weight:bold'>"+o.verdict+"</span>"+
+          "<span style='background:"+hc+";padding:1px 6px;border-radius:4px'>本命 設定"+o.honmei+"</span></div>";
+      // 狙い方＋データ
+      if(o.side==="keep"){ h+="<div style='margin-top:3px'>▶ <b>据え置き "+o.keepRun+"日目</b>（据え置き中のデータ↓）"+dataTbl(o.keptData,"据え置き中")+"</div>"; }
+      else if(o.side==="up"){ h+="<div style='margin-top:3px'>▶ <b>不発 "+o.streak+"日</b>（不発中のデータ↓）"+dataTbl(o.missData,"不発中")+"</div>"; }
+      else { h+="<div style='margin-top:3px'>▶ <b>新規投入（前日データなし）</b></div>"; }
+      // 設定期待
+      h+="<div style='margin-top:3px'>🎯 <b>設定期待</b>：設定4 <b>"+pc(o.e4)+"</b>／設定5 <b>"+pc(o.e5)+"</b>／設定6 <b>"+pc(o.e6)+"</b>（過去 設定4:"+o.s4+"回 5:"+o.s5+"回 6:"+o.s6+"回）</div>";
+      // クセ全明記
+      h+="<div style='margin-top:3px'>📋 <b>クセ・根拠</b>：<br>"+(o.reasons.length?o.reasons.map(s=>"・"+s).join("<br>"):"・該当クセ少")+"</div>";
+      h+="</div>";
+    });
+  }
+  el.innerHTML=h;
+}
+
 // ========== 明日の投入予想（読みやすいカード版）==========
 function renderForecast(){
   const el=document.getElementById("t-forecast"); if(!el) return;
@@ -4593,6 +4717,7 @@ document.getElementById("tabs").addEventListener("click",e=>{
   else if(t==="forecast") renderForecast();
   else if(t==="inject3") renderInjection3();
   else if(t==="inject4") renderInjection4();
+  else if(t==="inject5") renderInjection5();
 });
 
 // ---------- 初期化 ----------
