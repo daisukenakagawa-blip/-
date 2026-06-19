@@ -203,6 +203,7 @@ def main():
     use_ai = config.USE_AI and os.environ.get("ANTHROPIC_API_KEY")
     print(f"生成モード: {'AI執筆' if use_ai else '雛形(APIキー未設定)'}\n")
 
+    created = []
     for i, item in enumerate(plan, 1):
         theme = item["theme"]
         price = item["price"] or str(hints["price"])
@@ -219,9 +220,32 @@ def main():
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         print(f"      -> {path.name}")
+        created.append({"theme": theme, "price": price})
 
-    print(f"\n✅ 完了。output フォルダに {len(plan)} 本を出力しました。")
+    mode_label = "AI執筆" if use_ai else "雛形"
+    print(f"\n✅ 完了。output フォルダに {len(created)} 本を出力しました。")
     print("   AIキー未設定の場合は雛形です。articles/ の完成サンプルを参考に書き足してください。")
+
+    # LINE 通知(任意。LINE_CHANNEL_ACCESS_TOKEN を設定した時のみ送信)
+    if config.NOTIFY_LINE and created:
+        send_line_notification(created, mode_label)
+
+
+def send_line_notification(created, mode_label):
+    """記事生成の完了を LINE に通知する。"""
+    try:
+        import line_notifier
+    except ImportError:
+        return
+    if not line_notifier.is_configured():
+        print("   (LINE通知はトークン未設定のためスキップ)")
+        return
+    lines = [f"✅ note記事を{len(created)}本作成しました（{mode_label}）"]
+    for i, c in enumerate(created[:15], 1):
+        lines.append(f"{i}. {c['theme']}（¥{c['price']}）")
+    lines.append("\n▶ note_writer/output を確認し、投稿してください。")
+    ok, msg = line_notifier.notify("\n".join(lines))
+    print(f"   LINE通知: {'送信しました' if ok else msg}")
 
 
 if __name__ == "__main__":

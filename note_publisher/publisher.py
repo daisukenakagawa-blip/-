@@ -82,6 +82,7 @@ def main():
     poster = NotePoster(config, log)
     poster.start(use_session=True)
     success = 0
+    posted_titles = []
     try:
         if not poster.is_logged_in():
             log.error(
@@ -96,6 +97,7 @@ def main():
             res = poster.post_article(art, mode)
             if res["ok"]:
                 success += 1
+                posted_titles.append(art.title)
                 posted_log.record(
                     config.POSTED_LOG, art.path.name, art.title, mode, res["note_url"]
                 )
@@ -115,6 +117,27 @@ def main():
     if mode == "draft":
         log.info("note の『下書き一覧』を開いて、内容と有料設定を確認してから公開してください。")
     log.info("─" * 50)
+
+    # LINE 通知(任意)
+    if config.NOTIFY_LINE and posted_titles:
+        send_line_notification(posted_titles, mode, log)
+
+
+def send_line_notification(titles, mode, log):
+    try:
+        from modules import line_notifier
+    except ImportError:
+        return
+    if not line_notifier.is_configured():
+        log.info("LINE通知はトークン未設定のためスキップしました。")
+        return
+    label = {"draft": "下書き保存", "publish": "公開", "schedule": "予約投稿"}.get(mode, mode)
+    lines = [f"✅ noteに{len(titles)}本を{label}しました"]
+    for i, t in enumerate(titles[:15], 1):
+        lines.append(f"{i}. {t}")
+    if mode == "draft":
+        lines.append("\n▶ noteの下書き一覧で内容と有料設定を確認し、公開してください。")
+    line_notifier.notify("\n".join(lines), logger=log)
 
 
 if __name__ == "__main__":

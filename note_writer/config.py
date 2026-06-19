@@ -24,3 +24,9 @@ DEFAULT_PRICE = 500
 
 # 有料ラインの区切り文字列(noteの有料エリア設定の目印)
 PAYWALL_MARK = "━━ ここから先は有料パートです ━━"
+
+# ── LINE 通知 ───────────────────────────────────────────────
+# 記事生成が完了したら LINE に通知する。
+# 送信には環境変数 LINE_CHANNEL_ACCESS_TOKEN が必要(.env.example 参照)。
+# 未設定なら自動でスキップします。
+NOTIFY_LINE = True
