@@ -118,6 +118,19 @@
       <p class="hint">ぶどうは設定差があり、長時間まわすほど強力な判別材料になります。カウンターには出ないので自分で数えた回数を入れてください。空欄ならBIG/REGのみで推定します。</p>
     </details>
 
+    <details style="margin-top:12px;" id="cherryBox">
+      <summary>＋ チェリー重複も使う（チェリービッグ／チェリーバケ・対応機種のみ）</summary>
+      <p id="cherryNote" class="hint" style="margin-top:6px;"></p>
+      <div id="cherryInputs">
+        <div class="grid2">
+          <div><label>チェリービッグ回数<br><span class="hint">角チェリー＋BIG</span></label><input type="number" id="cbig" min="0" placeholder="例: 6"></div>
+          <div><label>チェリーバケ回数<br><span class="hint">角チェリー＋REG</span></label><input type="number" id="creg" min="0" placeholder="例: 9"></div>
+        </div>
+        <p class="hint">角チェリー成立時に光った（ボーナス重複した）回数を数えて入力。チェリーバケ（重複REG）は設定差が大きく強力な判別材料です。
+        ※「中段（レア）チェリー」は全機種・全設定共通のBIG確定プレミアで<strong>設定差なし＝判別には使えません</strong>。</p>
+      </div>
+    </details>
+
     <label>現在の差枚数（任意・分かれば）</label>
     <input type="number" id="diff" placeholder="例: 1200（不明なら空欄）">
 
@@ -282,6 +295,18 @@ const MACHINES = {
 // ボーナス出玉(差枚への寄与・近似): BIG約240枚, REG約96枚
 const BIG_COIN = 240, REG_COIN = 96, BET = 3;
 
+// チェリー重複の設定別分母[設定1..6]。設定別データが信頼できる機種のみ収録。
+//  cBig=チェリー重複BIG(チェリービッグ), cReg=チェリー重複REG(チェリーバケ)。rel=信頼度。
+//  ※中段(レア)チェリーは全機種 約1/3276.8・設定差なし・BIG確定プレミアのため判別には使えない。
+const CHERRY = {
+  my:     {rel:'解析一致(高)', cBig:[1424,1395,1365,1285,1214,1130], cReg:[1092,1074,1057,1008,862,762]},
+  mister: {rel:'解析一致(高)', cBig:[1680,1680,1524,1394,1285,1236], cReg:[1680,1560,1394,1213,1074,1008]},
+  funky:  {rel:'推定値',       cBig:[1456,1365,1365,1337,1260,1191], cReg:[1424,1394,1285,1149,1110,992]},
+  gogo:   {rel:'推定値(バケは出典分裂)', cBig:[1337,1337,1337,1310,1310,1260], cReg:[1365,1310,1191,1057,964,910]},
+  miracle:{rel:'参考値',       cBig:[1365,1213,1149,1129,1024,936],  cReg:[1638,1638,1337,1337,1191,1110]},
+};
+// アイム/ネオアイム/ハッピー/ガールズは中間設定が非公表のため非対応(捏造しない)。
+
 const $ = id => document.getElementById(id);
 
 // 写真プレビュー
@@ -369,14 +394,30 @@ function poissonLogPmf(k, lambda) {
   return -lambda + k * Math.log(lambda) - logFact;
 }
 
-function estimateSettings(G, b, r, settings, grapeCount) {
-  const scores = settings.map(s => {
-    const lamB = G / s.big;
-    const lamR = G / s.reg;
-    let sc = poissonLogPmf(b, lamB) + poissonLogPmf(r, lamR);
+function estimateSettings(G, b, r, settings, grapeCount, cherry) {
+  // cherry = {cBig:[..6], cReg:[..6], cb:チェリービッグ回数 or null, cr:チェリーバケ回数 or null} or null
+  const useCB = cherry && cherry.cb != null && !isNaN(cherry.cb) && cherry.cb <= b;
+  const useCR = cherry && cherry.cr != null && !isNaN(cherry.cr) && cherry.cr <= r;
+  const scores = settings.map((s, i) => {
+    let sc = 0;
+    // BIG: チェリービッグ回数があれば 単独BIG と チェリー重複BIG に分解
+    if (useCB) {
+      const denCB = cherry.cBig[i];
+      const denSB = 1 / (1/s.big - 1/denCB); // 単独BIG分母
+      sc += poissonLogPmf(cherry.cb, G/denCB) + poissonLogPmf(b - cherry.cb, G/denSB);
+    } else {
+      sc += poissonLogPmf(b, G/s.big);
+    }
+    // REG: チェリーバケ回数があれば 単独REG と チェリー重複REG に分解
+    if (useCR) {
+      const denCR = cherry.cReg[i];
+      const denSR = 1 / (1/s.reg - 1/denCR);
+      sc += poissonLogPmf(cherry.cr, G/denCR) + poissonLogPmf(r - cherry.cr, G/denSR);
+    } else {
+      sc += poissonLogPmf(r, G/s.reg);
+    }
     if (grapeCount != null && !isNaN(grapeCount) && grapeCount > 0) {
-      const lamGr = G / s.grape; // 期待ぶどう回数
-      sc += poissonLogPmf(grapeCount, lamGr);
+      sc += poissonLogPmf(grapeCount, G/s.grape); // 期待ぶどう回数
     }
     return sc;
   });
@@ -508,8 +549,19 @@ $('run').addEventListener('click', () => {
   if (b+r > G) { alert('BIG+REGが総回転数を超えています。数字を確認してください'); return; }
 
   const grapeCount = $('grape').value===''? null : parseInt($('grape').value);
-  const M = MACHINES[$('machine').value];
-  const post = estimateSettings(G, b, r, M.settings, grapeCount);
+  const mKey = $('machine').value;
+  const M = MACHINES[mKey];
+  // チェリー重複（対応機種のみ）
+  let cherry = null;
+  const cd = CHERRY[mKey];
+  if (cd) {
+    const cb = $('cbig').value===''? null : parseInt($('cbig').value);
+    const cr = $('creg').value===''? null : parseInt($('creg').value);
+    if (cb != null && cb > b) { alert('チェリービッグ回数がBIG回数を超えています'); return; }
+    if (cr != null && cr > r) { alert('チェリーバケ回数がREG回数を超えています'); return; }
+    if (cb != null || cr != null) cherry = {cBig:cd.cBig, cReg:cd.cReg, cb, cr};
+  }
+  const post = estimateSettings(G, b, r, M.settings, grapeCount, cherry);
 
   // === 現在データ表示 ===
   const combRate = (b+r)>0 ? (G/(b+r)) : Infinity;
@@ -590,6 +642,23 @@ $('run').addEventListener('click', () => {
     sel.appendChild(o);
   }
 })();
+
+// 機種に応じてチェリー重複入力の有効/無効を切り替え
+function updateCherryUI(){
+  const cd = CHERRY[$('machine').value];
+  const box = $('cherryBox'), inputs = $('cherryInputs'), note = $('cherryNote');
+  if (cd) {
+    inputs.style.display = 'block';
+    note.innerHTML = 'この機種はチェリー重複の設定別データ（<b>'+cd.rel+'</b>）に対応。回数を入れると判別精度が上がります。';
+    note.style.color = '#9fb';
+  } else {
+    inputs.style.display = 'none';
+    note.innerHTML = '⚠️ この機種はチェリー重複の<b>設定別公表値がない</b>ため非対応です（推測に使える確かな数値がないため、あえて使いません）。BIG/REG・ぶどうで判別してください。';
+    note.style.color = '#f7d36b';
+  }
+}
+$('machine').addEventListener('change', updateCherryUI);
+updateCherryUI();
 
 // スペック表
 (function(){
