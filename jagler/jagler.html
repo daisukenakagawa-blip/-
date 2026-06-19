@@ -1561,7 +1561,8 @@ function factorEffectiveness(srAll, store, targetDate){
 // 第11の店クセ：取りこぼし投入傾向の手がかり日本語ラベル（13要素）
 const MISS_LABEL={eventDay:"イベント日",newInjection:"新規投入",lowSpinPrevDay:"前日低回転",highSettingCarry:"前日据え置き",
   tailStrong:"末尾傾向",islandStrong:"島傾向",weekdayStrong:"曜日傾向",corner:"角台",corner2:"角2",corner3:"角3",
-  machineNoStrong:"台番号実績",patternStrong:"周期到来",rotationStrong:"機種ローテ",afterMiss12:"不発明け1-2日"};
+  machineNoStrong:"台番号実績",patternStrong:"周期到来",rotationStrong:"機種ローテ",afterMiss12:"不発明け1-2日",
+  islandRotate:"島ローテ期",tailRotate:"末尾ローテ期",releaseDay:"放出日(回収明け)",cycleHit:"投入周期到来"};
 
 // ---------- 描画 ----------
 function refreshAll(){
@@ -3600,7 +3601,18 @@ function inj4Ctx(sr, D, store, CU){
   const baseReg=avg(sr.map(r=>r.reg_prob)), baseComb=avg(sr.map(r=>r.combined)), baseBud=avg(sr.map(r=>budouDen(r.budou)).filter(x=>x!=null));
   const overall=CU.overallHi||0, phase=CU.phase(D);
   const domTail=(+D.slice(8,10))%10;   // 予想日の日付（末尾一致判定用）
-  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase,domTail};
+  // 新規投入の前兆：島・末尾のローテ周期（最後に高設定が出てからの経過 vs 平均周期）
+  const islG={}, tailG={};
+  sr.forEach(r=>{ if(CU.isHi(r)){ const i=Math.floor(r.machine_no/10), t=r.machine_no%10;
+    (islG[i]=islG[i]||[]).push(r.date); (tailG[t]=tailG[t]||[]).push(r.date); } });
+  const finRot=g=>{ const out={}; for(const k in g){ const ds=[...new Set(g[k])].sort(); if(ds.length<3){out[k]={due:false};continue;}
+    const gaps=[]; for(let i=1;i<ds.length;i++)gaps.push(dayDiff(ds[i-1],ds[i])); const cyc=avg(gaps), since=dayDiff(ds[ds.length-1],md);
+    out[k]={cyc,since,due:!!(cyc&&since>=cyc*0.9)}; } return out; };
+  const islRot=finRot(islG), tailRot=finRot(tailG);
+  // 放出日：前日(md)のフロア高設定率が店平均より大幅に低い＝回収明けで翌日放出されやすい
+  const mdRecs=sr.filter(r=>r.date===md); const mdHiRate=mdRecs.length?mdRecs.filter(r=>CU.isHi(r)).length/mdRecs.length:0;
+  const releaseDay = overall>0 && mdRecs.length>=5 && mdHiRate < overall*0.6;
+  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase,domTail,islRot,tailRot,releaseDay};
 }
 function inj4Feats(mno, CU, x){
   const hist=CU.byM[mno]||[]; const tail=mno%10, isl=Math.floor(mno/10);
@@ -3630,6 +3642,13 @@ function inj4Feats(mno, CU, x){
   const mh=CU.machHi[mno]; if(mh&&mh.n>=3&&mh.hi>x.overall+0.05)F.push("台番号実績高");
   const ro=CU.rotate[mname]; if(ro&&ro.due)F.push("機種ローテ期");
   const ph=CU.phaseRate[x.phase]; if(ph&&ph.hi>x.overall+0.03)F.push(x.phase+"投入傾向");
+  // ★新規投入の前兆：周期到来（その台の投入間隔超え）／島ローテ／末尾ローテ／放出日
+  { const hiDs=hist.filter(CU.isHi).map(r=>r.date).sort();
+    if(hiDs.length>=3){ const gp=[]; for(let i=1;i<hiDs.length;i++)gp.push(dayDiff(hiDs[i-1],hiDs[i])); const cyc=avg(gp);
+      if(cyc&&streak>=cyc*0.8)F.push("周期到来"); } }
+  if(x.islRot&&x.islRot[isl]&&x.islRot[isl].due)F.push("島ローテ期");
+  if(x.tailRot&&x.tailRot[tail]&&x.tailRot[tail].due)F.push("末尾ローテ期");
+  if(x.releaseDay)F.push("放出日（回収明け）");
   if(x.domTail!=null && tail===x.domTail)F.push("日付末尾一致");
   // 取りこぼし集計用の sig（MISS_LABELキー）
   const sig=[]; if(x.eventDay)sig.push("eventDay"); if(streak>=3)sig.push("newInjection");
@@ -3637,6 +3656,10 @@ function inj4Feats(mno, CU, x){
   if(th&&th.n>=3&&th.hi>x.overall+0.05)sig.push("tailStrong"); if(ih&&ih.n>=3&&ih.hi>x.overall+0.05)sig.push("islandStrong");
   if(wh&&wh.n>=3&&wh.hi>x.overall+0.05)sig.push("weekdayStrong"); if(CU.cornerSet.has(mno))sig.push("corner"); else if(CU.c2Set.has(mno))sig.push("corner2"); else if(CU.c3Set.has(mno))sig.push("corner3");
   if(mh&&mh.n>=3&&mh.hi>x.overall+0.05)sig.push("machineNoStrong"); if(ro&&ro.due)sig.push("rotationStrong");
+  if(x.islRot&&x.islRot[isl]&&x.islRot[isl].due)sig.push("islandRotate");
+  if(x.tailRot&&x.tailRot[tail]&&x.tailRot[tail].due)sig.push("tailRotate");
+  if(x.releaseDay)sig.push("releaseDay");
+  if(F.indexOf("周期到来")>=0)sig.push("cycleHit");
   return {F,sig,prevHi,streak,hist,tail,mname};
 }
 // 前日の実数値を条件（ビン）に変換：据え置き/上げの「理由」洗い出し用
@@ -3734,7 +3757,8 @@ function confCoef(n){ return n>=5000?1.6:n>=3000?1.4:n>=1000?1.2:n>=300?1.0:n>=1
 function comboTier(n){ return n>=1000?{w:1.4,label:"最重要"}:n>=300?{w:1.2,label:"強加点"}:n>=100?{w:1.0,label:"採用"}:n>=50?{w:0.5,label:"参考"}:null; }
 // 複合特徴量に使うベース特徴量（ノイズの少ない投入クセ系に限定し、組合せ爆発を抑える）
 const COMBO_BASE=["前日据え置き","前日設定6推定","前日設定5推定","前日設定4推定","前日設定低推定","前日REG先行","前日ぶどう優秀",
-  "前日低回転","不発明け1-2日","不発明け3日+","イベント日","イベント翌日据置","角台","角2","並び投入","末尾実績高","島実績高","曜日実績高","機種ローテ期"];
+  "前日低回転","不発明け1-2日","不発明け3日+","イベント日","イベント翌日据置","角台","角2","並び投入","末尾実績高","島実績高","曜日実績高","機種ローテ期",
+  "周期到来","島ローテ期","末尾ローテ期","放出日（回収明け）"];
 function comboKeys(feats){ const base=feats.filter(f=>COMBO_BASE.includes(f)).sort().slice(0,7); const out=[];
   for(let i=0;i<base.length;i++)for(let j=i+1;j<base.length;j++){ out.push(base[i]+"＋"+base[j]);
     for(let k=j+1;k<base.length;k++) out.push(base[i]+"＋"+base[j]+"＋"+base[k]); } return out; }
