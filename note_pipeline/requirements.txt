@@ -1,0 +1,3 @@
+python-dotenv>=1.0
+# 実際の執筆は note_factory（anthropic）、投稿は note_publisher（playwright）が担当します。
+# それぞれの requirements も各フォルダで導入してください。
