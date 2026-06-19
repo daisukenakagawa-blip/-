@@ -588,7 +588,7 @@ function load(){ if(_mem!==null) return _mem.slice();
     const arr=(a.length && a[0].combined===undefined) ? a.map(enrich) : a;   // 最小形式なら読み込み時に補完
     _loadRaw=raw; _loadCache=arr; return arr;
   }catch(e){ return _mem?_mem.slice():[]; } }
-function save(r){ _loadRaw=null; _loadCache=null; const json=JSON.stringify(r,_noInternal);
+function save(r){ _loadRaw=null; _loadCache=null; try{_lcCache.clear();}catch(e){} const json=JSON.stringify(r,_noInternal);
   if(_mem!==null){ _mem=r.slice(); }
   else { try{ localStorage.setItem(KEY,json); }
     catch(e){ // 容量超過：生データだけの最小形式で再挑戦（最新分が消えない様に）
@@ -1300,7 +1300,14 @@ function learnStoreTendency(sr,gReg,gComb){
 
 // ===== 店舗クセ学習（10要素・予想日より前のデータのみ使用＝未来不使用）=====
 // 高設定の判定は「設定4以上」。各要素は 発生回数 / 高設定率 / 店平均との差 を保持する。
+const _lcCache=new Map();   // learnCusp の結果キャッシュ（同じ店・同じ締め日・同じ件数なら再計算しない）
 function learnCusp(sr, isEvtDate, md){
+  const _ck=(sr&&sr[0]&&sr[0].store)+"|"+md+"|"+(sr?sr.length:0);
+  { const hit=_lcCache.get(_ck); if(hit) return hit; }
+  const _ret=_learnCuspCalc(sr, isEvtDate, md);
+  if(_lcCache.size>400)_lcCache.clear(); _lcCache.set(_ck,_ret); return _ret;
+}
+function _learnCuspCalc(sr, isEvtDate, md){
   const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
   const isLo=r=>{const e=estimateSetting(r);return !!(e&&e.setting<=2);};
   const dates=[...new Set(sr.map(r=>r.date))].sort();
