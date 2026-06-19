@@ -4638,6 +4638,28 @@ function renderInjection6Inner(){
         "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td><td style='color:#7c3aed'>"+o.resetScore+"</td>"+
         "<td style='white-space:nowrap;font-size:11px'>"+o.verdict+"</td><td style='font-size:11px'>"+(o.comment||"").split("→").pop()+"</td></tr>"; }).join("")+
     "</table></div>";
+  // ===== 各台の 設定4/5/6 入る確率 ＋ 根拠（言葉）=====
+  const nextWd6=WD[new Date(targetDate+"T00:00:00").getDay()]; const pc6=v=>Math.round((v||0)*100)+"%";
+  const wordReason=o=>{ const P=[];
+    if(o.side==="keep") P.push("前日高設定の据え置き候補（据え置き"+o.keepRun+"日目）。過去統計で"+(o.expWhy||"継続率")+"は<b>"+pc6(o.expRate)+"</b>。");
+    else if(o.side==="up") P.push("前日低設定で"+o.streak+"日不発。過去統計で"+o.streak+"日不発後の上げ率は<b>"+pc6(o.expRate)+"</b>。");
+    else P.push("前日データなしの新規投入候補（新規投入の発生率<b>"+pc6(o.expRate)+"</b>）。");
+    if(o.nbHi) P.push("隣が前日高設定で並び投入の流れ（並び投入率"+pc6(o.nbRate)+"）。");
+    else if((o.nbRate||0)>=0.4) P.push("この店は並び投入率"+pc6(o.nbRate)+"と高め。");
+    if(o.wmDiff!=null && o.wmRate!=null){ if(o.wmDiff>=0.05) P.push(nextWd6+"曜は"+o.mname+"が強い（"+pc6(o.wmRate)+"）。"); else if(o.wmDiff<=-0.05) P.push(nextWd6+"曜は"+o.mname+"が弱い（"+pc6(o.wmRate)+"）。"); }
+    const topR=(o.reasons||[]).find(s=>s.indexOf("🔧")<0); if(topR) P.push("主な手がかりは「"+topR.replace(/\s*[+\-][\d.]+$/,"").replace(/〔機種〕/,"(機種別)")+"」。");
+    if(o.rescueHits) P.push("過去ここで取りこぼした手がかりに一致（見逃し注意）。");
+    P.push("過去に設定が入った内訳は 4:"+pc6(o.e4)+"・5:"+pc6(o.e5)+"・6:"+pc6(o.e6)+"。");
+    return P.join(" ");
+  };
+  h+="<h3 style='margin:16px 0 4px;background:#0f766e;color:#fff;padding:7px 10px;border-radius:6px'>📊 各台 設定4/5/6が入る確率＋根拠（言葉）</h3>"+
+    "<p class='muted' style='font-size:12px'>過去統計から、その台に<b>設定4・5・6それぞれが入る確率</b>（＝入る確率×入った場合の内訳）と、その根拠を言葉で。</p>";
+  KR.out.slice().sort((a,b)=>sc6(b)-sc6(a)).slice(0,15).forEach(o=>{
+    const p4=o.expRate*(o.e4||0), p5=o.expRate*(o.e5||0), p6=o.expRate*(o.e6||0);
+    h+="<div class='note' style='font-size:12px;margin:5px 0'><div style='font-weight:bold'>台"+o.mno+"（"+o.mname+"）　得点 "+sc6(o)+"　"+o.verdict+"</div>"+
+      "<div style='margin-top:2px'>🎯 <b>入る確率</b>：設定4 <b style='color:#65a30d'>"+pc6(p4)+"</b>／設定5 <b style='color:#16a34a'>"+pc6(p5)+"</b>／設定6 <b style='color:#16a34a'>"+pc6(p6)+"</b>（高設定が入る確率 計"+pc6(o.expRate)+"）</div>"+
+      "<div style='margin-top:2px'>📝 <b>根拠</b>："+wordReason(o)+"</div></div>";
+  });
   const byM={}; KR.out.forEach(o=>{(byM[o.mname]=byM[o.mname]||[]).push(o);});
   const mn=Object.keys(byM).sort((a,b)=>Math.max(...byM[b].map(o=>sc6(o)))-Math.max(...byM[a].map(o=>sc6(o))));
   h+="<h3 style='margin:16px 0 4px;background:#1e3a8a;color:#fff;padding:7px 10px;border-radius:6px'>🎯 機種別 各台スコア（総合／据え置き／上げ／リセット期待度＋機種平均差＋★）</h3>";
