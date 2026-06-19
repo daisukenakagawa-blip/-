@@ -24,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 import config
+import prep
 from logger import Logger
 
 
@@ -147,7 +148,23 @@ def produce(count, publish_mode, dry_run, log):
         status = "要確認" if any("要確認" in p.name for p in collected) else "ok"
         log.info(f"    ✅ 生産: {[p.name for p in collected]}（{status}）")
 
-        publish_drafts(collected, publish_mode, log)
+        # 投稿する場合は、編集メモ等を除去した「投稿用」に整えてから渡す。
+        # 安全のため、部長が合格を出していない「要確認」は自動投稿しない。
+        if publish_mode in ("draft", "publish"):
+            if status == "要確認":
+                log.warn("    部長が合格を出していない記事のため、自動投稿は見送ります（手動確認を推奨）。")
+            else:
+                pub_files = []
+                for p in collected:
+                    dst = config.PRODUCED_DIR / (p.stem + ".publish.md")
+                    try:
+                        prep.make_publishable_file(p, dst, price=niche["price"],
+                                                   genre=niche["genre"])
+                        pub_files.append(dst)
+                    except Exception as e:
+                        log.warn(f"    投稿用整形に失敗 {p.name}: {e}")
+                publish_drafts(pub_files, publish_mode, log)
+
         record_done(niche["theme"], status, collected)
 
         if i < len(todo):

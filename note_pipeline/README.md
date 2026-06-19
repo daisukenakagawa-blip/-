@@ -47,6 +47,29 @@ python pipeline.py --publish draft  # この実行だけ下書き投稿まで
 python pipeline.py --discover       # note_niche で候補を探索
 ```
 
+## 自動アップロード（生産→投稿まで一気通貫）
+
+`--publish` を付けると、生産した記事を **自動で投稿用に整えてから note に投稿**します。
+整形では、編集メモ・参照リスト・工程コメントを自動除去し、価格・タグのフロントマターを
+付与します（投稿ツールが正しく読めることを検証済み）。
+
+```bash
+# 事前に一度だけ: note にログイン（あなたのPCで）
+cd ..\note_publisher && python login.py
+
+# 生産 → 下書き投稿まで自動（おすすめ。note上で実体験を1行足して公開）
+python pipeline.py --publish draft
+
+# 生産 → 公開まで全自動（上級者向け・自己責任）
+python pipeline.py --publish publish
+```
+
+- 既定で常に投稿したい場合は `config.py` の `PUBLISH_MODE` を `"draft"` か `"publish"` に。
+- **安全装置**：部長が合格を出していない「要確認」記事は、自動投稿しません（手動確認に回す）。
+- ⚠️ `publish`（公開まで全自動）は、**あなたの実体験1行が入らない**まま公開されます。
+  刺さりやすさは落ちます。基本は `draft` で止め、note上で一言足してから公開を推奨します。
+- 投稿は note にブラウザでログインした **あなたのPC上**で動きます（note は公式投稿APIが無いため）。
+
 ## 運用サイクル（おすすめ）
 
 1. **週1回**：`候補を探す.bat`（または note_niche）で狙い目ニッチを発掘 → 良いものを
