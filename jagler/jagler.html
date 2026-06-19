@@ -3687,6 +3687,7 @@ function keepUpLearn(srAll, store, targetDate){
   const condCat={};   // 条件ラベル→カテゴリ
   const dateTail={matchN:0,matchHi:0,nonN:0,nonHi:0, keepN:0,keepHi:0,upN:0,upHi:0};  // 日付と末尾の一致
   const rotNext={}, narabi={n:0,hi:0,cornerN:0,cornerHi:0};   // 前日回転数→翌日高設定率／並び投入の高設定率
+  const wmStat={}, machHiRate={};   // 曜日×機種の高設定率／機種ごとの高設定率（曜日強弱の評価用）
   let btHiTotal=0,btCaught=0,btMissed=0; const missSig={};   // 取りこぼし計測（その時点までの学習で採点＝未来不使用）
   const bump=(o,prevState,hi)=>{ if(prevState==="keep"){o.keepN++; if(hi)o.keepHi++;} else if(prevState==="up"){o.upN++; if(hi)o.upHi++;} else {o.resetN++; if(hi)o.resetHi++;} };
   const blank=()=>({keepN:0,keepHi:0,upN:0,upHi:0,resetN:0,resetHi:0});
@@ -3704,9 +3705,13 @@ function keepUpLearn(srAll, store, targetDate){
       const K=Math.max(6,Math.ceil(scored.length*0.30));
       scored.forEach((s,idx)=>{ if(s.hi){ btHiTotal++; if(idx<K)btCaught++; else { btMissed++; (s.sig.length?s.sig:["前兆なし"]).forEach(k=>missSig[k]=(missSig[k]||0)+1); } } });
     }
+    const _wd=WD[new Date(D+"T00:00:00").getDay()];   // この日の曜日
     act.forEach(a=>{ const mno=a.machine_no; const hi=CU.isHi(a);
       const ld=x.lastDay[mno]; const prevState = !ld?"reset":(CU.isHi(ld)?"keep":"up");
       const {F:feats,mname,streak,tail}=inj4Feats(mno,CU,x);
+      // 曜日×機種・機種別の高設定率（曜日でその機種が強い/弱いか）
+      if(mname){ (wmStat[_wd]=wmStat[_wd]||{}); const w=(wmStat[_wd][mname]=wmStat[_wd][mname]||{n:0,hi:0}); w.n++; if(hi)w.hi++;
+        const m=(machHiRate[mname]=machHiRate[mname]||{n:0,hi:0}); m.n++; if(hi)m.hi++; }
       feats.forEach(k=>{ bump(F[k]=F[k]||blank(),prevState,hi); });
       // 日付と末尾の一致
       if(tail===x.domTail){ dateTail.matchN++; if(hi)dateTail.matchHi++; if(prevState==="keep"){dateTail.keepN++; if(hi)dateTail.keepHi++;} else if(prevState==="up"){dateTail.upN++; if(hi)dateTail.upHi++;} }
@@ -3742,7 +3747,7 @@ function keepUpLearn(srAll, store, targetDate){
       keepRatio:M.keepCnt/md,upRatio:M.upCnt/md,feats:mf}; }
   const cond={}; for(const k in COND){ const f=fin(COND[k]); f.cat=condCat[k]; cond[k]=f; }
   const missRate={}; for(const k in missSig) missRate[k]=btMissed?missSig[k]/btMissed:0;
-  return {feats,combo,byMachine,cond,upDays,keepDays,dateTail,rotNext,narabi,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass,
+  return {feats,combo,byMachine,cond,upDays,keepDays,dateTail,rotNext,narabi,wmStat,machHiRate,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass,
     btHiTotal,btCaught,btMissed,missSig,missRate};
 }
 // 本日（最新営業日）の投入タイプを推定（明日の予想にバイアスをかける）
@@ -3840,6 +3845,12 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     // 点数テーブルで keep/up/reset を採点（特徴量スコア化×信頼度補正×学習補正＋複合ボーナス）
     const kE=kuScore(F,mname,learned,LP,"keep"), uE=kuScore(F,mname,learned,LP,"up"), rE=kuScore(F,mname,learned,LP,"reset");
     let keepScore=kE.score, upScore=uE.score, resetScore=rE.score;
+    // ★曜日×機種の強弱：予想日の曜日にその機種が強い/弱いかで加点・減点（点数とクセに反映）
+    let wmBonus=0, wmRate=null, wmDiff=null;
+    { const wo=learned.wmStat&&learned.wmStat[x.nextWd]&&learned.wmStat[x.nextWd][mname]; const mo=learned.machHiRate&&learned.machHiRate[mname];
+      if(wo&&wo.n>=4&&mo&&mo.n>=8){ wmRate=wo.hi/wo.n; const mr=mo.hi/mo.n; wmDiff=wmRate-mr;
+        wmBonus=Math.max(-8,Math.min(10,Math.round(wmDiff*45)));
+        keepScore=Math.max(0,Math.min(100,keepScore+wmBonus)); upScore=Math.max(0,Math.min(100,upScore+wmBonus)); resetScore=Math.max(0,Math.min(100,resetScore+wmBonus)); } }
     // ★状況ベース点（recall校正）：この店が「その不発日数/連続据え置き日数/新規」で実際どれだけ投入するか
     // 新規投入(68%)・不発明け台を取りこぼさないよう、実投入率を点数として直接加える
     if(streak>=1 && learned.upDays){ const b=Math.min(streak,8), u=learned.upDays[b];
@@ -3884,6 +3895,8 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     // 根拠：点数付き（例 前日据え置き +10）
     const reasons = sideWhy.slice(0,6).map(w=>w.label+" "+(w.pts>=0?"+":"")+w.pts);
     if(rescueHits) reasons.unshift("🔧取りこぼし救済（"+rescueWhy.join("・")+"）");
+    // 曜日×機種の強弱をクセに追加
+    if(wmDiff!=null && Math.abs(wmBonus)>=2){ reasons.push(x.nextWd+"曜は"+mname+"が"+(wmDiff>=0?"強い":"弱い")+"（"+Math.round(wmRate*100)+"%）"+(wmBonus>=0?"+":"")+wmBonus); }
     // この台の過去の設定4/5/6回数 ＋ 期待設定（店全体・イベント日の分布を事前分布に合成）
     let s4=0,s5=0,s6=0; hist.forEach(r=>{ const e=estimateSetting(r); if(e){ if(e.setting===4)s4++; else if(e.setting===5)s5++; else if(e.setting===6)s6++; } });
     const sw=Sdist.n||1, prW=4; let n4=(Sdist.s4/sw)*prW+s4, n5=(Sdist.s5/sw)*prW+s5, n6=(Sdist.s6/sw)*prW+s6;
@@ -3915,7 +3928,19 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     // 高設定が入る確率ベースの得点（0-100）：過去のクセから入る確率が高いほど高得点。
     // 状況スコア(total)と経験的な入る確率(expRate×140%)の高い方を採用し、強い手がかりを素直に高得点化。
     const hiScore = Math.max(0,Math.min(100, Math.round(Math.max(total, expRate*140))));
-    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiScore,hiExp,expRate,expWhy,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
+    // ★各台のコメント（このクセがあるので入りやすい等を言葉で）
+    const cmt=[];
+    if(side==="keep"){ cmt.push("前日高設定の据え置き候補（"+keepRun+"日目）"); if(expRate>=0.5)cmt.push(expWhy+Math.round(expRate*100)+"%と高く継続濃厚"); else if(expRate>=0.35)cmt.push(expWhy+Math.round(expRate*100)+"%"); }
+    else if(side==="up"){ cmt.push("不発"+streak+"日の上げ候補"); if(expRate>=0.3)cmt.push(streak+"日不発後の上げ率"+Math.round(expRate*100)+"%"); }
+    else { cmt.push("前日データなしの新規投入候補"); }
+    const topPos=sideWhy.filter(w=>w.pts>0)[0]; if(topPos)cmt.push("主因は"+topPos.label.replace(/〔機種〕/,"(機種別)"));
+    if(wmDiff!=null && wmBonus>=2)cmt.push(x.nextWd+"曜は"+mname+"が強い("+Math.round(wmRate*100)+"%)ので入りやすい");
+    else if(wmDiff!=null && wmBonus<=-2)cmt.push(x.nextWd+"曜は"+mname+"が弱い("+Math.round(wmRate*100)+"%)ので割引");
+    if(nbHi)cmt.push("隣が前日高設定（並び投入の流れ）");
+    if(rescueHits)cmt.push("過去取りこぼした手がかりに一致＝見逃し注意");
+    const concl = hiScore>=70?"→ かなり入りやすい・狙い目":hiScore>=55?"→ 入りやすい":hiScore>=40?"→ そこそこ期待":hiScore>=25?"→ 期待薄":"→ 見送り寄り";
+    const comment = cmt.join("／")+" "+concl;
+    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiScore,hiExp,expRate,expWhy,verdict,side,reasons,comment,wmRate,wmDiff,wmBonus,matchCount,matchStrength,comboHits,machHits,rescueHits,
       prevState,prevHi,streak,keepRun,keptData,missData,prevComb,prevBig,prevReg,prevTot,nbHi,nbRate,
       s4,s5,s6,e4,e5,e6,honmei,aim:aimInfo(hist),days:hist.length,avgGap,
       score:total, mark:verdict, sig:sig.slice(), pros:reasons.slice(), cons:[],
@@ -4442,6 +4467,8 @@ function renderInjection5Inner(){
       else { h+="<div style='margin-top:3px'>▶ <b>新規投入（前日データなし）</b></div>"; }
       // 設定期待
       h+="<div style='margin-top:3px'>🎯 <b>設定期待</b>：設定4 <b>"+pc(o.e4)+"</b>／設定5 <b>"+pc(o.e5)+"</b>／設定6 <b>"+pc(o.e6)+"</b>（過去 設定4:"+o.s4+"回 5:"+o.s5+"回 6:"+o.s6+"回）</div>";
+      // 台コメント（言葉での評価）
+      if(o.comment) h+="<div style='margin-top:3px;background:#fffbeb;border-radius:4px;padding:3px 6px'>💬 <b>コメント</b>："+o.comment+"</div>";
       // クセ全明記
       h+="<div style='margin-top:3px'>📋 <b>クセ・根拠</b>：<br>"+(o.reasons.length?o.reasons.map(s=>"・"+s).join("<br>"):"・該当クセ少")+"</div>";
       h+="</div>";
