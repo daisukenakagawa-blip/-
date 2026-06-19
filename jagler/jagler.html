@@ -4458,7 +4458,7 @@ function renderEngineCompareInner(){
   el.innerHTML="<p class='muted'>計算中…（全エンジンを実測しています。少しお待ちください）</p>";
   const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
   const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
-  const W=Math.min(15,btDays()); const start=Math.max(1,dates.length-W);
+  const W=btDays(); const start=Math.max(1,dates.length-W);   // 集めたデータ全部（バックテスト期間ぶん。既定90日＝通常は全データ）
   // 学習が要るエンジンは窓全体で一度だけ学習し各日に使い回す（相対比較用）
   let FS=null, KU=null, ML=null;
   try{ FS=injectionBacktest4(srAll,store,targetDate).featStats; }catch(e){}
