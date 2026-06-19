@@ -4327,6 +4327,42 @@ function renderInjection5Inner(){
   const TH=managerThought(KU,KR,targetDate,eventDay,evLabel);
   h+="<div class='note' style='background:#0f172a;color:#e2e8f0;border-color:#334155'><div style='font-size:15px;font-weight:bold;margin-bottom:6px'>🧠 店長思考（今日どこに設定を入れるか）</div>"+
     TH.map(t=>{ const m=t.match(/^【(.+?)】(.*)$/); return m?"<div style='margin:5px 0'><b style='color:#fbbf24'>"+m[1]+"</b>：<span>"+m[2]+"</span></div>":"<div>"+t+"</div>"; }).join("")+"</div>";
+
+  // ===== 曜日別×機種別 高設定率 ／ イベント日の機種・台別 =====
+  { const sr=srAll.filter(r=>r.date<targetDate); const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+    const rate=o=>o.n?Math.round(o.hi/o.n*100):0; const rc=v=>v>=40?"#16a34a":v>=30?"#ca8a04":"#777";
+    // 曜日×機種
+    const wm={}, machSet={};
+    sr.forEach(r=>{ const wd=WD[new Date(r.date+"T00:00:00").getDay()]; const mn=r.machine_name; if(!mn)return; machSet[mn]=(machSet[mn]||0)+1;
+      const o=((wm[wd]=wm[wd]||{})[mn]=wm[wd][mn]||{n:0,hi:0}); o.n++; if(isHi(r))o.hi++; });
+    const machs=Object.keys(machSet).sort((a,b)=>machSet[b]-machSet[a]);
+    if(machs.length){ h+="<details class='note' open style='background:#f0f9ff;border-color:#38bdf8'><summary><b>📅 曜日別 × 機種別 高設定率（どの曜日にどの機種が強いか）</b></summary>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>曜日</th>"+machs.map(m=>"<th>"+m+"</th>").join("")+"<th>その曜日の最強</th></tr>"+
+      WD_ORDER.map(wd=>{ const row=wm[wd]||{}; let best=null;
+        const cells=machs.map(m=>{ const o=row[m]; if(!o||o.n<3)return "<td class='muted'>-</td>"; const rt=rate(o); if(!best||rt>best.rt)best={m,rt,n:o.n};
+          return "<td style='color:"+rc(rt)+";font-weight:bold'>"+rt+"%<br><span class='muted' style='font-size:10px'>"+o.hi+"/"+o.n+"</span></td>"; }).join("");
+        return "<tr><td style='font-weight:bold'>"+wd+"曜</td>"+cells+"<td style='font-weight:bold;color:#1a7f37'>"+(best?best.m+" "+best.rt+"%":"-")+"</td></tr>"; }).join("")+
+      "</table></div><p class='muted' style='font-size:12px'>各セル＝その曜日・その機種の高設定率（高設定数/総数）。3件未満は「-」。右端がその曜日に最も強かった機種。</p></details>"; }
+    // イベント日
+    const ev=sr.filter(r=>isEventDate(r.date,store)); const evDays=[...new Set(ev.map(r=>r.date))].length;
+    if(ev.length>=5){ const evMach={}, evNo={};
+      ev.forEach(r=>{ const a=evMach[r.machine_name]=evMach[r.machine_name]||{n:0,hi:0}; a.n++; if(isHi(r))a.hi++;
+        const b=evNo[r.machine_no]=evNo[r.machine_no]||{n:0,hi:0,mname:r.machine_name}; b.n++; if(isHi(r))b.hi++; });
+      const em=Object.entries(evMach).filter(e=>e[1].n>=3).sort((a,b)=>rate(b[1])-rate(a[1]));
+      const en=Object.entries(evNo).filter(e=>e[1].n>=3).sort((a,b)=>rate(b[1])-rate(a[1])).slice(0,12);
+      h+="<details class='note' open style='background:#fdf2f8;border-color:#ec4899'><summary><b>🎉 イベント日に強かった 機種・台（過去のイベント"+evDays+"日分）</b></summary>"+
+        "<div class='row' style='gap:10px'><div style='flex:1;min-width:240px'><div style='font-weight:bold;margin:4px 0'>■ 機種別（イベント日の高設定率）</div>"+
+        "<div class='scroll'><table style='font-size:12px'><tr><th>機種</th><th>高設定率</th><th>件数</th></tr>"+
+        (em.length?em.map(([m,o])=>"<tr><td style='text-align:left'>"+m+"</td><td style='color:"+rc(rate(o))+";font-weight:bold'>"+rate(o)+"%</td><td>"+o.hi+"/"+o.n+"</td></tr>").join(""):"<tr><td colspan='3' class='muted'>データ不足</td></tr>")+
+        "</table></div></div>"+
+        "<div style='flex:1;min-width:240px'><div style='font-weight:bold;margin:4px 0'>■ 台番号別（イベント日に強かった台）</div>"+
+        "<div class='scroll'><table style='font-size:12px'><tr><th>台</th><th>機種</th><th>高設定率</th><th>件数</th></tr>"+
+        (en.length?en.map(([no,o])=>"<tr><td><b>"+no+"</b></td><td style='text-align:left'>"+o.mname+"</td><td style='color:"+rc(rate(o))+";font-weight:bold'>"+rate(o)+"%</td><td>"+o.hi+"/"+o.n+"</td></tr>").join(""):"<tr><td colspan='4' class='muted'>データ不足</td></tr>")+
+        "</table></div></div></div>"+
+        "<p class='muted' style='font-size:12px'>イベント日だけを抽出した集計。3件以上の機種・台のみ。"+(eventDay?"本日はイベント日なので特に重視。":"")+"</p></details>"; }
+    else h+="<div class='note' style='font-size:12px'>🎉 イベント日の統計：イベント日のデータがまだ少なく集計できません（イベント日を登録・蓄積すると表示）。</div>";
+  }
+
   // 機種別 100点 カード
   const byM={}; KR.out.forEach(o=>{(byM[o.mname]=byM[o.mname]||[]).push(o);});
   const mn=Object.keys(byM).sort((a,b)=>Math.max(...byM[b].map(o=>o.hiScore))-Math.max(...byM[a].map(o=>o.hiScore)));
