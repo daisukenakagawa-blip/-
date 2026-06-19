@@ -27,10 +27,6 @@ PUBLISH_MODE = "draft"
 # 例: "2026-07-01 19:00"
 SCHEDULE_AT = ""
 
-# 投稿が終わったら LINE に通知する(環境変数 LINE_CHANNEL_ACCESS_TOKEN が必要)
-# 未設定なら自動でスキップします。
-NOTIFY_LINE = True
-
 # 1回の実行で投稿する最大本数(連投しすぎない安全弁)
 MAX_POSTS_PER_RUN = 3
 # 投稿と投稿の間隔(秒)。短時間の連続操作を避ける
