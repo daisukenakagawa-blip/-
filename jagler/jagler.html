@@ -4746,19 +4746,19 @@ function renderInjection6Inner(){
   // 据え置き中／不発中の各日データ（BIG/バケ(REG)/合算/差枚）
   const sabeStr=v=>v==null?"-":(v>=0?"+":"")+v;
   const dataTbl6=(o)=>{ if(o.side==="keep"){ const a=o.keptData||[]; if(!a.length)return "<span class='muted'>据え置き"+o.keepRun+"日目</span>";
-      return "<b>据え置き"+o.keepRun+"日目</b>（据え置かれた分）<table style='font-size:10px;margin-top:1px'><tr><th>日</th><th>設定</th><th>BIG</th><th>バケ</th><th>合算</th><th>差枚</th></tr>"+
-        a.map(d=>"<tr><td>"+d.date.slice(5)+"</td><td>"+(d.sete||"-")+"</td><td>1/"+(d.big?Math.round(d.big):"-")+"</td><td>1/"+(d.reg?Math.round(d.reg):"-")+"</td><td>1/"+(d.comb?Math.round(d.comb):"-")+"</td><td>"+sabeStr(d.sabe)+"</td></tr>").join("")+"</table>"; }
+      return "<b>据え置き"+o.keepRun+"日目</b>（据え置かれた分）<table style='font-size:10px;margin-top:1px'><tr><th>日</th><th>設定</th><th>BIG</th><th>バケ</th><th>合算</th><th>総回転</th><th>差枚</th></tr>"+
+        a.map(d=>"<tr><td>"+d.date.slice(5)+"</td><td>"+(d.sete||"-")+"</td><td>1/"+(d.big?Math.round(d.big):"-")+"</td><td>1/"+(d.reg?Math.round(d.reg):"-")+"</td><td>1/"+(d.comb?Math.round(d.comb):"-")+"</td><td><b>"+(d.tot?Math.round(d.tot)+"G":"-")+"</b></td><td>"+sabeStr(d.sabe)+"</td></tr>").join("")+"</table>"; }
     if(o.side==="up"){ const a=o.missData||[]; if(!a.length)return "<span class='muted'>不発"+o.streak+"日</span>";
-      return "<b>不発"+o.streak+"日</b>（不発分）<table style='font-size:10px;margin-top:1px'><tr><th>日</th><th>設定</th><th>BIG</th><th>バケ</th><th>合算</th><th>差枚</th></tr>"+
-        a.map(d=>"<tr><td>"+d.date.slice(5)+"</td><td>"+(d.sete||"-")+"</td><td>1/"+(d.big?Math.round(d.big):"-")+"</td><td>1/"+(d.reg?Math.round(d.reg):"-")+"</td><td>1/"+(d.comb?Math.round(d.comb):"-")+"</td><td>"+sabeStr(d.sabe)+"</td></tr>").join("")+"</table>"; }
+      return "<b>不発"+o.streak+"日</b>（不発分）<table style='font-size:10px;margin-top:1px'><tr><th>日</th><th>設定</th><th>BIG</th><th>バケ</th><th>合算</th><th>総回転</th><th>差枚</th></tr>"+
+        a.map(d=>"<tr><td>"+d.date.slice(5)+"</td><td>"+(d.sete||"-")+"</td><td>1/"+(d.big?Math.round(d.big):"-")+"</td><td>1/"+(d.reg?Math.round(d.reg):"-")+"</td><td>1/"+(d.comb?Math.round(d.comb):"-")+"</td><td><b>"+(d.tot?Math.round(d.tot)+"G":"-")+"</b></td><td>"+sabeStr(d.sabe)+"</td></tr>").join("")+"</table>"; }
     return "<span style='color:#7c3aed'>新規投入（前日なし）</span>"; };
   for(const mname of mn){ const list=byM[mname].slice().sort((a,b)=>sc6(b)-sc6(a));
-    h+="<h4 style='margin:10px 0 3px'>🎰 "+mname+"</h4><div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>総合</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>機種平均</th><th>平均差</th><th>評価</th><th>判定</th><th>据え置き中／不発中データ<br>(設定/BIG/バケ/合算/差枚)</th></tr>"+
+    h+="<h4 style='margin:10px 0 3px'>🎰 "+mname+"</h4><div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>総合</th><th>据え置き中／不発中データ<br>(設定/BIG/バケ/合算/総回転/差枚)</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>機種平均</th><th>平均差</th><th>評価</th><th>判定</th></tr>"+
       list.map((o,i)=>"<tr><td>"+(i+1)+"</td><td><b>"+o.mno+"</b></td>"+
         "<td style='background:"+heBg(sc6(o))+";font-weight:bold;font-size:14px'>"+sc6(o)+"</td>"+
+        "<td style='text-align:left;font-size:11px'>"+dataTbl6(o)+"</td>"+
         "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td><td style='color:#7c3aed'>"+o.resetScore+"</td>"+
-        "<td>"+o.machAvg+"</td><td style='font-weight:bold;color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td><td style='white-space:nowrap'>"+o.verdict+"</td>"+
-        "<td style='text-align:left;font-size:11px'>"+dataTbl6(o)+"</td></tr>").join("")+
+        "<td>"+o.machAvg+"</td><td style='font-weight:bold;color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td><td style='white-space:nowrap'>"+o.verdict+"</td></tr>").join("")+
       "</table></div>"; }
   el.innerHTML=h;
 }
