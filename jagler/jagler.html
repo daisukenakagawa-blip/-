@@ -3878,7 +3878,10 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     else if(prevState==="up"){ const ud=learned.upDays[Math.min(streak,8)]; if(ud&&ud.n>=4){ expRate=ud.hi/ud.n; expWhy=streak+"日不発後の上げ率"; } }
     else { const nt=learned.keepCnt+learned.upCnt+learned.resetCnt; expRate = nt?learned.resetCnt/nt*overall*3:overall; expWhy="新規投入の発生率"; }
     expRate=Math.max(0,Math.min(1,expRate));
-    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiExp,expRate,expWhy,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
+    // 高設定が入る確率ベースの得点（0-100）：過去のクセから入る確率が高いほど高得点。
+    // 状況スコア(total)と経験的な入る確率(expRate×140%)の高い方を採用し、強い手がかりを素直に高得点化。
+    const hiScore = Math.max(0,Math.min(100, Math.round(Math.max(total, expRate*140))));
+    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiScore,hiExp,expRate,expWhy,verdict,side,reasons,matchCount,matchStrength,comboHits,machHits,rescueHits,
       prevState,prevHi,streak,keepRun,keptData,missData,prevComb,prevBig,prevReg,prevTot,nbHi,nbRate,
       s4,s5,s6,e4,e5,e6,honmei,aim:aimInfo(hist),days:hist.length,avgGap,
       score:total, mark:verdict, sig:sig.slice(), pros:reasons.slice(), cons:[],
@@ -4291,11 +4294,11 @@ function managerThought(KU,KR,targetDate,eventDay,evLabel){
     if(ms.length){ const kk=ms.slice().sort((a,b)=>b[1].keepRatio-a[1].keepRatio)[0]; const uu=ms.slice().sort((a,b)=>b[1].upRatio-a[1].upRatio)[0];
       T.push("【機種の傾向】"+kk[0]+"は据え置き寄り（据え置き"+pc(kk[1].keepRatio)+"）、"+uu[0]+"は上げ寄り（上げ"+pc(uu[1].upRatio)+"）。機種で狙い方を変える。"); } }
   // 結論：具体的な狙い台
-  const keeps=KR.out.filter(o=>o.side==="keep").slice(0,3).map(o=>"台"+o.mno+"("+o.total+"点)");
-  const ups=KR.out.filter(o=>o.side==="up"||o.side==="reset").slice(0,3).map(o=>"台"+o.mno+"("+o.total+"点)");
-  const top=KR.out.slice().sort((a,b)=>b.total-a.total)[0];
+  const keeps=KR.out.filter(o=>o.side==="keep").sort((a,b)=>b.hiScore-a.hiScore).slice(0,3).map(o=>"台"+o.mno+"("+o.hiScore+"点)");
+  const ups=KR.out.filter(o=>o.side==="up"||o.side==="reset").sort((a,b)=>b.hiScore-a.hiScore).slice(0,3).map(o=>"台"+o.mno+"("+o.hiScore+"点)");
+  const top=KR.out.slice().sort((a,b)=>b.hiScore-a.hiScore)[0];
   T.push("【結論：今日の狙い】据え置き狙いなら "+(keeps.length?keeps.join("・"):"該当薄")+"。上げ／新規狙いなら "+(ups.length?ups.join("・"):"該当薄")+"。"+
-    (top?"総合本命は 台"+top.mno+"（"+top.mname+"・"+top.total+"点・"+top.verdict+"／本命設定"+top.honmei+"）。":""));
+    (top?"高設定が入りそうな本命は 台"+top.mno+"（"+top.mname+"・"+top.hiScore+"点・"+top.verdict+"／本命設定"+top.honmei+"）。":""));
   return T;
 }
 function renderInjection5Inner(){
@@ -4321,21 +4324,22 @@ function renderInjection5Inner(){
     TH.map(t=>{ const m=t.match(/^【(.+?)】(.*)$/); return m?"<div style='margin:5px 0'><b style='color:#fbbf24'>"+m[1]+"</b>：<span>"+m[2]+"</span></div>":"<div>"+t+"</div>"; }).join("")+"</div>";
   // 機種別 100点 カード
   const byM={}; KR.out.forEach(o=>{(byM[o.mname]=byM[o.mname]||[]).push(o);});
-  const mn=Object.keys(byM).sort((a,b)=>Math.max(...byM[b].map(o=>o.total))-Math.max(...byM[a].map(o=>o.total)));
+  const mn=Object.keys(byM).sort((a,b)=>Math.max(...byM[b].map(o=>o.hiScore))-Math.max(...byM[a].map(o=>o.hiScore)));
   const sideTag=o=>o.side==="keep"?"<span style='color:#1a7f37;font-weight:bold'>🟢 据え置き狙い</span>":o.side==="up"?"<span style='color:#b35900;font-weight:bold'>🟠 上げ狙い</span>":o.side==="reset"?"<span style='color:#7c3aed;font-weight:bold'>🟣 新規投入</span>":"<span class='muted'>様子見</span>";
   const dataTbl=(arr,label)=>{ if(!arr||!arr.length)return ""; return "<div style='font-size:11px;margin-top:2px'>"+label+"：<table style='font-size:10px'><tr><th>日</th><th>設定</th><th>合算</th><th>BIG</th><th>バケ</th><th>回転</th></tr>"+
     arr.map(d=>"<tr><td>"+d.date.slice(5)+"</td><td>"+(d.sete||"-")+"</td><td>1/"+(d.comb?Math.round(d.comb):"-")+"</td><td>1/"+(d.big?Math.round(d.big):"-")+"</td><td>1/"+(d.reg?Math.round(d.reg):"-")+"</td><td>"+(d.tot?Math.round(d.tot)+"G":"-")+"</td></tr>").join("")+"</table></div>"; };
   const scoreCol=v=>v>=75?"#16a34a":v>=60?"#65a30d":v>=45?"#ca8a04":v>=30?"#ea580c":"#dc2626";
-  for(const mname of mn){ const list=byM[mname].slice().sort((a,b)=>b.total-a.total);
-    const mst=KU.byMachine[mname]; const mx=Math.max(...list.map(o=>o.total));
+  for(const mname of mn){ const list=byM[mname].slice().sort((a,b)=>b.hiScore-a.hiScore);
+    const mst=KU.byMachine[mname]; const mx=Math.max(...list.map(o=>o.hiScore));
     h+="<h3 style='margin:16px 0 4px;background:#1e3a8a;color:#fff;padding:7px 10px;border-radius:6px'>🎰 "+mname+
       " <span style='font-weight:normal;font-size:12px'>（機種最高 "+mx+"点"+(mst?" ／ 据え置き率"+Math.round(mst.keepRatio*100)+"%・上げ率"+Math.round(mst.upRatio*100)+"%":"")+"）</span></h3>";
     // 上位台をカード表示（最大8台）
     list.slice(0,8).forEach(o=>{
       const hc={4:"#e6f8d8",5:"#b6f5a0",6:"#7CFC00"}[o.honmei]||"#eee";
-      h+="<div class='note' style='border-color:"+scoreCol(o.total)+";font-size:12px;margin:6px 0'>"+
+      h+="<div class='note' style='border-color:"+scoreCol(o.hiScore)+";font-size:12px;margin:6px 0'>"+
         "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'>"+
-          "<span style='font-size:18px;font-weight:bold;color:"+scoreCol(o.total)+"'>"+o.total+"<span style='font-size:11px'>/100</span></span>"+
+          "<span style='font-size:18px;font-weight:bold;color:"+scoreCol(o.hiScore)+"'>"+o.hiScore+"<span style='font-size:11px'>/100</span></span>"+
+          "<span class='muted' style='font-size:10px'>高設定が入る確率ベース</span>"+
           "<b style='font-size:15px'>台"+o.mno+"</b>"+sideTag(o)+"<span style='font-weight:bold'>"+o.verdict+"</span>"+
           "<span style='background:"+hc+";padding:1px 6px;border-radius:4px'>本命 設定"+o.honmei+"</span></div>";
       // 狙い方＋データ
