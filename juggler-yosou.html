@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎰 ジャグラー 設定推定 & 展開予想</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+    background: #11161f;
+    color: #eef2f7;
+    line-height: 1.6;
+    padding-bottom: 60px;
+  }
+  header {
+    background: linear-gradient(135deg, #c41e2a 0%, #f7b500 100%);
+    color: #fff;
+    padding: 22px 16px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,.4);
+  }
+  header h1 { font-size: 1.5rem; text-shadow: 1px 1px 3px rgba(0,0,0,.4); }
+  header p { font-size: .8rem; opacity: .95; margin-top: 4px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 14px; }
+  .card {
+    background: #1b2330;
+    border: 1px solid #2a3445;
+    border-radius: 12px;
+    padding: 18px;
+    margin-top: 18px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.3);
+  }
+  .card h2 {
+    font-size: 1.05rem; color: #f7b500; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .step { font-size: .75rem; background:#c41e2a; color:#fff; border-radius:20px; padding:2px 9px; }
+  label { display: block; font-size: .85rem; margin: 10px 0 4px; color:#aab6c7; }
+  input[type=number], select {
+    width: 100%; padding: 10px 12px; font-size: 1rem;
+    background:#0e1420; color:#eef2f7; border:1px solid #344056; border-radius:8px;
+  }
+  input:focus, select:focus { outline:none; border-color:#f7b500; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .hint { font-size:.72rem; color:#7c8aa0; margin-top:4px; }
+  button.primary {
+    width:100%; margin-top:18px; padding:14px; font-size:1.05rem; font-weight:bold;
+    background:linear-gradient(135deg,#c41e2a,#f7b500); color:#fff; border:none;
+    border-radius:10px; cursor:pointer; transition:transform .08s;
+  }
+  button.primary:active { transform:scale(.98); }
+  #photoPreview { max-width:100%; border-radius:8px; margin-top:10px; display:none; border:1px solid #344056; }
+  .results { display:none; }
+  .stat-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #2a3445; font-size:.9rem; }
+  .stat-row span:last-child { font-weight:bold; color:#fff; }
+  .bar-wrap { margin:8px 0; }
+  .bar-label { display:flex; justify-content:space-between; font-size:.82rem; margin-bottom:3px; }
+  .bar-track { background:#0e1420; border-radius:6px; height:22px; overflow:hidden; }
+  .bar-fill { height:100%; background:linear-gradient(90deg,#2a7,#5d4); display:flex; align-items:center; padding-left:8px; font-size:.72rem; color:#06210f; font-weight:bold; transition:width .5s; }
+  canvas { width:100%; background:#0e1420; border-radius:8px; margin-top:8px; }
+  .verdict { font-size:1.05rem; font-weight:bold; padding:12px; border-radius:8px; margin-top:10px; text-align:center; }
+  .v-good { background:#123a23; color:#5de08a; border:1px solid #2a7; }
+  .v-bad  { background:#3a1212; color:#ff8a8a; border:1px solid #a44; }
+  .v-mid  { background:#3a3312; color:#f7d36b; border:1px solid #a98; }
+  .disclaimer { font-size:.74rem; color:#8290a4; margin-top:18px; background:#161d28; padding:12px; border-radius:8px; border:1px solid #2a3445; }
+  .legend { font-size:.74rem; color:#9fb; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap; }
+  .legend span::before { content:'■ '; }
+  .lg-band::before { color:#3a6ea5; } .lg-med::before { color:#f7b500; } .lg-now::before { color:#fff; }
+  details summary { cursor:pointer; color:#f7b500; font-size:.85rem; }
+  table.spec { width:100%; font-size:.75rem; margin-top:8px; border-collapse:collapse; }
+  table.spec th, table.spec td { border:1px solid #2a3445; padding:4px 6px; text-align:center; }
+  table.spec th { background:#222c3b; color:#f7b500; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎰 ジャグラー 設定推定 &amp; 展開予想</h1>
+  <p>データから「今の設定」を推定し、この先の差枚の伸びを確率で予想します</p>
+</header>
+
+<div class="wrap">
+
+  <div class="card" style="border-color:#2aa7c4;">
+    <h2><span class="step" style="background:#1d6fa5;">CSV</span> 📥 CSVから一括取り込み（任意）</h2>
+    <label>台データCSV（取り込みツール juggler-data-fetcher の出力）</label>
+    <input type="file" id="csv" accept=".csv,text/csv">
+    <div id="csvPick" style="display:none;margin-top:12px;">
+      <label>台を選ぶ（選ぶと自動入力＆そのまま予想します）</label>
+      <select id="csvRows"></select>
+      <p id="csvStatus" class="hint" style="margin-top:6px;"></p>
+    </div>
+    <p class="hint">CSVを読み込むと台一覧から選ぶだけでG数・BIG・REG・差枚（機種があれば機種も）が自動入力されます。手入力・写真は不要。CSVが無い場合は下のSTEP1〜2へ。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">STEP 1</span> データの写真（任意）</h2>
+    <label>データカウンター／スランプグラフの写真</label>
+    <input type="file" id="photo" accept="image/*">
+    <img id="photoPreview" alt="preview">
+    <button class="primary" id="ocr" style="margin-top:12px;background:linear-gradient(135deg,#1d6fa5,#2aa7c4);">🔍 写真から数字を自動読み取り（ベータ）</button>
+    <p id="ocrStatus" class="hint" style="margin-top:8px;"></p>
+    <p class="hint">数字カウンター（総回転数・BB/BIG・RB/REG）がはっきり写った写真ほど精度が上がります。<strong>読み取り後は必ず下の入力欄で値を確認・修正</strong>してください（7セグ表示は誤読しやすいです）。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">STEP 2</span> 数字を入力</h2>
+    <label>機種</label>
+    <select id="machine"></select>
+
+    <label>総回転数（G数）</label>
+    <input type="number" id="games" placeholder="例: 4500" min="1">
+
+    <div class="grid2">
+      <div>
+        <label>BIG 回数</label>
+        <input type="number" id="big" placeholder="例: 18" min="0">
+      </div>
+      <div>
+        <label>REG（バケ）回数</label>
+        <input type="number" id="reg" placeholder="例: 16" min="0">
+      </div>
+    </div>
+
+    <details style="margin-top:12px;">
+      <summary>＋ ぶどう確率も使って精度を上げる（任意・上級）</summary>
+      <label>ぶどう（ブドウ）成立回数</label>
+      <input type="number" id="grape" placeholder="例: 760（カウントしていれば）" min="0">
+      <p class="hint">ぶどうは設定差があり、長時間まわすほど強力な判別材料になります。カウンターには出ないので自分で数えた回数を入れてください。空欄ならBIG/REGのみで推定します。</p>
+    </details>
+
+    <details style="margin-top:12px;" id="cherryBox">
+      <summary>＋ チェリー重複も使う（チェリービッグ／チェリーバケ・対応機種のみ）</summary>
+      <p id="cherryNote" class="hint" style="margin-top:6px;"></p>
+      <div id="cherryInputs">
+        <div class="grid2">
+          <div><label>チェリービッグ回数<br><span class="hint">角チェリー＋BIG</span></label><input type="number" id="cbig" min="0" placeholder="例: 6"></div>
+          <div><label>チェリーバケ回数<br><span class="hint">角チェリー＋REG</span></label><input type="number" id="creg" min="0" placeholder="例: 9"></div>
+        </div>
+        <p class="hint">角チェリー成立時に光った（ボーナス重複した）回数を数えて入力。チェリーバケ（重複REG）は設定差が大きく強力な判別材料です。
+        ※「中段（レア）チェリー」は全機種・全設定共通のBIG確定プレミアで<strong>設定差なし＝判別には使えません</strong>。</p>
+      </div>
+    </details>
+
+    <label>現在の差枚数（任意・分かれば）</label>
+    <input type="number" id="diff" placeholder="例: 1200（不明なら空欄）">
+
+    <label>この先の予想回転数</label>
+    <input type="number" id="future" value="3000" min="100" step="100">
+    <p class="hint">残り何回転ぶん先まで予想するか（例: 閉店まで3000G）</p>
+
+    <button class="primary" id="run">📈 設定推定 &amp; 展開を予想する</button>
+  </div>
+
+  <div class="card results" id="results">
+    <h2><span class="step">STEP 3</span> 推定結果</h2>
+
+    <div id="verdict"></div>
+
+    <h3 style="font-size:.95rem;margin:16px 0 6px;color:#aab6c7;">📊 現在のデータ</h3>
+    <div id="stats"></div>
+
+    <h3 style="font-size:.95rem;margin:18px 0 6px;color:#aab6c7;">🎯 設定の推定確率</h3>
+    <div id="settingBars"></div>
+
+    <h3 style="font-size:.95rem;margin:18px 0 6px;color:#aab6c7;">🔮 この先の差枚 予想グラフ</h3>
+    <canvas id="chart" width="700" height="360"></canvas>
+    <div class="legend">
+      <span class="lg-now">現在地</span>
+      <span class="lg-med">予想中央値</span>
+      <span class="lg-band">80%予想レンジ</span>
+    </div>
+    <div id="projText" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>📋 使用している設定値（タップで表示）／推定の仕組み</summary>
+      <div id="specTable"></div>
+      <p class="hint" style="margin-top:10px;">
+        BIG・REG確率・機械割はメーカー公表値ベース、<strong>ぶどう確率は北電子が非公表のため解析・実戦ベースの推定値</strong>（出典により小数がわずかにブレます）。
+        ネオアイムジャグラーEXはアイムジャグラーEXと同一スペックです。設定推定＝観測したBIG/REG（＋任意でぶどう）回数の
+        起こりやすさ（ポアソン尤度）を設定1〜6で比較し、ベイズで各設定の確率を算出。展開予想＝推定設定の出玉性能で
+        モンテカルロ・シミュレーション（2000回）を行い、中央値と80%レンジを描画します。判断は「グラフの形」ではなく
+        期待機械割（＝1ゲームあたりの期待値）で行います。
+      </p>
+    </details>
+  </div>
+
+  <div class="disclaimer">
+    ⚠️ <strong>大切な注意</strong>：パチスロの各ゲームは統計的に独立で、過去のグラフの形が
+    その後の出方に影響することは<strong>ありません</strong>。「ハマったから出る」「右肩上がりだから続く」は
+    成り立ちません。このツールが行うのは <em>① データから設定を推定し ② その設定なら確率的に
+    どのくらい伸びる／沈む可能性があるか</em> を示すことだけです。結果は確率の目安であり、
+    勝ちを保証するものではありません。遊技は20歳以上・自己責任・余裕資金の範囲で。
+    <br><a href="slump-graph-yosou.html" style="color:#f7b500;font-size:.82rem;">→ スランプグラフの写真から線を読み取って予想するツールはこちら</a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+// ===== 機種別 設定スペック（メーカー公表値ベース）=====
+// 各設定: BIG確率(分母), REG確率(分母), grape=ぶどう確率(分母), 機械割(%)
+const MACHINES = {
+  im: {
+    name: 'アイムジャグラーEX（6号機）',
+    settings: [
+      {set:1, big:273.1, reg:439.8, grape:6.02, payout:97.0},
+      {set:2, big:269.7, reg:399.6, grape:6.02, payout:98.0},
+      {set:3, big:269.7, reg:331.0, grape:6.02, payout:99.5},
+      {set:4, big:259.0, reg:315.1, grape:6.02, payout:101.1},
+      {set:5, big:259.0, reg:255.0, grape:6.02, payout:103.3},
+      {set:6, big:255.0, reg:255.0, grape:5.78, payout:105.5},
+    ]
+  },
+  neoim: {
+    name: 'ネオアイムジャグラーEX（6号機・アイムEXと同一スペック）',
+    settings: [
+      {set:1, big:273.1, reg:439.8, grape:6.02, payout:97.0},
+      {set:2, big:269.7, reg:399.6, grape:6.02, payout:98.0},
+      {set:3, big:269.7, reg:331.0, grape:6.02, payout:99.5},
+      {set:4, big:259.0, reg:315.1, grape:6.02, payout:101.1},
+      {set:5, big:259.0, reg:255.0, grape:6.02, payout:103.3},
+      {set:6, big:255.0, reg:255.0, grape:5.78, payout:105.5},
+    ]
+  },
+  my: {
+    name: 'マイジャグラーV（マイジャグ5・6号機）',
+    settings: [
+      {set:1, big:273.1, reg:439.8, grape:5.90, payout:97.0},
+      {set:2, big:270.8, reg:385.5, grape:5.86, payout:98.7},
+      {set:3, big:266.4, reg:336.1, grape:5.84, payout:99.9},
+      {set:4, big:254.0, reg:290.0, grape:5.78, payout:102.8},
+      {set:5, big:240.1, reg:268.6, grape:5.76, payout:105.3},
+      {set:6, big:229.1, reg:229.1, grape:5.66, payout:109.4},
+    ]
+  },
+  funky: {
+    name: 'ファンキージャグラー2（6号機）',
+    settings: [
+      {set:1, big:266.4, reg:439.8, grape:5.94, payout:97.0},
+      {set:2, big:259.0, reg:407.1, grape:5.92, payout:98.5},
+      {set:3, big:256.0, reg:366.1, grape:5.88, payout:99.8},
+      {set:4, big:249.2, reg:322.8, grape:5.83, payout:102.8},
+      {set:5, big:240.1, reg:299.3, grape:5.76, payout:104.3},
+      {set:6, big:219.9, reg:262.1, grape:5.67, payout:109.0},
+    ]
+  },
+  gogo: {
+    name: 'ゴーゴージャグラー3（6号機）',
+    settings: [
+      {set:1, big:259.0, reg:354.2, grape:6.25, payout:97.0},
+      {set:2, big:258.0, reg:330.0, grape:6.20, payout:98.0},
+      {set:3, big:257.0, reg:305.6, grape:6.15, payout:99.9},
+      {set:4, big:254.0, reg:268.8, grape:6.07, payout:102.8},
+      {set:5, big:247.3, reg:247.3, grape:6.00, payout:105.3},
+      {set:6, big:234.9, reg:234.9, grape:5.92, payout:109.4},
+    ]
+  },
+  happy: {
+    name: 'ハッピージャグラーVIII（6号機）',
+    settings: [
+      {set:1, big:287.4, reg:409.6, grape:6.04, payout:96.1},
+      {set:2, big:282.5, reg:364.1, grape:6.02, payout:97.9},
+      {set:3, big:273.1, reg:341.3, grape:5.98, payout:99.9},
+      {set:4, big:264.3, reg:315.1, grape:5.93, payout:102.9},
+      {set:5, big:252.1, reg:287.4, grape:5.85, payout:105.8},
+      {set:6, big:240.9, reg:273.1, grape:5.79, payout:108.4},
+    ]
+  },
+  girls: {
+    name: 'ジャグラーガールズSS（6号機）',
+    settings: [
+      {set:1, big:273.1, reg:381.0, grape:5.98, payout:97.0},
+      {set:2, big:270.8, reg:350.5, grape:5.98, payout:97.9},
+      {set:3, big:260.1, reg:316.6, grape:5.98, payout:99.9},
+      {set:4, big:250.1, reg:281.3, grape:5.98, payout:102.1},
+      {set:5, big:243.6, reg:270.8, grape:5.88, payout:104.0},
+      {set:6, big:226.0, reg:252.1, grape:5.83, payout:107.5},
+    ]
+  },
+  mister: {
+    name: 'ミスタージャグラー（6号機）',
+    settings: [
+      {set:1, big:268.6, reg:374.5, grape:6.30, payout:97.0},
+      {set:2, big:267.5, reg:354.2, grape:6.20, payout:98.0},
+      {set:3, big:260.1, reg:331.0, grape:6.10, payout:99.8},
+      {set:4, big:249.2, reg:291.3, grape:6.00, payout:102.7},
+      {set:5, big:240.9, reg:257.0, grape:5.90, payout:105.5},
+      {set:6, big:237.4, reg:237.4, grape:5.75, payout:107.3},
+    ]
+  },
+  miracle: {
+    name: 'ウルトラミラクルジャグラー（6号機）',
+    settings: [
+      {set:1, big:267.5, reg:425.6, grape:5.93, payout:97.0},
+      {set:2, big:261.1, reg:402.1, grape:5.93, payout:98.9},
+      {set:3, big:256.0, reg:350.5, grape:5.93, payout:101.0},
+      {set:4, big:242.7, reg:322.8, grape:5.93, payout:102.1},
+      {set:5, big:233.2, reg:297.9, grape:5.87, payout:105.0},
+      {set:6, big:216.3, reg:277.7, grape:5.81, payout:108.1},
+    ]
+  }
+};
+
+// ボーナス出玉(差枚への寄与・近似): BIG約240枚, REG約96枚
+const BIG_COIN = 240, REG_COIN = 96, BET = 3;
+
+// チェリー重複の設定別分母[設定1..6]。設定別データが信頼できる機種のみ収録。
+//  cBig=チェリー重複BIG(チェリービッグ), cReg=チェリー重複REG(チェリーバケ)。rel=信頼度。
+//  ※中段(レア)チェリーは全機種 約1/3276.8・設定差なし・BIG確定プレミアのため判別には使えない。
+const CHERRY = {
+  my:     {rel:'解析一致(高)', cBig:[1424,1395,1365,1285,1214,1130], cReg:[1092,1074,1057,1008,862,762]},
+  mister: {rel:'解析一致(高)', cBig:[1680,1680,1524,1394,1285,1236], cReg:[1680,1560,1394,1213,1074,1008]},
+  funky:  {rel:'推定値',       cBig:[1456,1365,1365,1337,1260,1191], cReg:[1424,1394,1285,1149,1110,992]},
+  gogo:   {rel:'推定値(バケは出典分裂)', cBig:[1337,1337,1337,1310,1310,1260], cReg:[1365,1310,1191,1057,964,910]},
+  miracle:{rel:'参考値',       cBig:[1365,1213,1149,1129,1024,936],  cReg:[1638,1638,1337,1337,1191,1110]},
+};
+// アイム/ネオアイム/ハッピー/ガールズは中間設定が非公表のため非対応(捏造しない)。
+
+const $ = id => document.getElementById(id);
+
+// 写真プレビュー
+let photoURL = null;
+$('photo').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (photoURL) URL.revokeObjectURL(photoURL);
+  photoURL = URL.createObjectURL(f);
+  const img = $('photoPreview');
+  img.src = photoURL; img.style.display = 'block';
+  $('ocrStatus').textContent = '';
+});
+
+// ===== OCR：写真からカウンターの数字を自動読み取り =====
+$('ocr').addEventListener('click', async () => {
+  if (!photoURL) { alert('先に写真を選んでください'); return; }
+  if (typeof Tesseract === 'undefined') {
+    $('ocrStatus').innerHTML = '⚠️ OCRライブラリを読み込めませんでした（ネット接続が必要です）。お手数ですが数字は手入力してください。';
+    return;
+  }
+  const btn = $('ocr'); btn.disabled = true;
+  const st = $('ocrStatus');
+  st.textContent = '🔍 読み取り中… 0%';
+  try {
+    const { data } = await Tesseract.recognize(photoURL, 'eng', {
+      logger: m => { if (m.status==='recognizing text') st.textContent = '🔍 読み取り中… '+Math.round(m.progress*100)+'%'; }
+    });
+    const text = data.text || '';
+    const filled = parseCounterText(text);
+    if (filled.length) {
+      st.innerHTML = '✅ 読み取り結果を入力しました（要確認）：<br>' + filled.join(' / ') +
+        '<br><span style="color:#f7d36b">⚠️ 必ず実際の数字と照合してください。</span>';
+    } else {
+      st.innerHTML = '数字をうまく抽出できませんでした。手入力をお願いします。<br><small>OCR生データ: '+
+        (text.replace(/\s+/g,' ').slice(0,120)||'(空)')+'</small>';
+    }
+  } catch (err) {
+    st.textContent = '⚠️ 読み取りに失敗しました。手入力してください。（'+err.message+'）';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// OCRテキストからカウンター数値を推定して各欄に流し込む
+function parseCounterText(text) {
+  const filled = [];
+  const lines = text.split(/\n/);
+  // ラベル付きで拾う（BB/BIG, RB/REG/BAR, G/GAME/総/回転）
+  const grab = (re) => {
+    for (const ln of lines) {
+      const m = ln.match(re);
+      if (m) { const n = parseInt(m[1].replace(/\D/g,'')); if (!isNaN(n)) return n; }
+    }
+    return null;
+  };
+  let big = grab(/\b(?:BB|BIG)\b[^0-9]*([0-9]{1,4})/i);
+  let reg = grab(/\b(?:RB|REG|BAR)\b[^0-9]*([0-9]{1,4})/i);
+  let games = grab(/(?:G(?:AME)?数?|総|回転|START|スタート)[^0-9]*([0-9]{1,3}[, ]?[0-9]{3}|[0-9]{2,5})/i);
+
+  // 全数字を集めてフォールバック推定
+  const nums = (text.match(/[0-9]{1,3}(?:[, ][0-9]{3})*|[0-9]+/g) || [])
+    .map(s => parseInt(s.replace(/[, ]/g,''))).filter(n => !isNaN(n));
+  if (games == null && nums.length) {
+    // 総回転数は通常いちばん大きい数字
+    games = Math.max(...nums);
+  }
+  if ((big == null || reg == null) && nums.length) {
+    // 総回転数を除いた中規模の数字をBIG/REG候補に
+    const cand = nums.filter(n => n !== games && n >= 1 && n < (games||100000)).sort((a,b)=>b-a);
+    if (big == null && cand.length) big = cand[0];
+    if (reg == null && cand.length>1) reg = cand[1];
+  }
+  if (games!=null) { $('games').value = games; filled.push('総G '+games.toLocaleString()); }
+  if (big!=null)   { $('big').value = big;     filled.push('BIG '+big); }
+  if (reg!=null)   { $('reg').value = reg;     filled.push('REG '+reg); }
+  return filled;
+}
+
+function poissonLogPmf(k, lambda) {
+  // log( e^-λ λ^k / k! )  … k! は設定間で定数なので比較には不要だが、表示安定のため簡略化版を使用
+  if (lambda <= 0) return -1e9;
+  let logFact = 0;
+  for (let i = 2; i <= k; i++) logFact += Math.log(i);
+  return -lambda + k * Math.log(lambda) - logFact;
+}
+
+function estimateSettings(G, b, r, settings, grapeCount, cherry) {
+  // cherry = {cBig:[..6], cReg:[..6], cb:チェリービッグ回数 or null, cr:チェリーバケ回数 or null} or null
+  const useCB = cherry && cherry.cb != null && !isNaN(cherry.cb) && cherry.cb <= b;
+  const useCR = cherry && cherry.cr != null && !isNaN(cherry.cr) && cherry.cr <= r;
+  const scores = settings.map((s, i) => {
+    let sc = 0;
+    // BIG: チェリービッグ回数があれば 単独BIG と チェリー重複BIG に分解
+    if (useCB) {
+      const denCB = cherry.cBig[i];
+      const denSB = 1 / (1/s.big - 1/denCB); // 単独BIG分母
+      sc += poissonLogPmf(cherry.cb, G/denCB) + poissonLogPmf(b - cherry.cb, G/denSB);
+    } else {
+      sc += poissonLogPmf(b, G/s.big);
+    }
+    // REG: チェリーバケ回数があれば 単独REG と チェリー重複REG に分解
+    if (useCR) {
+      const denCR = cherry.cReg[i];
+      const denSR = 1 / (1/s.reg - 1/denCR);
+      sc += poissonLogPmf(cherry.cr, G/denCR) + poissonLogPmf(r - cherry.cr, G/denSR);
+    } else {
+      sc += poissonLogPmf(r, G/s.reg);
+    }
+    if (grapeCount != null && !isNaN(grapeCount) && grapeCount > 0) {
+      sc += poissonLogPmf(grapeCount, G/s.grape); // 期待ぶどう回数
+    }
+    return sc;
+  });
+  const mx = Math.max(...scores);
+  const exps = scores.map(s => Math.exp(s - mx));
+  const sum = exps.reduce((a,c)=>a+c,0);
+  return exps.map(e => e / sum); // 各設定の事後確率
+}
+
+// 乱数ヘルパ（二項分布の近似: 正規近似 or 直接）
+function randn() {
+  let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+function binom(n, p) {
+  // n大なら正規近似、小なら直接
+  if (n * p > 30 && n*(1-p) > 30) {
+    return Math.max(0, Math.round(n*p + Math.sqrt(n*p*(1-p))*randn()));
+  }
+  let c = 0;
+  for (let i=0;i<n;i++) if (Math.random() < p) c++;
+  return c;
+}
+
+function simulateFuture(N, posteriors, settings, startDiff) {
+  const SIMS = 2000;
+  const STEPS = 40; // 軌道の分割点
+  const stepG = N / STEPS;
+  // 各サンプル軌道（STEPS+1点）
+  const trajectories = [];
+  for (let s=0; s<SIMS; s++) {
+    // まず事後確率に従って設定を1つ抽選（設定の不確実性も反映）
+    let rnd = Math.random(), idx = 0, acc = 0;
+    for (let i=0;i<posteriors.length;i++){ acc+=posteriors[i]; if(rnd<=acc){idx=i;break;} idx=i; }
+    const st = settings[idx];
+    const pB = 1/st.big, pR = 1/st.reg;
+    // 基礎ゲーム(非ボーナス)の1Gあたり期待差枚を機械割から逆算
+    const expPerG = BET * (st.payout/100 - 1);
+    const basePerG = expPerG - (pB*BIG_COIN + pR*REG_COIN); // ボーナス以外（小役-投入）の純増/G
+    let diff = startDiff;
+    const traj = [diff];
+    for (let k=0;k<STEPS;k++){
+      const nB = binom(Math.round(stepG), pB);
+      const nR = binom(Math.round(stepG), pR);
+      const base = basePerG * stepG + randn()*Math.sqrt(stepG)*1.6; // 基礎部分の小揺れ
+      diff += nB*BIG_COIN + nR*REG_COIN + base;
+      traj.push(diff);
+    }
+    trajectories.push(traj);
+  }
+  // 各ステップで percentile を集計
+  const pcts = {p10:[],p25:[],p50:[],p75:[],p90:[]};
+  for (let k=0;k<=STEPS;k++){
+    const col = trajectories.map(t=>t[k]).sort((a,b)=>a-b);
+    const q = f => col[Math.min(col.length-1, Math.floor(col.length*f))];
+    pcts.p10.push(q(0.10)); pcts.p25.push(q(0.25)); pcts.p50.push(q(0.50));
+    pcts.p75.push(q(0.75)); pcts.p90.push(q(0.90));
+  }
+  // 終了時点の差枚分布から「現在より増える確率」を算出
+  const ends = trajectories.map(t=>t[STEPS]);
+  const pPlus = ends.filter(v=>v>startDiff).length / ends.length;
+  return {pcts, STEPS, stepG, startDiff, pPlus};
+}
+
+function drawChart(sim, N) {
+  const cv = $('chart'); const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0,0,W,H);
+  const padL=58, padR=14, padT=14, padB=28;
+  const plotW = W-padL-padR, plotH = H-padT-padB;
+
+  const all = [].concat(sim.pcts.p10, sim.pcts.p90, [sim.startDiff]);
+  let yMin = Math.min(...all), yMax = Math.max(...all);
+  const span = Math.max(400, yMax-yMin);
+  yMin -= span*0.1; yMax += span*0.1;
+  if (yMin > 0) yMin = -200; if (yMax < 0) yMax = 200;
+
+  const xAt = i => padL + plotW * (i/sim.STEPS);
+  const yAt = v => padT + plotH * (1 - (v-yMin)/(yMax-yMin));
+
+  // グリッド + Y軸ラベル
+  ctx.strokeStyle='#243044'; ctx.fillStyle='#8290a4'; ctx.font='11px sans-serif';
+  for (let g=0; g<=4; g++){
+    const v = yMin + (yMax-yMin)*g/4;
+    const y = yAt(v);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+    ctx.fillText(Math.round(v).toLocaleString()+'', 4, y+4);
+  }
+  // ゼロライン
+  ctx.strokeStyle='#4a5a72'; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(padL,yAt(0)); ctx.lineTo(W-padR,yAt(0)); ctx.stroke();
+  ctx.setLineDash([]);
+  // X軸ラベル
+  ctx.fillText('0G', padL-6, H-8);
+  ctx.fillText('+'+N.toLocaleString()+'G', W-padR-46, H-8);
+
+  // 80%バンド (p10-p90) 塗り
+  ctx.fillStyle='rgba(58,110,165,0.28)';
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), yAt(sim.pcts.p10[0]));
+  for(let i=1;i<=sim.STEPS;i++) ctx.lineTo(xAt(i), yAt(sim.pcts.p10[i]));
+  for(let i=sim.STEPS;i>=0;i--) ctx.lineTo(xAt(i), yAt(sim.pcts.p90[i]));
+  ctx.closePath(); ctx.fill();
+  // 50%バンド (p25-p75) 濃いめ
+  ctx.fillStyle='rgba(58,110,165,0.30)';
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), yAt(sim.pcts.p25[0]));
+  for(let i=1;i<=sim.STEPS;i++) ctx.lineTo(xAt(i), yAt(sim.pcts.p25[i]));
+  for(let i=sim.STEPS;i>=0;i--) ctx.lineTo(xAt(i), yAt(sim.pcts.p75[i]));
+  ctx.closePath(); ctx.fill();
+
+  // 中央値ライン
+  ctx.strokeStyle='#f7b500'; ctx.lineWidth=2.4;
+  ctx.beginPath();
+  for(let i=0;i<=sim.STEPS;i++){ const x=xAt(i),y=yAt(sim.pcts.p50[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.stroke();
+  // 現在地点
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(xAt(0), yAt(sim.startDiff), 4, 0, Math.PI*2); ctx.fill();
+}
+
+function fmt(n){ const v=Math.round(n); return (v>0?'+':'')+v.toLocaleString(); }
+
+$('run').addEventListener('click', () => {
+  const G = parseInt($('games').value), b = parseInt($('big').value), r = parseInt($('reg').value);
+  const N = parseInt($('future').value)||3000;
+  const startDiff = $('diff').value===''? 0 : parseFloat($('diff').value);
+  if (!G || G<1 || isNaN(b) || isNaN(r)) { alert('総回転数・BIG・REGを入力してください'); return; }
+  if (b+r > G) { alert('BIG+REGが総回転数を超えています。数字を確認してください'); return; }
+
+  const grapeCount = $('grape').value===''? null : parseInt($('grape').value);
+  const mKey = $('machine').value;
+  const M = MACHINES[mKey];
+  // チェリー重複（対応機種のみ）
+  let cherry = null;
+  const cd = CHERRY[mKey];
+  if (cd) {
+    const cb = $('cbig').value===''? null : parseInt($('cbig').value);
+    const cr = $('creg').value===''? null : parseInt($('creg').value);
+    if (cb != null && cb > b) { alert('チェリービッグ回数がBIG回数を超えています'); return; }
+    if (cr != null && cr > r) { alert('チェリーバケ回数がREG回数を超えています'); return; }
+    if (cb != null || cr != null) cherry = {cBig:cd.cBig, cReg:cd.cReg, cb, cr};
+  }
+  const post = estimateSettings(G, b, r, M.settings, grapeCount, cherry);
+
+  // === 現在データ表示 ===
+  const combRate = (b+r)>0 ? (G/(b+r)) : Infinity;
+  const bigRate = b>0? G/b : Infinity, regRate = r>0? G/r : Infinity;
+  $('stats').innerHTML = `
+    <div class="stat-row"><span>機種</span><span>${M.name}</span></div>
+    <div class="stat-row"><span>総回転数</span><span>${G.toLocaleString()} G</span></div>
+    <div class="stat-row"><span>BIG</span><span>${b} 回（1/${bigRate===Infinity?'-':bigRate.toFixed(1)}）</span></div>
+    <div class="stat-row"><span>REG</span><span>${r} 回（1/${regRate===Infinity?'-':regRate.toFixed(1)}）</span></div>
+    <div class="stat-row"><span>合算（ボーナス合計）</span><span>1/${combRate===Infinity?'-':combRate.toFixed(1)}</span></div>
+    <div class="stat-row"><span>現在の差枚（入力値）</span><span>${$('diff').value===''?'未入力（0から表示）':fmt(startDiff)+' 枚'}</span></div>`;
+
+  // === 設定確率バー ===
+  let barsHtml = '';
+  post.forEach((p,i) => {
+    const s = M.settings[i];
+    const pct = (p*100);
+    barsHtml += `<div class="bar-wrap">
+      <div class="bar-label"><span>設定 ${s.set}（機械割 ${s.payout}%）</span><span>${pct.toFixed(1)}%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2,pct).toFixed(1)}%">${pct>=8?pct.toFixed(0)+'%':''}</div></div>
+    </div>`;
+  });
+  $('settingBars').innerHTML = barsHtml;
+
+  // 期待機械割（事後確率の加重平均）
+  const expPayout = post.reduce((a,p,i)=>a + p*M.settings[i].payout, 0);
+  const highProb = post[3]+post[4]+post[5]; // 設定4-6の確率
+  const lowProb = post[0]+post[1]; // 設定1-2
+
+  // === シミュレーション ===
+  const sim = simulateFuture(N, post, M.settings, startDiff);
+  drawChart(sim, N);
+  const endMed = sim.pcts.p50[sim.STEPS]-startDiff;
+  const endLo = sim.pcts.p10[sim.STEPS]-startDiff;
+  const endHi = sim.pcts.p90[sim.STEPS]-startDiff;
+  const pPlus = sim.pPlus;
+
+  // === この後どうなるか の判断 ===
+  // 判断は「期待機械割（＝1Gあたりの期待値）」が主役。グラフの形ではなく確率で決める。
+  let vClass, head, advice;
+  if (expPayout >= 101.0 && highProb >= 0.45) {
+    vClass='v-good'; head='🔥 続行推奨（高設定が濃厚）';
+    advice='期待値プラス。閉店までブン回す価値があります。';
+  } else if (expPayout <= 99.0 && lowProb >= 0.45) {
+    vClass='v-bad'; head='🛑 撤退推奨（低設定が濃厚）';
+    advice='期待値マイナス。これ以上回しても理論上は削られていきます。粘らず移動が無難。';
+  } else {
+    vClass='v-mid'; head='🤔 判断保留（設定が絞り切れていない）';
+    advice='高設定にも低設定にも振れる状態。判別要素を増やすか、続けるなら少額で様子見を。';
+  }
+  let warn = '';
+  if (G < 2000) warn = '<br><small style="font-weight:normal">※総回転数が少なく推定はまだ不安定です（2000G以上で精度が上がります）。</small>';
+  if (grapeCount==null && G>=3000) warn += '<br><small style="font-weight:normal">※ぶどう回数を入れると判別精度がさらに上がります。</small>';
+  $('verdict').className = 'verdict '+vClass;
+  $('verdict').innerHTML = `<div style="font-size:1.15rem">${head}</div>
+    <div style="font-size:.9rem;font-weight:normal;margin-top:6px">${advice}</div>
+    <div style="font-size:.85rem;font-weight:normal;margin-top:6px;opacity:.9">
+      期待機械割 <b>${expPayout.toFixed(1)}%</b> ／ あと${N.toLocaleString()}Gで差枚が増える確率 <b>${(pPlus*100).toFixed(0)}%</b></div>${warn}`;
+
+  $('projText').innerHTML = `
+    <div class="stat-row"><span>あと ${N.toLocaleString()}G 回した時の差枚の増減予想</span><span></span></div>
+    <div class="stat-row"><span>中央値（最もありそう）</span><span>${fmt(endMed)} 枚</span></div>
+    <div class="stat-row"><span>80%レンジ（好調〜不調）</span><span>${fmt(endLo)} 〜 ${fmt(endHi)} 枚</span></div>
+    <div class="stat-row"><span>差枚がプラスになる確率</span><span>${(pPlus*100).toFixed(0)}%</span></div>
+    <p class="hint" style="margin-top:8px;">＝ 推定設定どおりに回した場合の見込み。10回中8回は上の80%レンジに収まり、残り2回はそれを上下に外れます。
+    <strong>グラフの「形」そのものは予測材料になりません</strong>（各ゲームは独立）。判断は期待機械割で行ってください。</p>`;
+
+  $('results').style.display = 'block';
+  $('results').scrollIntoView({behavior:'smooth'});
+});
+
+// 機種プルダウンを MACHINES から自動生成
+(function(){
+  const sel = $('machine');
+  for (const key in MACHINES) {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = MACHINES[key].name;
+    sel.appendChild(o);
+  }
+})();
+
+// 機種に応じてチェリー重複入力の有効/無効を切り替え
+function updateCherryUI(){
+  const cd = CHERRY[$('machine').value];
+  const box = $('cherryBox'), inputs = $('cherryInputs'), note = $('cherryNote');
+  if (cd) {
+    inputs.style.display = 'block';
+    note.innerHTML = 'この機種はチェリー重複の設定別データ（<b>'+cd.rel+'</b>）に対応。回数を入れると判別精度が上がります。';
+    note.style.color = '#9fb';
+  } else {
+    inputs.style.display = 'none';
+    note.innerHTML = '⚠️ この機種はチェリー重複の<b>設定別公表値がない</b>ため非対応です（推測に使える確かな数値がないため、あえて使いません）。BIG/REG・ぶどうで判別してください。';
+    note.style.color = '#f7d36b';
+  }
+}
+$('machine').addEventListener('change', updateCherryUI);
+updateCherryUI();
+
+// ===== CSV一括取り込み（一気通貫） =====
+// CSV機種名 → MACHINESキーへの対応（ネオアイムをアイムより先に判定）
+function matchMachineKey(name){
+  const n = String(name||'').replace(/\s/g,'');
+  if(/ネオアイム/.test(n)) return 'neoim';
+  if(/アイム/.test(n)) return 'im';
+  if(/マイジャグ/.test(n)) return 'my';
+  if(/ファンキー/.test(n)) return 'funky';
+  if(/ゴーゴー|ゴージャグ/.test(n)) return 'gogo';
+  if(/ハッピー/.test(n)) return 'happy';
+  if(/ガールズ/.test(n)) return 'girls';
+  if(/ミスター/.test(n)) return 'mister';
+  if(/ミラクル/.test(n)) return 'miracle';
+  return null;
+}
+// 簡易CSVパーサ（ダブルクォート対応）
+function parseCSV(text){
+  const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else { if(c==='"') q=true;
+      else if(c===','){ row.push(cur); cur=''; }
+      else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+      else if(c==='\r'){} else cur+=c; }
+  }
+  if(cur!==''||row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r=>r.some(c=>c.trim()!==''));
+}
+function colIndex(header, names){
+  for(const nm of names){ const i=header.findIndex(h=>h.replace(/\s/g,'').includes(nm)); if(i>=0) return i; }
+  return -1;
+}
+let csvData=[];
+$('csv').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const rows=parseCSV(String(rd.result));
+    if(rows.length<2){ $('csvStatus').textContent='CSVにデータ行がありません。'; return; }
+    const head=rows[0];
+    const iG=colIndex(head,['総回転','G数','回転','GAME']);
+    const iBB=colIndex(head,['BIG','BB']);
+    const iRB=colIndex(head,['REG','RB','バケ']);
+    const iNo=colIndex(head,['台番','台番号','番号']);
+    const iName=colIndex(head,['機種']);
+    const iDiff=colIndex(head,['差枚','差玉','出玉']);
+    if(iG<0||iBB<0||iRB<0){ $('csvStatus').innerHTML='⚠️ G数・BIG・REGの列が見つかりません。ヘッダ行を確認してください。'; return; }
+    csvData=[];
+    const sel=$('csvRows'); sel.innerHTML='';
+    const ph=document.createElement('option'); ph.value=''; ph.textContent='― 台を選んでください ―'; sel.appendChild(ph);
+    for(let r=1;r<rows.length;r++){
+      const row=rows[r];
+      const g=parseInt(String(row[iG]||'').replace(/[^\d-]/g,''));
+      const bb=parseInt(String(row[iBB]||'').replace(/[^\d-]/g,''));
+      const rb=parseInt(String(row[iRB]||'').replace(/[^\d-]/g,''));
+      if(!g||isNaN(bb)||isNaN(rb)||g<1) continue;
+      const no=iNo>=0?row[iNo]:'';
+      const name=iName>=0?row[iName]:'';
+      const diff=iDiff>=0?parseInt(String(row[iDiff]||'').replace(/[^\d+-]/g,'')):null;
+      const comb=(bb+rb)>0?(g/(bb+rb)).toFixed(1):'-';
+      const idx=csvData.length;
+      csvData.push({no,name,g,bb,rb,diff:isNaN(diff)?null:diff,key:matchMachineKey(name)});
+      const o=document.createElement('option'); o.value=idx;
+      o.textContent=(no?('台'+no+' '):'')+(name?name+' ':'')+`G${g.toLocaleString()} BB${bb} RB${rb} 合成1/${comb}`;
+      sel.appendChild(o);
+    }
+    if(!csvData.length){ $('csvStatus').innerHTML='⚠️ 有効なデータ行が見つかりませんでした。'; $('csvPick').style.display='none'; return; }
+    $('csvPick').style.display='block';
+    $('csvStatus').innerHTML='✅ '+csvData.length+'台を読み込みました。台を選ぶと自動入力＆予想します。';
+  };
+  rd.readAsText(f);
+});
+$('csvRows').addEventListener('change', e=>{
+  const v=e.target.value; if(v==='') return;
+  const d=csvData[parseInt(v)];
+  $('games').value=d.g; $('big').value=d.bb; $('reg').value=d.rb;
+  $('diff').value=d.diff==null?'':d.diff;
+  if(d.key){ $('machine').value=d.key; updateCherryUI(); }
+  const msg = d.key ? '機種「'+MACHINES[d.key].name+'」を自動選択しました。' :
+    (d.name? '機種「'+d.name+'」を自動判定できませんでした。プルダウンで選んでください。' : '機種列が無いのでプルダウンで機種を選んでください。');
+  $('csvStatus').innerHTML='✅ 入力しました。'+msg+'（予想を実行します）';
+  // 一気通貫: 機種が確定していればそのまま予想実行
+  if(d.key) $('run').click();
+  else $('machine').scrollIntoView({behavior:'smooth'});
+});
+
+// スペック表
+(function(){
+  let html = '';
+  for (const key in MACHINES) {
+    const M = MACHINES[key];
+    html += `<p style="font-size:.8rem;margin-top:10px;color:#f7b500;">${M.name}</p>
+      <table class="spec"><tr><th>設定</th><th>BIG</th><th>REG</th><th>ぶどう</th><th>機械割</th></tr>`;
+    M.settings.forEach(s=>{ html+=`<tr><td>${s.set}</td><td>1/${s.big}</td><td>1/${s.reg}</td><td>${s.grape?'1/'+s.grape:'-'}</td><td>${s.payout}%</td></tr>`; });
+    html += `</table>`;
+  }
+  $('specTable').innerHTML = html;
+})();
+</script>
+</body>
+</html>

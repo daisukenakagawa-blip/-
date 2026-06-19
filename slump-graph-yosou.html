@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📷 スランプグラフ 読み取り＆この先予想</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif; background:#11161f; color:#eef2f7; line-height:1.6; padding-bottom:60px; }
+  header { background:linear-gradient(135deg,#1d6fa5,#2aa7c4); color:#fff; padding:22px 16px; text-align:center; box-shadow:0 2px 12px rgba(0,0,0,.4); }
+  header h1 { font-size:1.4rem; text-shadow:1px 1px 3px rgba(0,0,0,.4); }
+  header p { font-size:.8rem; opacity:.95; margin-top:4px; }
+  .wrap { max-width:760px; margin:0 auto; padding:0 14px; }
+  .card { background:#1b2330; border:1px solid #2a3445; border-radius:12px; padding:18px; margin-top:18px; box-shadow:0 1px 6px rgba(0,0,0,.3); }
+  .card h2 { font-size:1.05rem; color:#2aa7c4; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  .step { font-size:.75rem; background:#1d6fa5; color:#fff; border-radius:20px; padding:2px 9px; }
+  label { display:block; font-size:.85rem; margin:10px 0 4px; color:#aab6c7; }
+  input[type=number], select { width:100%; padding:10px 12px; font-size:1rem; background:#0e1420; color:#eef2f7; border:1px solid #344056; border-radius:8px; }
+  input:focus, select:focus { outline:none; border-color:#2aa7c4; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .hint { font-size:.72rem; color:#7c8aa0; margin-top:4px; }
+  button.primary { width:100%; margin-top:18px; padding:14px; font-size:1.05rem; font-weight:bold; background:linear-gradient(135deg,#1d6fa5,#2aa7c4); color:#fff; border:none; border-radius:10px; cursor:pointer; }
+  button.primary:active { transform:scale(.98); }
+  button.primary:disabled { opacity:.45; cursor:not-allowed; }
+  .calbtns { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .calbtn { padding:10px 8px; font-size:.82rem; border:1px solid #344056; background:#0e1420; color:#cfe; border-radius:8px; cursor:pointer; text-align:left; }
+  .calbtn.active { border-color:#2aa7c4; background:#0d2a38; box-shadow:0 0 0 1px #2aa7c4; }
+  .calbtn .ok { color:#5de08a; font-weight:bold; }
+  .calbtn .no { color:#7c8aa0; }
+  canvas { width:100%; background:#0e1420; border-radius:8px; margin-top:10px; touch-action:none; display:block; }
+  #imgCanvas { cursor:crosshair; }
+  .results { display:none; }
+  .stat-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #2a3445; font-size:.9rem; }
+  .stat-row span:last-child { font-weight:bold; color:#fff; }
+  .verdict { font-size:1.05rem; font-weight:bold; padding:12px; border-radius:8px; margin-top:10px; text-align:center; }
+  .v-good { background:#123a23; color:#5de08a; border:1px solid #2a7; }
+  .v-bad { background:#3a1212; color:#ff8a8a; border:1px solid #a44; }
+  .v-mid { background:#3a3312; color:#f7d36b; border:1px solid #a98; }
+  .legend { font-size:.74rem; color:#9fb; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap; }
+  .legend span::before { content:'■ '; }
+  .lg-real::before { color:#2aa7c4; } .lg-band::before { color:#3a6ea5; } .lg-med::before { color:#f7b500; }
+  .disclaimer { font-size:.74rem; color:#8290a4; margin-top:18px; background:#161d28; padding:12px; border-radius:8px; border:1px solid #2a3445; }
+  details summary { cursor:pointer; color:#2aa7c4; font-size:.85rem; }
+  a.link { color:#2aa7c4; font-size:.82rem; }
+  .swatch { display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:middle; border:1px solid #555; margin-left:6px; }
+  .toggle-row { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:.85rem; color:#aab6c7; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📷 スランプグラフ 読み取り＆この先予想</h1>
+  <p>グラフ写真から線を読み取り、その続きを確率で描きます</p>
+</header>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2><span class="step">STEP 1</span> スランプグラフの写真</h2>
+    <input type="file" id="photo" accept="image/*">
+    <canvas id="imgCanvas" width="720" height="420"></canvas>
+    <p class="hint">写真を選ぶと表示されます。次に下のボタンでキャンバス上をタップして較正します。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">STEP 2</span> グラフを較正（4点タップ）</h2>
+    <div class="calbtns">
+      <button class="calbtn" data-mode="zero" id="b-zero"><b>① 0枚ライン</b><br><span id="s-zero" class="no">未設定</span></button>
+      <button class="calbtn" data-mode="start" id="b-start"><b>② 開始点（左端）</b><br><span id="s-start" class="no">未設定</span></button>
+      <button class="calbtn" data-mode="end" id="b-end"><b>③ 現在地点（線の右端）</b><br><span id="s-end" class="no">未設定</span></button>
+      <button class="calbtn" data-mode="color" id="b-color"><b>④ 線の色（線上を1点）</b><br><span id="s-color" class="no">未設定</span></button>
+    </div>
+    <p class="hint">押してからキャンバスをタップ。④は線の上をなぞるように1点タップすると色を取得します。</p>
+
+    <div class="grid2" style="margin-top:12px;">
+      <div>
+        <label>総ゲーム数（右端のG数）</label>
+        <input type="number" id="games" placeholder="例: 5000" min="1">
+      </div>
+      <div>
+        <label>現在の差枚数（線の右端の値）</label>
+        <input type="number" id="diff" placeholder="例: 2000（マイナスも可）">
+      </div>
+    </div>
+    <p class="hint">この2つで縦横の目盛りが決まります。差枚はグラフの軸数字やデータから読み取って入力してください。</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">STEP 3</span> この先の前提（設定）</h2>
+    <label>機種</label>
+    <select id="machine"></select>
+
+    <div class="toggle-row">
+      <input type="checkbox" id="useBonus" style="width:auto">
+      <label for="useBonus" style="margin:0">ボーナス回数から設定を推定する（精度高）</label>
+    </div>
+    <div id="bonusInputs" style="display:none">
+      <div class="grid2">
+        <div><label>BIG 回数</label><input type="number" id="big" min="0" placeholder="例: 20"></div>
+        <div><label>REG 回数</label><input type="number" id="reg" min="0" placeholder="例: 18"></div>
+      </div>
+    </div>
+    <div id="assumeInputs">
+      <label>想定設定（ボーナス未入力時の前提）</label>
+      <select id="assumeSet">
+        <option value="2">設定2 相当（≒ボーダー・等価に近い）</option>
+        <option value="1">設定1（低設定・期待値マイナス）</option>
+        <option value="3">設定3</option>
+        <option value="4">設定4（やや高設定）</option>
+        <option value="5">設定5（高設定）</option>
+        <option value="6">設定6（最高設定）</option>
+      </select>
+    </div>
+
+    <label>この先の予想回転数</label>
+    <input type="number" id="future" value="3000" min="100" step="100">
+
+    <button class="primary" id="run" disabled>📈 読み取って この先を予想する</button>
+  </div>
+
+  <div class="card results" id="results">
+    <h2><span class="step">結果</span> 過去（実データ）＋この先（予想）</h2>
+    <div id="verdict"></div>
+    <canvas id="chart" width="720" height="400"></canvas>
+    <div class="legend">
+      <span class="lg-real">読み取った実データ</span>
+      <span class="lg-med">予想中央値</span>
+      <span class="lg-band">80%予想レンジ</span>
+    </div>
+    <div id="projText" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="disclaimer">
+    ⚠️ <strong>仕組みと限界</strong>：このツールは写真から「過去の線」と「現在地点」を読み取り、そこから先を
+    <em>設定（＝1ゲームあたりの期待値）にもとづく確率</em>でつなげて描きます。
+    <strong>過去のグラフの“形”は、その後の出方を予測しません</strong>（各ゲームは独立。右肩上がりでも下がりでも次の1Gの確率は同じ）。
+    予想線はあくまで「この設定ならこのくらいの範囲に収まりやすい」という確率帯であり、当たりを保証しません。
+    読み取り精度は写真の鮮明さ・線の色のはっきり具合に依存します。20歳以上・自己責任で。
+    <br><a class="link" href="juggler-yosou.html">→ 数字（G数・BIG・REG）から予想するツールはこちら</a>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// ===== 機種スペック（数字ツールと同一）=====
+const MACHINES = {
+  im:{name:'アイムジャグラーEX（6号機）',settings:[{set:1,big:273.1,reg:439.8,grape:6.02,payout:97.0},{set:2,big:269.7,reg:399.6,grape:6.02,payout:98.0},{set:3,big:269.7,reg:331.0,grape:6.02,payout:99.5},{set:4,big:259.0,reg:315.1,grape:6.02,payout:101.1},{set:5,big:259.0,reg:255.0,grape:6.02,payout:103.3},{set:6,big:255.0,reg:255.0,grape:5.78,payout:105.5}]},
+  neoim:{name:'ネオアイムジャグラーEX（6号機・アイムEXと同一）',settings:[{set:1,big:273.1,reg:439.8,grape:6.02,payout:97.0},{set:2,big:269.7,reg:399.6,grape:6.02,payout:98.0},{set:3,big:269.7,reg:331.0,grape:6.02,payout:99.5},{set:4,big:259.0,reg:315.1,grape:6.02,payout:101.1},{set:5,big:259.0,reg:255.0,grape:6.02,payout:103.3},{set:6,big:255.0,reg:255.0,grape:5.78,payout:105.5}]},
+  my:{name:'マイジャグラーV（6号機）',settings:[{set:1,big:273.1,reg:439.8,grape:5.90,payout:97.0},{set:2,big:270.8,reg:385.5,grape:5.86,payout:98.7},{set:3,big:266.4,reg:336.1,grape:5.84,payout:99.9},{set:4,big:254.0,reg:290.0,grape:5.78,payout:102.8},{set:5,big:240.1,reg:268.6,grape:5.76,payout:105.3},{set:6,big:229.1,reg:229.1,grape:5.66,payout:109.4}]},
+  funky:{name:'ファンキージャグラー2（6号機）',settings:[{set:1,big:266.4,reg:439.8,grape:5.94,payout:97.0},{set:2,big:259.0,reg:407.1,grape:5.92,payout:98.5},{set:3,big:256.0,reg:366.1,grape:5.88,payout:99.8},{set:4,big:249.2,reg:322.8,grape:5.83,payout:102.8},{set:5,big:240.1,reg:299.3,grape:5.76,payout:104.3},{set:6,big:219.9,reg:262.1,grape:5.67,payout:109.0}]},
+  gogo:{name:'ゴーゴージャグラー3（6号機）',settings:[{set:1,big:259.0,reg:354.2,grape:6.25,payout:97.0},{set:2,big:258.0,reg:330.0,grape:6.20,payout:98.0},{set:3,big:257.0,reg:305.6,grape:6.15,payout:99.9},{set:4,big:254.0,reg:268.8,grape:6.07,payout:102.8},{set:5,big:247.3,reg:247.3,grape:6.00,payout:105.3},{set:6,big:234.9,reg:234.9,grape:5.92,payout:109.4}]},
+  happy:{name:'ハッピージャグラーVIII（6号機）',settings:[{set:1,big:287.4,reg:409.6,grape:6.04,payout:96.1},{set:2,big:282.5,reg:364.1,grape:6.02,payout:97.9},{set:3,big:273.1,reg:341.3,grape:5.98,payout:99.9},{set:4,big:264.3,reg:315.1,grape:5.93,payout:102.9},{set:5,big:252.1,reg:287.4,grape:5.85,payout:105.8},{set:6,big:240.9,reg:273.1,grape:5.79,payout:108.4}]},
+  girls:{name:'ジャグラーガールズSS（6号機）',settings:[{set:1,big:273.1,reg:381.0,grape:5.98,payout:97.0},{set:2,big:270.8,reg:350.5,grape:5.98,payout:97.9},{set:3,big:260.1,reg:316.6,grape:5.98,payout:99.9},{set:4,big:250.1,reg:281.3,grape:5.98,payout:102.1},{set:5,big:243.6,reg:270.8,grape:5.88,payout:104.0},{set:6,big:226.0,reg:252.1,grape:5.83,payout:107.5}]},
+  mister:{name:'ミスタージャグラー（6号機）',settings:[{set:1,big:268.6,reg:374.5,grape:6.30,payout:97.0},{set:2,big:267.5,reg:354.2,grape:6.20,payout:98.0},{set:3,big:260.1,reg:331.0,grape:6.10,payout:99.8},{set:4,big:249.2,reg:291.3,grape:6.00,payout:102.7},{set:5,big:240.9,reg:257.0,grape:5.90,payout:105.5},{set:6,big:237.4,reg:237.4,grape:5.75,payout:107.3}]},
+  miracle:{name:'ウルトラミラクルジャグラー（6号機）',settings:[{set:1,big:267.5,reg:425.6,grape:5.93,payout:97.0},{set:2,big:261.1,reg:402.1,grape:5.93,payout:98.9},{set:3,big:256.0,reg:350.5,grape:5.93,payout:101.0},{set:4,big:242.7,reg:322.8,grape:5.93,payout:102.1},{set:5,big:233.2,reg:297.9,grape:5.87,payout:105.0},{set:6,big:216.3,reg:277.7,grape:5.81,payout:108.1}]}
+};
+const BIG_COIN=240, REG_COIN=96, BET=3;
+
+// 機種プルダウン生成
+(function(){ const sel=$('machine'); for(const k in MACHINES){ const o=document.createElement('option'); o.value=k; o.textContent=MACHINES[k].name; sel.appendChild(o);} })();
+
+$('useBonus').addEventListener('change', e=>{
+  $('bonusInputs').style.display = e.target.checked ? 'block':'none';
+  $('assumeInputs').style.display = e.target.checked ? 'none':'block';
+});
+
+// ===== 画像読み込み =====
+const imgCanvas = $('imgCanvas'); const ictx = imgCanvas.getContext('2d');
+let imgData = null, imgW=0, imgH=0, photoLoaded=false;
+const cal = { zero:null, start:null, end:null, color:null };
+
+$('photo').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const img=new Image();
+  img.onload=()=>{
+    // 横720に合わせて高さ調整
+    imgW=720; imgH=Math.round(720*img.height/img.width);
+    imgCanvas.width=imgW; imgCanvas.height=imgH;
+    ictx.drawImage(img,0,0,imgW,imgH);
+    imgData=ictx.getImageData(0,0,imgW,imgH);
+    photoLoaded=true;
+    cal.zero=cal.start=cal.end=cal.color=null;
+    ['zero','start','end','color'].forEach(updateCalLabel);
+    redrawMarks(); checkReady();
+    URL.revokeObjectURL(img.src);
+  };
+  img.src=URL.createObjectURL(f);
+});
+
+// 較正モード選択
+let mode=null;
+document.querySelectorAll('.calbtn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    mode=b.dataset.mode;
+    document.querySelectorAll('.calbtn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+});
+
+// キャンバスのタップ→ピクセル座標
+function canvasPoint(ev){
+  const r=imgCanvas.getBoundingClientRect();
+  const cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;
+  const cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-r.top;
+  return { x:Math.round(cx*imgCanvas.width/r.width), y:Math.round(cy*imgCanvas.height/r.height) };
+}
+function handleTap(ev){
+  if(!photoLoaded||!mode) return;
+  ev.preventDefault();
+  const p=canvasPoint(ev);
+  if(mode==='color'){
+    const i=(p.y*imgW+p.x)*4;
+    cal.color={ r:imgData.data[i], g:imgData.data[i+1], b:imgData.data[i+2] };
+  } else {
+    cal[mode]=p;
+  }
+  updateCalLabel(mode); redrawMarks(); checkReady();
+}
+imgCanvas.addEventListener('click',handleTap);
+imgCanvas.addEventListener('touchstart',handleTap,{passive:false});
+
+function updateCalLabel(m){
+  const el=$('s-'+m);
+  if(m==='color'){
+    if(cal.color){ el.innerHTML='<span class="ok">取得</span><span class="swatch" style="background:rgb('+cal.color.r+','+cal.color.g+','+cal.color.b+')"></span>'; el.className=''; }
+    else { el.textContent='未設定'; el.className='no'; }
+  } else {
+    if(cal[m]){ el.textContent='設定OK ('+cal[m].x+','+cal[m].y+')'; el.className='ok'; }
+    else { el.textContent='未設定'; el.className='no'; }
+  }
+}
+
+// マーカー再描画
+function redrawMarks(){
+  if(!photoLoaded) return;
+  ictx.putImageData(imgData,0,0);
+  const draw=(p,col,txt)=>{ if(!p)return; ictx.strokeStyle=col; ictx.fillStyle=col; ictx.lineWidth=2;
+    ictx.beginPath(); ictx.arc(p.x,p.y,6,0,Math.PI*2); ictx.stroke();
+    ictx.font='12px sans-serif'; ictx.fillText(txt,p.x+8,p.y-8); };
+  if(cal.zero){ ictx.strokeStyle='#5de08a'; ictx.setLineDash([5,4]); ictx.beginPath(); ictx.moveTo(0,cal.zero.y); ictx.lineTo(imgW,cal.zero.y); ictx.stroke(); ictx.setLineDash([]); }
+  draw(cal.zero,'#5de08a','0枚');
+  draw(cal.start,'#f7b500','開始');
+  draw(cal.end,'#ff6b9d','現在');
+}
+
+function checkReady(){
+  const ok = photoLoaded && cal.zero && cal.start && cal.end && cal.color
+    && $('games').value!=='' && $('diff').value!=='';
+  $('run').disabled = !ok;
+}
+['games','diff'].forEach(id=>$(id).addEventListener('input',checkReady));
+
+// ===== 線トレース =====
+function colorDist(i){
+  const c=cal.color; const d=imgData.data;
+  return Math.abs(d[i]-c.r)+Math.abs(d[i+1]-c.g)+Math.abs(d[i+2]-c.b);
+}
+function traceLine(){
+  const x0=Math.min(cal.start.x,cal.end.x), x1=Math.max(cal.start.x,cal.end.x);
+  const G=parseFloat($('games').value), D=parseFloat($('diff').value);
+  // y: diff = (zeroY - y) * mPerPx ;  端点で D = (zeroY - endY)*mPerPx
+  const denom=(cal.zero.y - cal.end.y);
+  const mPerPx = Math.abs(denom)<1 ? 1 : D/denom;
+  const gPerPx = G/(x1-x0);
+  const TH=110; // 色一致しきい値（R+G+B差）
+  const series=[]; // {g, d}
+  let lastY=null;
+  const N=240;
+  for(let s=0;s<=N;s++){
+    const xp=Math.round(x0+(x1-x0)*s/N);
+    // 列内で色一致するyを集める
+    let sum=0,cnt=0;
+    for(let y=0;y<imgH;y++){
+      const i=(y*imgW+xp)*4;
+      if(colorDist(i)<TH){ sum+=y; cnt++; }
+    }
+    let yLine;
+    if(cnt>0){ yLine=sum/cnt; lastY=yLine; }
+    else if(lastY!=null){ yLine=lastY; }
+    else { yLine=cal.zero.y; }
+    const g=(xp-x0)*gPerPx;
+    const d=(cal.zero.y - yLine)*mPerPx;
+    series.push({g, d});
+  }
+  // 軽い平滑化
+  const sm=series.map((p,i)=>{
+    const a=series[Math.max(0,i-1)].d, b=p.d, c=series[Math.min(series.length-1,i+1)].d;
+    return {g:p.g, d:(a+2*b+c)/4};
+  });
+  // 端点は入力値に合わせて補正
+  sm[sm.length-1].d = D;
+  return { series:sm, G, D, traceQuality: matchRatio(x0,x1) };
+}
+// トレース品質（列ごとに色一致が見つかった割合）
+function matchRatio(x0,x1){
+  let hit=0,tot=0;
+  for(let xp=x0;xp<=x1;xp+=4){ tot++; let found=false;
+    for(let y=0;y<imgH;y+=2){ if(colorDist((y*imgW+xp)*4)<110){found=true;break;} }
+    if(found)hit++;
+  }
+  return tot? hit/tot : 0;
+}
+
+// ===== 設定推定 & モンテカルロ =====
+function poissonLog(k,l){ if(l<=0)return -1e9; let f=0; for(let i=2;i<=k;i++)f+=Math.log(i); return -l+k*Math.log(l)-f; }
+function estimate(G,b,r,settings){
+  const sc=settings.map(s=>poissonLog(b,G/s.big)+poissonLog(r,G/s.reg));
+  const mx=Math.max(...sc); const e=sc.map(v=>Math.exp(v-mx)); const su=e.reduce((a,c)=>a+c,0);
+  return e.map(v=>v/su);
+}
+function randn(){ let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function binom(n,p){ if(n*p>30&&n*(1-p)>30) return Math.max(0,Math.round(n*p+Math.sqrt(n*p*(1-p))*randn())); let c=0; for(let i=0;i<n;i++) if(Math.random()<p)c++; return c; }
+
+function simulate(N, post, settings, startDiff){
+  const SIMS=1500, STEPS=40, stepG=N/STEPS;
+  const trajs=[];
+  for(let s=0;s<SIMS;s++){
+    let rnd=Math.random(),acc=0,idx=0;
+    for(let i=0;i<post.length;i++){ acc+=post[i]; if(rnd<=acc){idx=i;break;} idx=i; }
+    const st=settings[idx], pB=1/st.big, pR=1/st.reg;
+    const expPerG=BET*(st.payout/100-1);
+    const basePerG=expPerG-(pB*BIG_COIN+pR*REG_COIN);
+    let d=startDiff; const t=[d];
+    for(let k=0;k<STEPS;k++){
+      const nB=binom(Math.round(stepG),pB), nR=binom(Math.round(stepG),pR);
+      d+=nB*BIG_COIN+nR*REG_COIN+basePerG*stepG+randn()*Math.sqrt(stepG)*1.6;
+      t.push(d);
+    }
+    trajs.push(t);
+  }
+  const pcts={p10:[],p25:[],p50:[],p75:[],p90:[]};
+  for(let k=0;k<=STEPS;k++){ const col=trajs.map(t=>t[k]).sort((a,b)=>a-b);
+    const q=f=>col[Math.min(col.length-1,Math.floor(col.length*f))];
+    pcts.p10.push(q(.10));pcts.p25.push(q(.25));pcts.p50.push(q(.50));pcts.p75.push(q(.75));pcts.p90.push(q(.90)); }
+  const ends=trajs.map(t=>t[STEPS]);
+  const pPlus=ends.filter(v=>v>startDiff).length/ends.length;
+  return {pcts,STEPS,stepG,startDiff,pPlus};
+}
+
+// ===== 結合グラフ描画 =====
+function drawResult(trace, sim, N){
+  const cv=$('chart'), ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  const padL=58,padR=14,padT=14,padB=28, plotW=W-padL-padR, plotH=H-padT-padB;
+  const Gtot=trace.G+N;
+  const ys=[...trace.series.map(p=>p.d), ...sim.pcts.p10, ...sim.pcts.p90, 0];
+  let yMin=Math.min(...ys), yMax=Math.max(...ys);
+  const span=Math.max(600,yMax-yMin); yMin-=span*.1; yMax+=span*.1;
+  const xAt=g=>padL+plotW*(g/Gtot);
+  const yAt=v=>padT+plotH*(1-(v-yMin)/(yMax-yMin));
+
+  ctx.strokeStyle='#243044'; ctx.fillStyle='#8290a4'; ctx.font='11px sans-serif';
+  for(let i=0;i<=4;i++){ const v=yMin+(yMax-yMin)*i/4, y=yAt(v);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+    ctx.fillText(Math.round(v).toLocaleString(),4,y+4); }
+  ctx.strokeStyle='#4a5a72'; ctx.setLineDash([4,3]); ctx.beginPath(); ctx.moveTo(padL,yAt(0)); ctx.lineTo(W-padR,yAt(0)); ctx.stroke(); ctx.setLineDash([]);
+  // 現在地点の縦線
+  ctx.strokeStyle='#3a4a62'; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(xAt(trace.G),padT); ctx.lineTo(xAt(trace.G),H-padB); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillText('0G',padL-6,H-8); ctx.fillText('現在 '+Math.round(trace.G).toLocaleString()+'G',xAt(trace.G)-30,H-8); ctx.fillText('+'+N.toLocaleString()+'G',W-padR-46,H-8);
+
+  // 予想バンド p10-p90
+  const sx=g=>xAt(trace.G+g);
+  ctx.fillStyle='rgba(58,110,165,0.28)';
+  ctx.beginPath(); ctx.moveTo(sx(0),yAt(sim.pcts.p10[0]));
+  for(let i=1;i<=sim.STEPS;i++) ctx.lineTo(sx(sim.stepG*i),yAt(sim.pcts.p10[i]));
+  for(let i=sim.STEPS;i>=0;i--) ctx.lineTo(sx(sim.stepG*i),yAt(sim.pcts.p90[i]));
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(58,110,165,0.32)';
+  ctx.beginPath(); ctx.moveTo(sx(0),yAt(sim.pcts.p25[0]));
+  for(let i=1;i<=sim.STEPS;i++) ctx.lineTo(sx(sim.stepG*i),yAt(sim.pcts.p25[i]));
+  for(let i=sim.STEPS;i>=0;i--) ctx.lineTo(sx(sim.stepG*i),yAt(sim.pcts.p75[i]));
+  ctx.closePath(); ctx.fill();
+  // 予想中央値
+  ctx.strokeStyle='#f7b500'; ctx.lineWidth=2.2; ctx.beginPath();
+  for(let i=0;i<=sim.STEPS;i++){ const x=sx(sim.stepG*i),y=yAt(sim.pcts.p50[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y);} ctx.stroke();
+
+  // 実データ（読み取り線）
+  ctx.strokeStyle='#2aa7c4'; ctx.lineWidth=2.4; ctx.beginPath();
+  trace.series.forEach((p,i)=>{ const x=xAt(p.g),y=yAt(p.d); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke();
+  // 現在地点ドット
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(xAt(trace.G),yAt(trace.D),4,0,Math.PI*2); ctx.fill();
+}
+
+const fmt=n=>{const v=Math.round(n);return (v>0?'+':'')+v.toLocaleString();};
+
+$('run').addEventListener('click', ()=>{
+  const M=MACHINES[$('machine').value];
+  const N=parseInt($('future').value)||3000;
+  const trace=traceLine();
+
+  // 設定の事後分布 or 仮定
+  let post, label, expPayout;
+  if($('useBonus').checked && $('big').value!=='' && $('reg').value!==''){
+    const b=parseInt($('big').value), r=parseInt($('reg').value);
+    post=estimate(trace.G,b,r,M.settings);
+    expPayout=post.reduce((a,p,i)=>a+p*M.settings[i].payout,0);
+    label='ボーナス回数から推定';
+  } else {
+    const si=parseInt($('assumeSet').value); post=M.settings.map(s=>s.set===si?1:0);
+    expPayout=M.settings[si-1].payout; label='想定設定'+si;
+  }
+  const sim=simulate(N, post, M.settings, trace.D);
+  drawResult(trace, sim, N);
+
+  // 判定
+  let vClass,head,advice;
+  if(expPayout>=101){ vClass='v-good'; head='🔥 期待値プラス（続行向き）'; advice='この設定なら回すほど理論上はプラス方向。'; }
+  else if(expPayout<=99){ vClass='v-bad'; head='🛑 期待値マイナス（撤退向き）'; advice='回すほど理論上は削られます。グラフが今上向きでも将来の確率は変わりません。'; }
+  else { vClass='v-mid'; head='🤔 ほぼ等価（判断保留）'; advice='プラスマイナスきわどいライン。設定を絞れる材料がほしいところ。'; }
+  const q=trace.traceQuality;
+  let warn = q<0.6 ? '<br><small style="font-weight:normal">⚠️ 線の読み取り一致率が低め('+Math.round(q*100)+'%)。線の色を選び直すと改善します。</small>' : '';
+  $('verdict').className='verdict '+vClass;
+  $('verdict').innerHTML=`<div style="font-size:1.1rem">${head}</div>
+    <div style="font-size:.88rem;font-weight:normal;margin-top:6px">${advice}</div>
+    <div style="font-size:.82rem;font-weight:normal;margin-top:6px;opacity:.9">${label}／期待機械割 <b>${expPayout.toFixed(1)}%</b>／あと${N.toLocaleString()}Gで差枚が増える確率 <b>${(sim.pPlus*100).toFixed(0)}%</b></div>${warn}`;
+
+  const endMed=sim.pcts.p50[sim.STEPS]-trace.D, lo=sim.pcts.p10[sim.STEPS]-trace.D, hi=sim.pcts.p90[sim.STEPS]-trace.D;
+  $('projText').innerHTML=`
+    <div class="stat-row"><span>読み取った現在の差枚</span><span>${fmt(trace.D)} 枚（${Math.round(trace.G).toLocaleString()}G）</span></div>
+    <div class="stat-row"><span>あと${N.toLocaleString()}Gの増減・中央値</span><span>${fmt(endMed)} 枚</span></div>
+    <div class="stat-row"><span>80%レンジ</span><span>${fmt(lo)} 〜 ${fmt(hi)} 枚</span></div>
+    <div class="stat-row"><span>最終差枚の予想（中央値）</span><span>${fmt(trace.D+endMed)} 枚</span></div>
+    <p class="hint" style="margin-top:8px;">青線＝写真から読み取った実データ、黄線＝予想中央値、青帯＝80%予想レンジ。
+    予想は<strong>設定（期待値）由来の確率</strong>で、過去の線の形は使っていません。</p>`;
+
+  $('results').style.display='block';
+  $('results').scrollIntoView({behavior:'smooth'});
+});
+</script>
+</body>
+</html>
