@@ -3601,18 +3601,26 @@ function inj4Ctx(sr, D, store, CU){
   const baseReg=avg(sr.map(r=>r.reg_prob)), baseComb=avg(sr.map(r=>r.combined)), baseBud=avg(sr.map(r=>budouDen(r.budou)).filter(x=>x!=null));
   const overall=CU.overallHi||0, phase=CU.phase(D);
   const domTail=(+D.slice(8,10))%10;   // 予想日の日付（末尾一致判定用）
-  // 新規投入の前兆：島・末尾のローテ周期（最後に高設定が出てからの経過 vs 平均周期）
-  const islG={}, tailG={};
-  sr.forEach(r=>{ if(CU.isHi(r)){ const i=Math.floor(r.machine_no/10), t=r.machine_no%10;
-    (islG[i]=islG[i]||[]).push(r.date); (tailG[t]=tailG[t]||[]).push(r.date); } });
+  // 新規投入の前兆：1パスで 島/末尾の高設定日・島×曜日/末尾×曜日・日別フロア・前日島放出 を集計
+  const islG={}, tailG={}, iwd={}, twd={}, dayHi={}, dayN={}, islMdHi={};
+  sr.forEach(r=>{ const i=Math.floor(r.machine_no/10), t=r.machine_no%10, hi=CU.isHi(r);
+    const wd=WD[new Date(r.date+"T00:00:00").getDay()];
+    if(hi){ (islG[i]=islG[i]||[]).push(r.date); (tailG[t]=tailG[t]||[]).push(r.date); if(r.date===md)islMdHi[i]=(islMdHi[i]||0)+1; }
+    (iwd[i]=iwd[i]||{}); (iwd[i][wd]=iwd[i][wd]||{n:0,hi:0}); iwd[i][wd].n++; if(hi)iwd[i][wd].hi++;
+    (twd[t]=twd[t]||{}); (twd[t][wd]=twd[t][wd]||{n:0,hi:0}); twd[t][wd].n++; if(hi)twd[t][wd].hi++;
+    dayN[r.date]=(dayN[r.date]||0)+1; if(hi)dayHi[r.date]=(dayHi[r.date]||0)+1; });
   const finRot=g=>{ const out={}; for(const k in g){ const ds=[...new Set(g[k])].sort(); if(ds.length<3){out[k]={due:false};continue;}
     const gaps=[]; for(let i=1;i<ds.length;i++)gaps.push(dayDiff(ds[i-1],ds[i])); const cyc=avg(gaps), since=dayDiff(ds[ds.length-1],md);
     out[k]={cyc,since,due:!!(cyc&&since>=cyc*0.9)}; } return out; };
   const islRot=finRot(islG), tailRot=finRot(tailG);
   // 放出日：前日(md)のフロア高設定率が店平均より大幅に低い＝回収明けで翌日放出されやすい
-  const mdRecs=sr.filter(r=>r.date===md); const mdHiRate=mdRecs.length?mdRecs.filter(r=>CU.isHi(r)).length/mdRecs.length:0;
-  const releaseDay = overall>0 && mdRecs.length>=5 && mdHiRate < overall*0.6;
-  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase,domTail,islRot,tailRot,releaseDay};
+  const mdHiRate=dayN[md]?(dayHi[md]||0)/dayN[md]:0;
+  const releaseDay = overall>0 && (dayN[md]||0)>=5 && mdHiRate < overall*0.6;
+  // 回収続き：直近で店平均×0.7未満の日が連続している（放出転換期）
+  const dts2=[...new Set(sr.map(r=>r.date))].sort(); let collectStreak=0;
+  for(let i=dts2.length-1;i>=0;i--){ const d=dts2[i]; const rt=dayN[d]?(dayHi[d]||0)/dayN[d]:0; if(overall>0&&rt<overall*0.7)collectStreak++; else break; }
+  const floorCollecting = collectStreak>=2;
+  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase,domTail,islRot,tailRot,releaseDay,iwd,twd,islMdHi,floorCollecting};
 }
 function inj4Feats(mno, CU, x){
   const hist=CU.byM[mno]||[]; const tail=mno%10, isl=Math.floor(mno/10);
@@ -3649,6 +3657,11 @@ function inj4Feats(mno, CU, x){
   if(x.islRot&&x.islRot[isl]&&x.islRot[isl].due)F.push("島ローテ期");
   if(x.tailRot&&x.tailRot[tail]&&x.tailRot[tail].due)F.push("末尾ローテ期");
   if(x.releaseDay)F.push("放出日（回収明け）");
+  // カレンダー：島×曜日・末尾×曜日 が強い／回収続き明け／隣島が前日放出
+  { const iw=x.iwd&&x.iwd[isl]&&x.iwd[isl][x.nextWd]; if(iw&&iw.n>=3&&iw.hi/iw.n>x.overall+0.06)F.push("島×曜日強"); }
+  { const tw=x.twd&&x.twd[tail]&&x.twd[tail][x.nextWd]; if(tw&&tw.n>=3&&tw.hi/tw.n>x.overall+0.06)F.push("末尾×曜日強"); }
+  if(x.floorCollecting)F.push("回収続き明け");
+  if(x.islMdHi&&((x.islMdHi[isl-1]||0)>=2||(x.islMdHi[isl+1]||0)>=2))F.push("隣島が前日放出");
   if(x.domTail!=null && tail===x.domTail)F.push("日付末尾一致");
   // 取りこぼし集計用の sig（MISS_LABELキー）
   const sig=[]; if(x.eventDay)sig.push("eventDay"); if(streak>=3)sig.push("newInjection");
@@ -3758,7 +3771,7 @@ function comboTier(n){ return n>=1000?{w:1.4,label:"最重要"}:n>=300?{w:1.2,la
 // 複合特徴量に使うベース特徴量（ノイズの少ない投入クセ系に限定し、組合せ爆発を抑える）
 const COMBO_BASE=["前日据え置き","前日設定6推定","前日設定5推定","前日設定4推定","前日設定低推定","前日REG先行","前日ぶどう優秀",
   "前日低回転","不発明け1-2日","不発明け3日+","イベント日","イベント翌日据置","角台","角2","並び投入","末尾実績高","島実績高","曜日実績高","機種ローテ期",
-  "周期到来","島ローテ期","末尾ローテ期","放出日（回収明け）"];
+  "周期到来","島ローテ期","末尾ローテ期","放出日（回収明け）","島×曜日強","末尾×曜日強","回収続き明け","隣島が前日放出"];
 function comboKeys(feats){ const base=feats.filter(f=>COMBO_BASE.includes(f)).sort().slice(0,7); const out=[];
   for(let i=0;i<base.length;i++)for(let j=i+1;j<base.length;j++){ out.push(base[i]+"＋"+base[j]);
     for(let k=j+1;k<base.length;k++) out.push(base[i]+"＋"+base[j]+"＋"+base[k]); } return out; }
@@ -4648,6 +4661,21 @@ function renderInjection6Inner(){
   { const bz=bizType(KU.dayClass); const pp=k=>Math.round((bz.probs[k]||0)*100);
     h+="<details class='note' open><summary><b>11. dayClass（営業タイプ判定）</b></summary><div style='font-size:13px;padding:4px'>直近の営業傾向：<b>"+bz.type+"</b><br>"+
       "据え置き営業 <b>"+pp("据え置き営業")+"%</b>／上げ営業 <b>"+pp("上げ営業")+"%</b>／混合営業 <b>"+pp("混合営業")+"%</b>／回収営業 <b>"+pp("回収営業")+"%</b><br><span class='muted'>"+bz.note+"</span></div></details>"; }
+  // ===== 前兆発見ランキング（全シグナルを基準からの上乗せ順に）=====
+  { const sr7=srAll.filter(r=>r.date<targetDate); const isHi7=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+    const baseHi=sr7.length?sr7.filter(isHi7).length/sr7.length:0;
+    const fl=Object.entries(KU.feats).map(([k,s])=>{ const n=s.keepN+s.upN+s.resetN, hi=s.keepHi+s.upHi+s.resetHi; const rate=n?hi/n:0;
+      const urN=s.upN+s.resetN, urHi=s.upHi+s.resetHi; const newRate=urN?urHi/urN:0;
+      return {k,n,rate,lift:rate-baseHi,urN,newRate,newLift:newRate-baseHi}; }).filter(f=>f.n>=10).sort((a,b)=>b.lift-a.lift);
+    const verdict=l=>l>=0.12?["強い前兆","#16a34a"]:l>=0.06?["前兆あり","#65a30d"]:l>=0.0?["弱い","#ca8a04"]:["無関係/逆","#999"];
+    h+="<h3 style='margin:16px 0 4px;background:#7c3aed;color:#fff;padding:7px 10px;border-radius:6px'>🔎 前兆発見ランキング（バックテストが見つけた手がかり）</h3>"+
+      "<p class='muted' style='font-size:12px'>全シグナルを「店の基準高設定率("+Math.round(baseHi*100)+"%)からどれだけ上乗せされるか(lift)」順に。<b>上乗せが大きいほど強い前兆</b>。新規投入時(前日低設定/新規)の成功率も併記。</p>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>シグナル（手がかり）</th><th>件数</th><th>高設定率</th><th>基準＋</th><th>新規投入時<br>成功率</th><th>判定</th></tr>"+
+      fl.slice(0,30).map((f,i)=>{ const v=verdict(f.lift); return "<tr><td>"+(i+1)+"</td><td style='text-align:left'><b>"+f.k+"</b></td><td>"+f.n+"</td>"+
+        "<td style='font-weight:bold'>"+Math.round(f.rate*100)+"%</td><td style='color:"+(f.lift>=0?'#16a34a':'#c00')+";font-weight:bold'>"+(f.lift>=0?"+":"")+Math.round(f.lift*100)+"pt</td>"+
+        "<td>"+(f.urN>=8?Math.round(f.newRate*100)+"%":"-")+"</td><td style='color:"+v[1]+";font-weight:bold'>"+v[0]+"</td></tr>"; }).join("")+
+      "</table></div><p class='muted' style='font-size:11px'>「基準＋」がプラスで大きいほど、その手がかりが出た台は高設定が入りやすい＝前兆。新規投入の前兆（島ローテ/放出日/周期到来/島×曜日 等）もここに出ます。マイナスは「頼ると外す」要素。</p>";
+  }
   // ===== スコア出力（総合/据え置き/上げ/リセット＋機種平均差＋★）=====
   const heBg=v=>v>=100?"#22c55e":v>=70?"#7CFC00":v>=55?"#b6f5a0":v>=40?"#d8f5c0":v>=25?"#ffe066":"#ffd0d0";
   const sc6=o=>(o.hiScore6!=null?o.hiScore6:o.hiScore);
