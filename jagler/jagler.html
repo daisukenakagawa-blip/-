@@ -89,6 +89,7 @@
     <button data-t="inject3">🧠 投入予想3</button>
     <button data-t="inject4">🔢 投入予想4</button>
     <button data-t="inject5">🧠 投入ツール5</button>
+    <button data-t="ecompare">🏆 エンジン比較</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
     <button data-t="myplay">📝 実戦収支</button>
@@ -416,6 +417,21 @@
     </div>
     <button class="primary" onclick="render()">🧠 投入ツール5を計算する</button>
     <div id="t-inject5"></div>
+  </div>
+
+  <!-- エンジン比較 -->
+  <div class="panel" id="p-ecompare">
+    <h2>🏆 エンジン比較（どのツールが一番高設定を当てているか）</h2>
+    <p class="muted">全予想エンジンを<b>同じ条件で実測</b>します。直近の各日について、各エンジンが付けた順位の上位に
+      実際の高設定台が入っていたかを集計し、<b>上位的中率（1位/3位内/5位内）と取りこぼし</b>で比較。どれがこの店で一番当たるかが分かります。
+      <b>予想日より前のデータのみ使用（未来不使用）。重い処理です。</b></p>
+    <div class="row">
+      <div><label>店舗</label><select id="ec-store" onchange="render()"></select></div>
+      <div><label>基準日（空欄＝最新の翌日）</label><input id="ec-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">🏆 全エンジンを比較する</button>
+    <div id="t-ecompare"></div>
   </div>
 
   <!-- 実戦予想（総合） -->
@@ -1491,6 +1507,7 @@ function refreshAll(){
   fillSelect("inj3-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj4-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj5-store",stores.length?stores:["（データなし）"]);
+  fillSelect("ec-store",stores.length?stores:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1516,7 +1533,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderEngineCompare); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
@@ -4421,6 +4438,73 @@ function renderInjection5Inner(){
   el.innerHTML=h;
 }
 
+// ========== エンジン比較（どのツールが一番高設定を当てているか）==========
+let _ecmp=null;
+function renderEngineCompare(){
+  const el=document.getElementById("t-ecompare"); if(!el) return;
+  const panel=document.getElementById("p-ecompare");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと全エンジンを比較計算します（重い処理）。</p>"; return; }
+  try{ renderEngineCompareInner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+function renderEngineCompareInner(){
+  const el=document.getElementById("t-ecompare"); const store=val("ec-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("ec-date")||fmtDate(ndDef);
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  if(_ecmp&&_ecmp.key===key){ el.innerHTML=_ecmp.html; return; }
+  el.innerHTML="<p class='muted'>計算中…（全エンジンを実測しています。少しお待ちください）</p>";
+  const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+  const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
+  const W=Math.min(15,btDays()); const start=Math.max(1,dates.length-W);
+  // 学習が要るエンジンは窓全体で一度だけ学習し各日に使い回す（相対比較用）
+  let FS=null, KU=null, ML=null;
+  try{ FS=injectionBacktest4(srAll,store,targetDate).featStats; }catch(e){}
+  try{ KU=keepUpLearn(srAll,store,targetDate); ML=missLearn(srAll,store,targetDate,KU); }catch(e){}
+  const safeOut=fn=>{ try{ const R=fn(); return (R&&R.out&&R.out.length)?R.out:null; }catch(e){ return null; } };
+  const engines=[
+    ["狙い台予想", dd=>safeOut(()=>computeRanking(srAll,store,dd,false,null))],
+    ["狙い台予想・新", dd=>safeOut(()=>computeRanking(srAll,store,dd,false,null,{mode:"new"}))],
+    ["投入期待", dd=>safeOut(()=>computeInjection(srAll,store,dd))],
+    ["投入予想3", dd=>safeOut(()=>computeInjection3(srAll,store,dd))],
+    ["投入予想4(命中率)", dd=>FS?safeOut(()=>computeInjection4(srAll,store,dd,{featStats:FS})):null],
+    ["投入予想4/5(据置・上げ)", dd=>{ if(!KU)return null; const o=safeOut(()=>computeKeepUp(srAll,store,dd,KU,ML)); return o?o.slice().sort((a,b)=>(b.hiScore||b.total||0)-(a.hiScore||a.total||0)):null; }]
+  ];
+  const stats=engines.map(e=>({name:e[0],n:0,t1:0,t3:0,t5:0,hiN:0,rec5:0}));
+  let evalDays=0;
+  for(let i=start;i<dates.length;i++){ const D=dates[i];
+    const actHi=srAll.filter(r=>r.date===D&&isHi(r)).map(r=>r.machine_no);
+    if(!actHi.length)continue; evalDays++;
+    engines.forEach((eng,ei)=>{ const out=eng[1](D); if(!out)return;
+      const ranked=out.map(o=>o.mno); const s=stats[ei]; s.n++; s.hiN+=actHi.length;
+      const inTop=N=>{ const t=ranked.slice(0,N); return actHi.some(m=>t.indexOf(m)>=0); };
+      if(inTop(1))s.t1++; if(inTop(3))s.t3++; if(inTop(5))s.t5++;
+      const t5=ranked.slice(0,5); s.rec5+=actHi.filter(m=>t5.indexOf(m)>=0).length;
+    });
+  }
+  const pc=(a,b)=>b?Math.round(a/b*100)+"%":"-";
+  // 総合スコア＝3位内的中率を主、5位内とrecallを従に
+  const ranked=stats.filter(s=>s.n>=3).map(s=>({...s, t3r:s.n?s.t3/s.n:0, t5r:s.n?s.t5/s.n:0, rec:s.hiN?s.rec5/s.hiN:0,
+    composite:(s.n?s.t3/s.n:0)*0.5+(s.n?s.t5/s.n:0)*0.3+(s.hiN?s.rec5/s.hiN:0)*0.2}));
+  ranked.sort((a,b)=>b.composite-a.composite);
+  let h="<p class='muted'>"+store+" ／ 直近"+evalDays+"日（高設定があった日）で比較 ／ 未来不使用</p>";
+  if(!ranked.length){ h+="<div class='note'>比較できる日が不足しています（高設定のある日が3日以上必要）。</div>"; el.innerHTML=h; _ecmp={key,html:h}; return; }
+  const win=ranked[0];
+  h+="<div class='note' style='background:#ecfdf5;border-color:#10b981;font-size:14px'>🏆 <b>この店で一番高設定を当てているのは：<span style='color:#16a34a;font-size:16px'>"+win.name+"</span></b>"+
+    "<br>3位内的中 <b>"+pc(win.t3,win.n)+"</b>／5位内 <b>"+pc(win.t5,win.n)+"</b>／高設定の拾い率(上位5位内) <b>"+Math.round(win.rec*100)+"%</b></div>";
+  h+="<div class='scroll'><table style='font-size:13px'><tr><th>順位</th><th>エンジン</th><th>1位的中</th><th>3位内的中</th><th>5位内的中</th><th>高設定の拾い率<br>(上位5位内)</th><th>判定日数</th></tr>"+
+    ranked.map((s,i)=>{ const bg=i===0?"#d8f5c0":i===1?"#eef7ff":"#fff"; const medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":(i+1)+"位";
+      return "<tr style='background:"+bg+"'><td style='font-weight:bold'>"+medal+"</td><td style='text-align:left;font-weight:bold'>"+s.name+"</td>"+
+        "<td>"+pc(s.t1,s.n)+"</td><td style='font-weight:bold'>"+pc(s.t3,s.n)+"</td><td>"+pc(s.t5,s.n)+"</td><td>"+Math.round(s.rec*100)+"%</td><td>"+s.n+"日</td></tr>"; }).join("")+
+    "</table></div>";
+  h+="<p class='muted' style='font-size:12px'>※「3位内的中」＝その日の予想上位3台に実際の高設定が1台でも含まれた日の割合。"+
+    "「拾い率」＝実際の高設定台のうち上位5位以内に入っていた割合。総合順位は3位内的中を主に算出。"+
+    "比較用に学習が要るエンジン（投入予想4/5）は窓全体で学習して各日に適用しているため、実運用の数値とは多少異なります。</p>";
+  el.innerHTML=h; _ecmp={key,html:h};
+}
+
 // ========== 明日の投入予想（読みやすいカード版）==========
 function renderForecast(){
   const el=document.getElementById("t-forecast"); if(!el) return;
@@ -4787,6 +4871,7 @@ document.getElementById("tabs").addEventListener("click",e=>{
   else if(t==="inject3") renderInjection3();
   else if(t==="inject4") renderInjection4();
   else if(t==="inject5") renderInjection5();
+  else if(t==="ecompare") renderEngineCompare();
 });
 
 // ---------- 初期化 ----------
