@@ -3797,7 +3797,7 @@ function condSortVal(l){ const m1=l.match(/1\/(\d+)/); if(m1)return +m1[1]; cons
 function keepUpLearn(srAll, store, targetDate){
   const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
   const start=Math.max(1,dates.length-btDays());
-  const F={}, COMBO={}, MACH={}, COND={}; let keepCnt=0,upCnt=0,resetCnt=0,hiTotal=0; const dayClass=[];
+  const F={}, COMBO={}, MACH={}, COND={}; let keepCnt=0,upCnt=0,resetCnt=0,hiTotal=0,totSit=0,totSitHi=0; const dayClass=[];
   const upDays={}, keepDays={};   // 何日不発後に上げたか／何日連続据え置きしたか（日数別のクセ）
   const condCat={};   // 条件ラベル→カテゴリ
   const dateTail={matchN:0,matchHi:0,nonN:0,nonHi:0, keepN:0,keepHi:0,upN:0,upHi:0};  // 日付と末尾の一致
@@ -3852,6 +3852,7 @@ function keepUpLearn(srAll, store, targetDate){
       const hist=CU.byM[mno]||[]; let keepRun=0; for(let j=hist.length-1;j>=0;j--){ if(CU.isHi(hist[j]))keepRun++; else break; }
       if(prevState==="up" && streak>=1){ const b=Math.min(streak,8); const o=upDays[b]=upDays[b]||{n:0,hi:0}; o.n++; if(hi)o.hi++; }
       if(prevState==="keep" && keepRun>=1){ const b=Math.min(keepRun,8); const o=keepDays[b]=keepDays[b]||{n:0,hi:0}; o.n++; if(hi)o.hi++; }
+      totSit++; if(hi)totSitHi++;   // 店の基準高設定率（lift加点の分母）
       if(hi){ hiTotal++; dhi++;
         if(prevState==="keep"){keepCnt++; dk++; M.keepCnt++;} else if(prevState==="up"){upCnt++; du++; M.upCnt++;} else {resetCnt++; dr++; M.resetCnt++;} } });
     dayClass.push({date:D,keep:dk,up:du,reset:dr,hi:dhi,total:act.length});
@@ -3868,6 +3869,7 @@ function keepUpLearn(srAll, store, targetDate){
   const cond={}; for(const k in COND){ const f=fin(COND[k]); f.cat=condCat[k]; cond[k]=f; }
   const missRate={}; for(const k in missSig) missRate[k]=btMissed?missSig[k]/btMissed:0;
   return {feats,combo,byMachine,cond,upDays,keepDays,dateTail,rotNext,narabi,wmStat,machHiRate,keepCnt,upCnt,resetCnt,hiTotal,keepRatio,upRatio,storeType,dayClass,
+    baseHi:(totSit?totSitHi/totSit:0),
     btHiTotal,btCaught,btMissed,missSig,missRate};
 }
 // 本日（最新営業日）の投入タイプを推定（明日の予想にバイアスをかける）
@@ -3903,13 +3905,18 @@ function comboBonus(r,nC){ if(nC>=3) return r>=0.70?20:r>=0.60?15:r>=0.50?10:0; 
 function kuScore(feats, mname, learned, learnPts, side){
   const nOf=s=>side==="keep"?s.keepN:side==="up"?s.upN:s.resetN;
   const rOf=s=>side==="keep"?s.keepRate:side==="up"?s.upRate:s.resetRate;
+  const base=learned.baseHi||0;   // 店の基準高設定率（lift加点用）
+  const allRate=s=>{ const n=(s.keepN||0)+(s.upN||0)+(s.resetN||0), hi=(s.keepHi||0)+(s.upHi||0)+(s.resetHi||0); return n?hi/n:null; };
   let sum=0; const why=[];
   feats.forEach(k=>{
     const mf=learned.byMachine[mname]&&learned.byMachine[mname].feats[k];
     const useM=mf&&nOf(mf)>=30; const st=useM?mf:learned.feats[k]; if(!st)return;
     const n=nOf(st); if(n<20)return;
     let pts=ratePoints(rOf(st))*confCoef(n); if(useM)pts*=1.1;        // 特徴量スコア化×信頼度補正
-    const lp=(learnPts&&learnPts[k])||0; const net=pts+lp;            // 学習補正（MISS_HIGH/-、MISS_LOW/+）
+    // ★lift加点：その特徴量の全体高設定率が店の基準を超える分を加点（低基準の店でも強い前兆が点になる）
+    const ar=allRate(st); const lift = ar!=null ? Math.max(0, ar-base) : 0;
+    const liftB = Math.min(8, +(lift*45).toFixed(1));
+    const lp=(learnPts&&learnPts[k])||0; const net=pts+lp+liftB;      // 学習補正＋lift加点
     if(Math.abs(net)>=0.5){ sum+=net; why.push({label:useM?k+"〔機種〕":k, pts:+net.toFixed(1), rate:rOf(st), n, src:useM?"機種":"店"}); }
   });
   comboKeys(feats).forEach(ck=>{ const st=learned.combo[ck]; if(!st)return; const n=nOf(st); if(n<50)return;   // 件数50未満=無効
