@@ -635,6 +635,7 @@ function load(){ if(_mem!==null) return _mem.slice();
     if(raw===_loadRaw && _loadCache) return _loadCache;   // キャッシュヒット：同じ配列を返し estimateSetting のメモ(__est)を活かす
     const a=JSON.parse(raw)||[];
     const arr=(a.length && a[0].combined===undefined) ? a.map(enrich) : a;   // 最小形式なら読み込み時に補完
+    arr.forEach(r=>{ if(r.machine_name){ const c=canonMachine(r.machine_name); if(c!==r.machine_name){ r.machine_name=c; if(r.__est!==undefined)delete r.__est; } } });   // 機種名を正規化（台番混入・表記ゆれを修正）
     _loadRaw=raw; _loadCache=arr; return arr;
   }catch(e){ return _mem?_mem.slice():[]; } }
 function save(r){ _loadRaw=null; _loadCache=null; try{_lcCache.clear();}catch(e){} const json=JSON.stringify(r,_noInternal);
@@ -756,7 +757,21 @@ function aimCellHTML(aim){
 }
 
 // ---------- 派生指標 ----------
+// 機種名の正規化：台番号がくっついた不正名（例「ネオアイムジャグラー33」）や表記ゆれを正す
+function canonMachine(name){
+  const n=(name||"").trim();
+  if(/ネオアイム/.test(n)) return "ネオアイムジャグラー";
+  if(/アイム/.test(n))     return "アイムジャグラーEX";
+  if(/ファンキー/.test(n)) return "ファンキージャグラー2";
+  if(/マイジャグラー/.test(n)) return "マイジャグラーV";
+  if(/ハッピー/.test(n))   return "ハッピージャグラーV3";
+  if(/ゴーゴー|ＧＯＧＯ|ＧＯ/.test(n)) return "ゴーゴージャグラー3";
+  if(/ガールズ/.test(n))   return "ジャグラーガールズSS";
+  if(/ミスター/.test(n))   return "ミスタージャグラー";
+  return n.replace(/\s*[0-9０-９]{2,}\s*$/,"").trim() || n;   // 不明機種：末尾の台番号らしき2桁以上を除去
+}
 function enrich(r){
+  if(r.machine_name) r.machine_name=canonMachine(r.machine_name);   // 機種名を正規化（台番混入を吸収）
   const bbreg=r.big+r.reg; const d=new Date(r.date+"T00:00:00");
   r.weekday=WD[d.getDay()]; r.tail=r.machine_no%10; r.bbreg=bbreg;
   r.big_prob=r.big?+(r.total/r.big).toFixed(1):null;
@@ -5149,6 +5164,8 @@ try{ localStorage.setItem("__jagtest","1"); localStorage.removeItem("__jagtest")
 try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
 // 旧バージョンが保存した内部キャッシュ(__est)で肥大化したデータを一度だけ掃除して容量を回復
 try{ const raw=localStorage.getItem(KEY); if(raw&&raw.indexOf("__est")>=0){ save(load()); } }catch(e){}
+// 機種名に台番号がくっついた不正データを起動時に一度だけ正規化して保存（ネオアイムジャグラー33 等）
+try{ const raw=localStorage.getItem(KEY); if(raw){ const a=JSON.parse(raw)||[]; if(a.some(r=>r.machine_name&&canonMachine(r.machine_name)!==r.machine_name)){ save(load()); } } }catch(e){}
 const _t=fmtDate(new Date());
 ["in-date","ph-date","ev-date","an-date","my-date"].forEach(id=>{const el=document.getElementById(id); if(el)el.value=_t;});
 {const by=document.getElementById("bulk-year"); if(by)by.value=new Date().getFullYear();}
