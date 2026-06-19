@@ -3601,14 +3601,14 @@ function inj4Ctx(sr, D, store, CU){
   const baseReg=avg(sr.map(r=>r.reg_prob)), baseComb=avg(sr.map(r=>r.combined)), baseBud=avg(sr.map(r=>budouDen(r.budou)).filter(x=>x!=null));
   const overall=CU.overallHi||0, phase=CU.phase(D);
   const domTail=(+D.slice(8,10))%10;   // 予想日の日付（末尾一致判定用）
-  // 新規投入の前兆：1パスで 島/末尾の高設定日・島×曜日/末尾×曜日・日別フロア・前日島放出 を集計
-  const islG={}, tailG={}, iwd={}, twd={}, dayHi={}, dayN={}, islMdHi={};
+  // 新規投入の前兆：1パスで 島/末尾の高設定日・島×曜日/末尾×曜日・日別フロア・前日島/機種放出・総差枚 を集計
+  const islG={}, tailG={}, iwd={}, twd={}, dayHi={}, dayN={}, daySabe={}, islMdHi={}, machMdHi={};
   sr.forEach(r=>{ const i=Math.floor(r.machine_no/10), t=r.machine_no%10, hi=CU.isHi(r);
     const wd=WD[new Date(r.date+"T00:00:00").getDay()];
-    if(hi){ (islG[i]=islG[i]||[]).push(r.date); (tailG[t]=tailG[t]||[]).push(r.date); if(r.date===md)islMdHi[i]=(islMdHi[i]||0)+1; }
+    if(hi){ (islG[i]=islG[i]||[]).push(r.date); (tailG[t]=tailG[t]||[]).push(r.date); if(r.date===md){islMdHi[i]=(islMdHi[i]||0)+1; machMdHi[r.machine_name]=(machMdHi[r.machine_name]||0)+1;} }
     (iwd[i]=iwd[i]||{}); (iwd[i][wd]=iwd[i][wd]||{n:0,hi:0}); iwd[i][wd].n++; if(hi)iwd[i][wd].hi++;
     (twd[t]=twd[t]||{}); (twd[t][wd]=twd[t][wd]||{n:0,hi:0}); twd[t][wd].n++; if(hi)twd[t][wd].hi++;
-    dayN[r.date]=(dayN[r.date]||0)+1; if(hi)dayHi[r.date]=(dayHi[r.date]||0)+1; });
+    dayN[r.date]=(dayN[r.date]||0)+1; if(hi)dayHi[r.date]=(dayHi[r.date]||0)+1; daySabe[r.date]=(daySabe[r.date]||0)+(r.sabe||0); });
   const finRot=g=>{ const out={}; for(const k in g){ const ds=[...new Set(g[k])].sort(); if(ds.length<3){out[k]={due:false};continue;}
     const gaps=[]; for(let i=1;i<ds.length;i++)gaps.push(dayDiff(ds[i-1],ds[i])); const cyc=avg(gaps), since=dayDiff(ds[ds.length-1],md);
     out[k]={cyc,since,due:!!(cyc&&since>=cyc*0.9)}; } return out; };
@@ -3620,7 +3620,12 @@ function inj4Ctx(sr, D, store, CU){
   const dts2=[...new Set(sr.map(r=>r.date))].sort(); let collectStreak=0;
   for(let i=dts2.length-1;i>=0;i--){ const d=dts2[i]; const rt=dayN[d]?(dayHi[d]||0)/dayN[d]:0; if(overall>0&&rt<overall*0.7)collectStreak++; else break; }
   const floorCollecting = collectStreak>=2;
-  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase,domTail,islRot,tailRot,releaseDay,iwd,twd,islMdHi,floorCollecting};
+  // フロア大回収明け：直近3日の総差枚が大幅マイナス（店が回収していた＝放出転換）
+  let sabe3=0,cnt3=0; for(let i=dts2.length-1;i>=0&&cnt3<3;i--){ sabe3+=daySabe[dts2[i]]||0; cnt3++; }
+  const floorBigCollect = cnt3>=2 && sabe3 < -3000*cnt3;
+  // ゾロ目・特日（1/7/11/17/22/27日）
+  const dom=+D.slice(8,10); const specialDay = [1,7,11,17,22,27].indexOf(dom)>=0;
+  return {md,nextWd,lastDay,eventDay,mdEvent,baseReg,baseComb,baseBud,overall,phase,domTail,islRot,tailRot,releaseDay,iwd,twd,islMdHi,machMdHi,floorCollecting,floorBigCollect,specialDay};
 }
 function inj4Feats(mno, CU, x){
   const hist=CU.byM[mno]||[]; const tail=mno%10, isl=Math.floor(mno/10);
@@ -3662,6 +3667,12 @@ function inj4Feats(mno, CU, x){
   { const tw=x.twd&&x.twd[tail]&&x.twd[tail][x.nextWd]; if(tw&&tw.n>=3&&tw.hi/tw.n>x.overall+0.06)F.push("末尾×曜日強"); }
   if(x.floorCollecting)F.push("回収続き明け");
   if(x.islMdHi&&((x.islMdHi[isl-1]||0)>=2||(x.islMdHi[isl+1]||0)>=2))F.push("隣島が前日放出");
+  // 追加前兆：台番ゾロ目／自島が前日放出／機種が前日放出／フロア大回収明け／ゾロ目特日
+  if(mno>=11&&mno%11===0)F.push("台番ゾロ目");
+  if(x.islMdHi&&(x.islMdHi[isl]||0)>=2)F.push("自島が前日放出");
+  if(x.machMdHi&&(x.machMdHi[mname]||0)>=2)F.push("機種が前日放出");
+  if(x.floorBigCollect)F.push("フロア大回収明け");
+  if(x.specialDay)F.push("ゾロ目・特日");
   if(x.domTail!=null && tail===x.domTail)F.push("日付末尾一致");
   // 取りこぼし集計用の sig（MISS_LABELキー）
   const sig=[]; if(x.eventDay)sig.push("eventDay"); if(streak>=3)sig.push("newInjection");
@@ -3771,7 +3782,8 @@ function comboTier(n){ return n>=1000?{w:1.4,label:"最重要"}:n>=300?{w:1.2,la
 // 複合特徴量に使うベース特徴量（ノイズの少ない投入クセ系に限定し、組合せ爆発を抑える）
 const COMBO_BASE=["前日据え置き","前日設定6推定","前日設定5推定","前日設定4推定","前日設定低推定","前日REG先行","前日ぶどう優秀",
   "前日低回転","不発明け1-2日","不発明け3日+","イベント日","イベント翌日据置","角台","角2","並び投入","末尾実績高","島実績高","曜日実績高","機種ローテ期",
-  "周期到来","島ローテ期","末尾ローテ期","放出日（回収明け）","島×曜日強","末尾×曜日強","回収続き明け","隣島が前日放出"];
+  "周期到来","島ローテ期","末尾ローテ期","放出日（回収明け）","島×曜日強","末尾×曜日強","回収続き明け","隣島が前日放出",
+  "台番ゾロ目","自島が前日放出","機種が前日放出","フロア大回収明け","ゾロ目・特日"];
 function comboKeys(feats){ const base=feats.filter(f=>COMBO_BASE.includes(f)).sort().slice(0,7); const out=[];
   for(let i=0;i<base.length;i++)for(let j=i+1;j<base.length;j++){ out.push(base[i]+"＋"+base[j]);
     for(let k=j+1;k<base.length;k++) out.push(base[i]+"＋"+base[j]+"＋"+base[k]); } return out; }
