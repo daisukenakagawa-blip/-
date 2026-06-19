@@ -1,0 +1,4 @@
+requests>=2.31
+python-dotenv>=1.0
+# AIで候補生成・攻略案を付ける場合のみ必要(なくてもデータ採点は動きます)
+anthropic>=0.49
