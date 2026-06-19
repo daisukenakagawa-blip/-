@@ -3815,8 +3815,11 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     // 新規投入(68%)・不発明け台を取りこぼさないよう、実投入率を点数として直接加える
     if(streak>=1 && learned.upDays){ const b=Math.min(streak,8), u=learned.upDays[b];
       if(u&&u.n>=6){ const rt=u.hi/u.n; upScore=Math.min(100,upScore+ratePoints(rt)*1.3); } }
-    if(keepRun>=1 && learned.keepDays){ const k2=learned.keepDays[Math.min(keepRun,8)];
-      if(k2&&k2.n>=6){ const rt=k2.hi/k2.n; keepScore=Math.min(100,keepScore+ratePoints(rt)*1.3); } }
+    // 据え置き期待：連続日数別の継続率（データ少なければ店の据え置き継続率）を「その項目だけ」で点数化
+    if(prevState==="keep"){ const k2=learned.keepDays[Math.min(keepRun,8)];
+      const rt = (k2&&k2.n>=6)?k2.hi/k2.n : (CU.keepRate!=null?CU.keepRate:null);
+      if(rt!=null){ keepScore=Math.min(100,keepScore+ratePoints(rt)*1.6);   // 据え置き期待を強めに反映
+        const e=ld?estimateSetting(ld):null; if(e&&e.setting>=5) keepScore=Math.min(100,keepScore+4); } }   // 前日が設定5以上濃厚なら据え置き期待さらに加点
     if(prevState==="reset"){ const nr=learned.resetCnt/Math.max(1,learned.keepCnt+learned.upCnt+learned.resetCnt); resetScore=Math.min(100,resetScore+Math.round(nr*60)); }
     keepScore=Math.max(0,Math.min(100,keepScore+biz.keepBias));
     upScore=Math.max(0,Math.min(100,upScore+biz.upBias));
@@ -3873,8 +3876,10 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     const hiExp = prevState==="keep"?keepScore : prevState==="up"?upScore : Math.max(resetScore, Math.round((keepScore+upScore)/2));
     // 過去統計での経験的な高設定期待率（％の根拠）：その状況で実際どれだけ高設定だったか
     let expRate=overall, expWhy="店全体の高設定率";
-    if(prevState==="keep"){ const kd=learned.keepDays[Math.min(keepRun,8)]; if(kd&&kd.n>=4){ expRate=kd.hi/kd.n; expWhy=keepRun+"日連続据え置き後の継続率"; }
-      else if(mStat&&mStat.keepCnt+mStat.upCnt>=8){ expRate=mStat.keepRatio*((CU.keepRate!=null?CU.keepRate:overall)); expWhy=mname+"の据え置き傾向"; } }
+    if(prevState==="keep"){ const kd=learned.keepDays[Math.min(keepRun,8)];
+      if(kd&&kd.n>=4){ expRate=kd.hi/kd.n; expWhy=keepRun+"日連続据え置き後の継続率"; }
+      else if(CU.keepRate!=null){ expRate=CU.keepRate; expWhy="この店の据え置き継続率"; }
+      const e=ld?estimateSetting(ld):null; if(e&&e.setting>=5) expRate=Math.min(1,expRate*1.12); }   // 前日設定5以上濃厚なら据え置き期待を上乗せ
     else if(prevState==="up"){ const ud=learned.upDays[Math.min(streak,8)]; if(ud&&ud.n>=4){ expRate=ud.hi/ud.n; expWhy=streak+"日不発後の上げ率"; } }
     else { const nt=learned.keepCnt+learned.upCnt+learned.resetCnt; expRate = nt?learned.resetCnt/nt*overall*3:overall; expWhy="新規投入の発生率"; }
     expRate=Math.max(0,Math.min(1,expRate));
