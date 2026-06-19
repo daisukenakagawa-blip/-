@@ -125,10 +125,10 @@ function cmdTable(html, args) {
   const tables = extractTables(html);
   const ti = toInt(args.table) || 0;
   if (!tables[ti]) { console.error(`table #${ti} がありません（検出 ${tables.length} 個）`); process.exit(1); }
-  if (!args.cols) { console.error('--cols "台番号,G数,BB,RB,差枚" を指定してください（0始まり、不要列は -）'); process.exit(1); }
+  if (!args.cols) { console.error('--cols "台番号,G数,BB,RB,差枚[,機種]" を指定してください（0始まり、不要列は -）'); process.exit(1); }
   const idx = String(args.cols).split(',').map(s => s.trim());
-  const [iNo, iG, iBB, iRB, iDiff] = idx.map(s => s === '-' ? -1 : parseInt(s, 10));
-  const out = [['台番号', '総回転数', 'BIG', 'REG', '差枚', '合成確率']];
+  const [iNo, iG, iBB, iRB, iDiff, iName] = idx.map(s => s === '-' || s === undefined ? -1 : parseInt(s, 10));
+  const out = [['台番号', '機種', '総回転数', 'BIG', 'REG', '差枚', '合成確率']];
   for (const row of tables[ti]) {
     const g = iG >= 0 ? toInt(row[iG]) : null;
     const bb = iBB >= 0 ? toInt(row[iBB]) : null;
@@ -136,9 +136,10 @@ function cmdTable(html, args) {
     if (g == null || bb == null || rb == null) continue;     // データ行のみ
     if (g <= 0 || (bb + rb) <= 0) continue;
     const no = iNo >= 0 ? (row[iNo] ?? '') : '';
+    const name = iName >= 0 ? (row[iName] ?? '') : '';
     const diff = iDiff >= 0 ? toInt(row[iDiff]) : '';
     const comb = (bb + rb) > 0 ? '1/' + (g / (bb + rb)).toFixed(1) : '';
-    out.push([no, g, bb, rb, diff == null ? '' : diff, comb]);
+    out.push([no, name, g, bb, rb, diff == null ? '' : diff, comb]);
   }
   return out;
 }
@@ -156,7 +157,7 @@ function cmdLabel(html) {
     process.exit(1);
   }
   const comb = '1/' + (g / (bb + rb)).toFixed(1);
-  return [['台番号', '総回転数', 'BIG', 'REG', '差枚', '合成確率'], ['', g, bb, rb, diff == null ? '' : diff, comb]];
+  return [['台番号', '機種', '総回転数', 'BIG', 'REG', '差枚', '合成確率'], ['', '', g, bb, rb, diff == null ? '' : diff, comb]];
 }
 
 // ---------- 出力 ----------

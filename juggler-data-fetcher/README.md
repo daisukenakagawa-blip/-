@@ -46,22 +46,23 @@ node juggler-fetch.js inspect ./saved.html
 
 ### 2) CSVに変換（url または file）
 `inspect` で分かった列番号を `--cols` で指定します（0始まり、
-順番は 台番号,G数,BB,RB,差枚）。差枚など不要な列は `-` で飛ばせます。
+順番は 台番号,G数,BB,RB,差枚,機種）。差枚・機種など不要な列は `-` で
+飛ばせます。**機種列を入れておくと、予想ツール側で機種が自動選択**されます。
 
 ```bash
-# 例: 表の0列=台番号, 2列=G数, 3列=BB, 4列=RB, 6列=差枚
-node juggler-fetch.js file ./saved.html --table 0 --cols "0,2,3,4,6" --out daily.csv
+# 例: 表の0列=台番号, 1列=機種, 2列=G数, 3列=BB, 4列=RB, 6列=差枚
+node juggler-fetch.js file ./saved.html --table 0 --cols "0,2,3,4,6,1" --out daily.csv
 
 # URLモード（robots.txtを尊重・レート制限あり）
 node juggler-fetch.js url "https://.../hall?date=20260619" \
-  --table 1 --cols "0,2,3,4,6" --delay 4000 \
+  --table 1 --cols "0,2,3,4,6,1" --delay 4000 \
   --ua "my-personal-juggler-tool (contact: you@example.com)" --out daily.csv
 ```
 
 出力 `daily.csv`:
 ```
-台番号,総回転数,BIG,REG,差枚,合成確率
-123,5210,21,18,1840,1/133.6
+台番号,機種,総回転数,BIG,REG,差枚,合成確率
+101,マイジャグラーV,5210,21,18,1840,1/133.6
 ...
 ```
 
@@ -73,9 +74,11 @@ node juggler-fetch.js url "https://.../hall?date=20260619" \
 node juggler-fetch.js file ./single.html --label --out one.csv
 ```
 
-## 予想ツールへの取り込み
-出力CSVの各行（G数・BB・RB）を `juggler-yosou.html` に入力すれば
-設定推定＆展開予想ができます。将来的にCSV読み込みUIを足すことも可能です。
+## 予想ツールへの取り込み（一気通貫）
+出力した `daily.csv` を `juggler-yosou.html` の上部
+**「📥 CSVから一括取り込み」** で読み込むと、台一覧から台を選ぶだけで
+G数・BB・REG・差枚（と機種）が自動入力され、そのまま設定推定＆展開予想が
+走ります。手入力・写真OCR不要の一気通貫フローです。
 
 ## 免責
 本ツールは技術デモです。利用に伴う規約違反・損害について作者は責任を

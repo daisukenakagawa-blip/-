@@ -82,6 +82,18 @@
 
 <div class="wrap">
 
+  <div class="card" style="border-color:#2aa7c4;">
+    <h2><span class="step" style="background:#1d6fa5;">CSV</span> 📥 CSVから一括取り込み（任意）</h2>
+    <label>台データCSV（取り込みツール juggler-data-fetcher の出力）</label>
+    <input type="file" id="csv" accept=".csv,text/csv">
+    <div id="csvPick" style="display:none;margin-top:12px;">
+      <label>台を選ぶ（選ぶと自動入力＆そのまま予想します）</label>
+      <select id="csvRows"></select>
+      <p id="csvStatus" class="hint" style="margin-top:6px;"></p>
+    </div>
+    <p class="hint">CSVを読み込むと台一覧から選ぶだけでG数・BIG・REG・差枚（機種があれば機種も）が自動入力されます。手入力・写真は不要。CSVが無い場合は下のSTEP1〜2へ。</p>
+  </div>
+
   <div class="card">
     <h2><span class="step">STEP 1</span> データの写真（任意）</h2>
     <label>データカウンター／スランプグラフの写真</label>
@@ -659,6 +671,93 @@ function updateCherryUI(){
 }
 $('machine').addEventListener('change', updateCherryUI);
 updateCherryUI();
+
+// ===== CSV一括取り込み（一気通貫） =====
+// CSV機種名 → MACHINESキーへの対応（ネオアイムをアイムより先に判定）
+function matchMachineKey(name){
+  const n = String(name||'').replace(/\s/g,'');
+  if(/ネオアイム/.test(n)) return 'neoim';
+  if(/アイム/.test(n)) return 'im';
+  if(/マイジャグ/.test(n)) return 'my';
+  if(/ファンキー/.test(n)) return 'funky';
+  if(/ゴーゴー|ゴージャグ/.test(n)) return 'gogo';
+  if(/ハッピー/.test(n)) return 'happy';
+  if(/ガールズ/.test(n)) return 'girls';
+  if(/ミスター/.test(n)) return 'mister';
+  if(/ミラクル/.test(n)) return 'miracle';
+  return null;
+}
+// 簡易CSVパーサ（ダブルクォート対応）
+function parseCSV(text){
+  const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else { if(c==='"') q=true;
+      else if(c===','){ row.push(cur); cur=''; }
+      else if(c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+      else if(c==='\r'){} else cur+=c; }
+  }
+  if(cur!==''||row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r=>r.some(c=>c.trim()!==''));
+}
+function colIndex(header, names){
+  for(const nm of names){ const i=header.findIndex(h=>h.replace(/\s/g,'').includes(nm)); if(i>=0) return i; }
+  return -1;
+}
+let csvData=[];
+$('csv').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const rows=parseCSV(String(rd.result));
+    if(rows.length<2){ $('csvStatus').textContent='CSVにデータ行がありません。'; return; }
+    const head=rows[0];
+    const iG=colIndex(head,['総回転','G数','回転','GAME']);
+    const iBB=colIndex(head,['BIG','BB']);
+    const iRB=colIndex(head,['REG','RB','バケ']);
+    const iNo=colIndex(head,['台番','台番号','番号']);
+    const iName=colIndex(head,['機種']);
+    const iDiff=colIndex(head,['差枚','差玉','出玉']);
+    if(iG<0||iBB<0||iRB<0){ $('csvStatus').innerHTML='⚠️ G数・BIG・REGの列が見つかりません。ヘッダ行を確認してください。'; return; }
+    csvData=[];
+    const sel=$('csvRows'); sel.innerHTML='';
+    const ph=document.createElement('option'); ph.value=''; ph.textContent='― 台を選んでください ―'; sel.appendChild(ph);
+    for(let r=1;r<rows.length;r++){
+      const row=rows[r];
+      const g=parseInt(String(row[iG]||'').replace(/[^\d-]/g,''));
+      const bb=parseInt(String(row[iBB]||'').replace(/[^\d-]/g,''));
+      const rb=parseInt(String(row[iRB]||'').replace(/[^\d-]/g,''));
+      if(!g||isNaN(bb)||isNaN(rb)||g<1) continue;
+      const no=iNo>=0?row[iNo]:'';
+      const name=iName>=0?row[iName]:'';
+      const diff=iDiff>=0?parseInt(String(row[iDiff]||'').replace(/[^\d+-]/g,'')):null;
+      const comb=(bb+rb)>0?(g/(bb+rb)).toFixed(1):'-';
+      const idx=csvData.length;
+      csvData.push({no,name,g,bb,rb,diff:isNaN(diff)?null:diff,key:matchMachineKey(name)});
+      const o=document.createElement('option'); o.value=idx;
+      o.textContent=(no?('台'+no+' '):'')+(name?name+' ':'')+`G${g.toLocaleString()} BB${bb} RB${rb} 合成1/${comb}`;
+      sel.appendChild(o);
+    }
+    if(!csvData.length){ $('csvStatus').innerHTML='⚠️ 有効なデータ行が見つかりませんでした。'; $('csvPick').style.display='none'; return; }
+    $('csvPick').style.display='block';
+    $('csvStatus').innerHTML='✅ '+csvData.length+'台を読み込みました。台を選ぶと自動入力＆予想します。';
+  };
+  rd.readAsText(f);
+});
+$('csvRows').addEventListener('change', e=>{
+  const v=e.target.value; if(v==='') return;
+  const d=csvData[parseInt(v)];
+  $('games').value=d.g; $('big').value=d.bb; $('reg').value=d.rb;
+  $('diff').value=d.diff==null?'':d.diff;
+  if(d.key){ $('machine').value=d.key; updateCherryUI(); }
+  const msg = d.key ? '機種「'+MACHINES[d.key].name+'」を自動選択しました。' :
+    (d.name? '機種「'+d.name+'」を自動判定できませんでした。プルダウンで選んでください。' : '機種列が無いのでプルダウンで機種を選んでください。');
+  $('csvStatus').innerHTML='✅ 入力しました。'+msg+'（予想を実行します）';
+  // 一気通貫: 機種が確定していればそのまま予想実行
+  if(d.key) $('run').click();
+  else $('machine').scrollIntoView({behavior:'smooth'});
+});
 
 // スペック表
 (function(){
