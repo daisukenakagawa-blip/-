@@ -580,11 +580,15 @@ function fillBtDays(){ try{ const cur=localStorage.getItem("jag_btdays")||"90";
 // 容量節約用の最小レコード（派生項目はload時にenrichで再計算するので保存不要）
 const _MINK=["date","store","machine_no","machine_name","big","reg","total","sabe","budou"];
 function _minRec(r){ const o={}; for(const k of _MINK){ if(r[k]!==undefined&&r[k]!==null) o[k]=r[k]; } return o; }
+let _loadRaw=null, _loadCache=null;   // 同じ生データなら再パース・再enrich・推定の再計算を回避（重さ対策）
 function load(){ if(_mem!==null) return _mem.slice();
-  try{ const a=JSON.parse(localStorage.getItem(KEY))||[];
-    return (a.length && a[0].combined===undefined) ? a.map(enrich) : a;   // 最小形式なら読み込み時に補完
+  try{ const raw=localStorage.getItem(KEY);
+    if(raw===_loadRaw && _loadCache) return _loadCache;   // キャッシュヒット：同じ配列を返し estimateSetting のメモ(__est)を活かす
+    const a=JSON.parse(raw)||[];
+    const arr=(a.length && a[0].combined===undefined) ? a.map(enrich) : a;   // 最小形式なら読み込み時に補完
+    _loadRaw=raw; _loadCache=arr; return arr;
   }catch(e){ return _mem?_mem.slice():[]; } }
-function save(r){ const json=JSON.stringify(r,_noInternal);
+function save(r){ _loadRaw=null; _loadCache=null; const json=JSON.stringify(r,_noInternal);
   if(_mem!==null){ _mem=r.slice(); }
   else { try{ localStorage.setItem(KEY,json); }
     catch(e){ // 容量超過：生データだけの最小形式で再挑戦（最新分が消えない様に）
@@ -1507,7 +1511,7 @@ function refreshAll(){
   fillSelect("inj3-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj4-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj5-store",stores.length?stores:["（データなし）"]);
-  fillSelect("ec-store",stores.length?stores:["（データなし）"]);
+  fillSelect("ec-store",stores.length?["（全店まとめ）",...stores]:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
   fillSelect("ph-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1536,6 +1540,7 @@ function render(){
   safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderEngineCompare); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
+function _act(id){ const p=document.getElementById(id); return !!(p&&p.classList.contains("active")); }   // タブが表示中か（重い再計算を表示中のみに）
 function selStoreRows(rows){ const s=val("f-store"); return (s&&s!=="（全店）")?rows.filter(r=>r.store===s):rows; }
 
 // 機種名に台数がくっついた不正データ（例 マイジャグラーV48）を検出
@@ -1559,7 +1564,7 @@ function renderBad(rows){
     bad.map(n=>'<button class="ghost" style="margin:3px;color:#c00" onclick="deleteByMachine(\''+
       encodeURIComponent(n)+'\')">🗑 '+n+'</button>').join("")+'</div>';
 }
-function renderList(rows){
+function renderList(rows){ if(!_act("p-list"))return;
   renderBad(rows);
   let v=rows.slice(); const s=val("f-store"),d=val("f-date"),mc=val("f-machine");
   if(s&&s!=="（全店）") v=v.filter(r=>r.store===s);
@@ -1622,7 +1627,7 @@ function trendTable(groups,label,order){
        "</td><td>"+(rg?"1/"+rg.toFixed(1):"-")+"</td></tr>"; }
   return h+"</table></div>";
 }
-function renderStore(rows){
+function renderStore(rows){ if(!_act("p-store"))return;
   const g=groupBy(recent(rows,30),"store");
   const ks=Object.keys(g).sort((a,b)=>(avg(g[a].map(r=>r.combined))||999)-(avg(g[b].map(r=>r.combined))||999));
   let h="<div class='scroll'><table><tr><th>店舗</th><th>件数</th><th>平均合算</th><th>平均REG</th></tr>";
@@ -1631,9 +1636,9 @@ function renderStore(rows){
        (c?"1/"+c.toFixed(1):"-")+"</td><td>"+(rg?"1/"+rg.toFixed(1):"-")+"</td></tr>"; }
   document.getElementById("t-store").innerHTML=h+"</table></div>";
 }
-function renderTail(rows){ document.getElementById("t-tail").innerHTML=
+function renderTail(rows){ if(!_act("p-tail"))return; document.getElementById("t-tail").innerHTML=
   trendTable(groupBy(selStoreRows(rows),"tail"),"末尾",ks=>ks.map(Number).sort((a,b)=>a-b)); }
-function renderWeek(rows){ document.getElementById("t-week").innerHTML=
+function renderWeek(rows){ if(!_act("p-week"))return; document.getElementById("t-week").innerHTML=
   trendTable(groupBy(selStoreRows(rows),"weekday"),"曜日",ks=>WD_ORDER.filter(w=>ks.includes(w))); }
 
 // ---------- 狙い台予想（100点満点）----------
@@ -1997,7 +2002,7 @@ function computeRanking(srAll, store, targetDate, forceEvent, weights, opts){
   return {md,ndStr,nextWd,autoEv,evLabelNext,keepRate,eventDay:autoEv.length>0,out,tailAvg,wAvg,gReg,gComb,mAvgs,NEW};
 }
 
-function renderRank(rows){
+function renderRank(rows){ if(!_act("p-rank"))return;
   const store=val("r-store"); const el=document.getElementById("t-rank");
   if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
   const srAll=rows.filter(r=>r.store===store);
@@ -2376,7 +2381,7 @@ function renderStoreProfile(store){
      "<br>台番号別 高設定率: "+(topNo||"-")+"<br>台番号別 据え置き率: "+(topKeep||"-")+"</p>";
   return h;
 }
-function renderEventAnalysis(){
+function renderEventAnalysis(){ if(!_act("p-evan"))return;
   const el=document.getElementById("t-evan"); if(!el) return;
   const store=val("ea-store");
   if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
@@ -2447,7 +2452,7 @@ function buildMotives(a){
   if(!m.length) m.push("特筆すべき偏りは少なく、平常運転の範囲");
   return m;
 }
-function renderStoreReport(){
+function renderStoreReport(){ if(!_act("p-report"))return;
   const el=document.getElementById("t-report"); if(!el) return;
   const store=val("s-store"), date=val("s-date");
   if(!store||store==="（データなし）"||!date||date==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
@@ -2609,7 +2614,7 @@ function addMyPlay(){ const date=val("my-date"), store=val("my-store").trim(), m
 }
 function deleteMyPlay(id){ if(!confirm("この記録を削除しますか？"))return; saveMyPlay(loadMyPlay().filter(r=>r.id!==id)); renderMyPlay(); }
 function clearMyPlay(){ if(!confirm("実戦収支の記録をすべて削除します。よろしいですか？"))return; saveMyPlay([]); renderMyPlay(); }
-function renderMyPlay(){ const el=document.getElementById("t-myplay"); if(!el)return;
+function renderMyPlay(){ if(!_act("p-myplay"))return; const el=document.getElementById("t-myplay"); if(!el)return;
   const arr=loadMyPlay().slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
   const rate=parseFloat(localStorage.getItem("jag_myrate")||"20")||20;
   const yen=d=>{ const v=Math.round((d||0)*rate); return (v>=0?"+":"")+v.toLocaleString()+"円"; };
@@ -4449,61 +4454,70 @@ function renderEngineCompare(){
 function renderEngineCompareInner(){
   const el=document.getElementById("t-ecompare"); const store=val("ec-store");
   if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
-  const srAll=load().filter(r=>r.store===store);
-  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
-  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
-  const targetDate=val("ec-date")||fmtDate(ndDef);
-  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  const all=load(); const allStores=[...new Set(all.map(r=>r.store))];
+  const isAll = store==="（全店まとめ）";
+  const targetStores = isAll ? allStores : [store];
+  const key="EC|"+(isAll?"ALL":store)+"|"+all.length+"|"+btDays();
   if(_ecmp&&_ecmp.key===key){ el.innerHTML=_ecmp.html; return; }
-  el.innerHTML="<p class='muted'>計算中…（全エンジンを実測しています。少しお待ちください）</p>";
-  const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
-  const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
-  const W=btDays(); const start=Math.max(1,dates.length-W);   // 集めたデータ全部（バックテスト期間ぶん。既定90日＝通常は全データ）
-  // 学習が要るエンジンは窓全体で一度だけ学習し各日に使い回す（相対比較用）
-  let FS=null, KU=null, ML=null;
-  try{ FS=injectionBacktest4(srAll,store,targetDate).featStats; }catch(e){}
-  try{ KU=keepUpLearn(srAll,store,targetDate); ML=missLearn(srAll,store,targetDate,KU); }catch(e){}
-  const safeOut=fn=>{ try{ const R=fn(); return (R&&R.out&&R.out.length)?R.out:null; }catch(e){ return null; } };
-  const engines=[
-    ["狙い台予想", dd=>safeOut(()=>computeRanking(srAll,store,dd,false,null))],
-    ["狙い台予想・新", dd=>safeOut(()=>computeRanking(srAll,store,dd,false,null,{mode:"new"}))],
-    ["投入期待", dd=>safeOut(()=>computeInjection(srAll,store,dd))],
-    ["投入予想3", dd=>safeOut(()=>computeInjection3(srAll,store,dd))],
-    ["投入予想4(命中率)", dd=>FS?safeOut(()=>computeInjection4(srAll,store,dd,{featStats:FS})):null],
-    ["投入予想4/5(据置・上げ)", dd=>{ if(!KU)return null; const o=safeOut(()=>computeKeepUp(srAll,store,dd,KU,ML)); return o?o.slice().sort((a,b)=>(b.hiScore||b.total||0)-(a.hiScore||a.total||0)):null; }]
-  ];
-  const stats=engines.map(e=>({name:e[0],n:0,t1:0,t3:0,t5:0,hiN:0,rec5:0}));
-  let evalDays=0;
-  for(let i=start;i<dates.length;i++){ const D=dates[i];
-    const actHi=srAll.filter(r=>r.date===D&&isHi(r)).map(r=>r.machine_no);
-    if(!actHi.length)continue; evalDays++;
-    engines.forEach((eng,ei)=>{ const out=eng[1](D); if(!out)return;
-      const ranked=out.map(o=>o.mno); const s=stats[ei]; s.n++; s.hiN+=actHi.length;
-      const inTop=N=>{ const t=ranked.slice(0,N); return actHi.some(m=>t.indexOf(m)>=0); };
-      if(inTop(1))s.t1++; if(inTop(3))s.t3++; if(inTop(5))s.t5++;
-      const t5=ranked.slice(0,5); s.rec5+=actHi.filter(m=>t5.indexOf(m)>=0).length;
-    });
-  }
+  const ENG=["狙い台予想","狙い台予想・新","投入期待","投入予想3","投入予想4(命中率)","投入予想4/5(据置・上げ)"];
+  // 1店ぶんの集計
+  const runStore=(srAll)=>{
+    if(srAll.length<2) return null;
+    const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+    const md=maxDate(srAll); const nd=new Date(md+"T00:00:00"); nd.setDate(nd.getDate()+1); const targetDate=fmtDate(nd);
+    const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
+    const start=Math.max(1,dates.length-btDays());
+    let FS=null,KU=null,ML=null;
+    try{ FS=injectionBacktest4(srAll,store0(srAll),targetDate).featStats; }catch(e){}
+    let st=store0(srAll);
+    try{ KU=keepUpLearn(srAll,st,targetDate); ML=missLearn(srAll,st,targetDate,KU); }catch(e){}
+    const so=fn=>{ try{ const R=fn(); return (R&&R.out&&R.out.length)?R.out:null; }catch(e){ return null; } };
+    const engines=[
+      dd=>so(()=>computeRanking(srAll,st,dd,false,null)),
+      dd=>so(()=>computeRanking(srAll,st,dd,false,null,{mode:"new"})),
+      dd=>so(()=>computeInjection(srAll,st,dd)),
+      dd=>so(()=>computeInjection3(srAll,st,dd)),
+      dd=>FS?so(()=>computeInjection4(srAll,st,dd,{featStats:FS})):null,
+      dd=>{ if(!KU)return null; const o=so(()=>computeKeepUp(srAll,st,dd,KU,ML)); return o?o.slice().sort((a,b)=>(b.hiScore||b.total||0)-(a.hiScore||a.total||0)):null; }
+    ];
+    const stats=ENG.map(n=>({name:n,n:0,t1:0,t3:0,t5:0,hiN:0,rec5:0})); let evalDays=0;
+    for(let i=start;i<dates.length;i++){ const D=dates[i];
+      const actHi=srAll.filter(r=>r.date===D&&isHi(r)).map(r=>r.machine_no); if(!actHi.length)continue; evalDays++;
+      engines.forEach((eng,ei)=>{ const out=eng(D); if(!out)return; const ranked=out.map(o=>o.mno); const s=stats[ei]; s.n++; s.hiN+=actHi.length;
+        const inTop=N=>{ const t=ranked.slice(0,N); return actHi.some(m=>t.indexOf(m)>=0); };
+        if(inTop(1))s.t1++; if(inTop(3))s.t3++; if(inTop(5))s.t5++;
+        const t5=ranked.slice(0,5); s.rec5+=actHi.filter(m=>t5.indexOf(m)>=0).length; });
+    }
+    return {stats,evalDays};
+  };
+  // 全店ぶんを集計（per-storeも記録）
+  const agg=ENG.map(n=>({name:n,n:0,t1:0,t3:0,t5:0,hiN:0,rec5:0})); const perStore=[];
+  for(const s of targetStores){ const srAll=all.filter(r=>r.store===s); const R=runStore(srAll); if(!R)continue;
+    R.stats.forEach((x,i)=>{ agg[i].n+=x.n; agg[i].t1+=x.t1; agg[i].t3+=x.t3; agg[i].t5+=x.t5; agg[i].hiN+=x.hiN; agg[i].rec5+=x.rec5; });
+    const win=R.stats.filter(x=>x.n>=3).sort((a,b)=>(b.t3/b.n||0)-(a.t3/a.n||0))[0];
+    perStore.push({store:s, evalDays:R.evalDays, win:win?win.name:"-", winT3:win?Math.round(win.t3/win.n*100):0}); }
   const pc=(a,b)=>b?Math.round(a/b*100)+"%":"-";
-  // 総合スコア＝3位内的中率を主、5位内とrecallを従に
-  const ranked=stats.filter(s=>s.n>=3).map(s=>({...s, t3r:s.n?s.t3/s.n:0, t5r:s.n?s.t5/s.n:0, rec:s.hiN?s.rec5/s.hiN:0,
-    composite:(s.n?s.t3/s.n:0)*0.5+(s.n?s.t5/s.n:0)*0.3+(s.hiN?s.rec5/s.hiN:0)*0.2}));
+  const ranked=agg.filter(s=>s.n>=3).map(s=>({...s, rec:s.hiN?s.rec5/s.hiN:0, composite:(s.n?s.t3/s.n:0)*0.5+(s.n?s.t5/s.n:0)*0.3+(s.hiN?s.rec5/s.hiN:0)*0.2}));
   ranked.sort((a,b)=>b.composite-a.composite);
-  let h="<p class='muted'>"+store+" ／ 直近"+evalDays+"日（高設定があった日）で比較 ／ 未来不使用</p>";
+  let h="<p class='muted'>"+(isAll?"全店まとめ（"+targetStores.length+"店）":store)+" ／ 集めたデータ全部で比較 ／ 未来不使用</p>";
   if(!ranked.length){ h+="<div class='note'>比較できる日が不足しています（高設定のある日が3日以上必要）。</div>"; el.innerHTML=h; _ecmp={key,html:h}; return; }
   const win=ranked[0];
-  h+="<div class='note' style='background:#ecfdf5;border-color:#10b981;font-size:14px'>🏆 <b>この店で一番高設定を当てているのは：<span style='color:#16a34a;font-size:16px'>"+win.name+"</span></b>"+
+  h+="<div class='note' style='background:#ecfdf5;border-color:#10b981;font-size:14px'>🏆 <b>"+(isAll?"全店トータルで":"この店で")+"一番高設定を当てているのは：<span style='color:#16a34a;font-size:16px'>"+win.name+"</span></b>"+
     "<br>3位内的中 <b>"+pc(win.t3,win.n)+"</b>／5位内 <b>"+pc(win.t5,win.n)+"</b>／高設定の拾い率(上位5位内) <b>"+Math.round(win.rec*100)+"%</b></div>";
-  h+="<div class='scroll'><table style='font-size:13px'><tr><th>順位</th><th>エンジン</th><th>1位的中</th><th>3位内的中</th><th>5位内的中</th><th>高設定の拾い率<br>(上位5位内)</th><th>判定日数</th></tr>"+
+  h+="<div class='scroll'><table style='font-size:13px'><tr><th>順位</th><th>エンジン</th><th>1位的中</th><th>3位内的中</th><th>5位内的中</th><th>拾い率<br>(上位5)</th><th>判定<br>のべ日数</th></tr>"+
     ranked.map((s,i)=>{ const bg=i===0?"#d8f5c0":i===1?"#eef7ff":"#fff"; const medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":(i+1)+"位";
       return "<tr style='background:"+bg+"'><td style='font-weight:bold'>"+medal+"</td><td style='text-align:left;font-weight:bold'>"+s.name+"</td>"+
         "<td>"+pc(s.t1,s.n)+"</td><td style='font-weight:bold'>"+pc(s.t3,s.n)+"</td><td>"+pc(s.t5,s.n)+"</td><td>"+Math.round(s.rec*100)+"%</td><td>"+s.n+"日</td></tr>"; }).join("")+
     "</table></div>";
-  h+="<p class='muted' style='font-size:12px'>※「3位内的中」＝その日の予想上位3台に実際の高設定が1台でも含まれた日の割合。"+
-    "「拾い率」＝実際の高設定台のうち上位5位以内に入っていた割合。総合順位は3位内的中を主に算出。"+
-    "比較用に学習が要るエンジン（投入予想4/5）は窓全体で学習して各日に適用しているため、実運用の数値とは多少異なります。</p>";
+  // 全店モードは店ごとの勝者一覧も表示
+  if(isAll && perStore.length){ h+="<details class='note' open style='font-size:12px'><summary><b>🏬 店ごとの一番当たるエンジン</b></summary>"+
+    "<div class='scroll'><table style='font-size:12px'><tr><th>店舗</th><th>一番当たるエンジン</th><th>3位内的中</th><th>判定日数</th></tr>"+
+    perStore.sort((a,b)=>b.winT3-a.winT3).map(p=>"<tr><td style='text-align:left'>"+p.store+"</td><td style='font-weight:bold'>"+p.win+"</td><td>"+p.winT3+"%</td><td>"+p.evalDays+"日</td></tr>").join("")+
+    "</table></div></details>"; }
+  h+="<p class='muted' style='font-size:12px'>※「3位内的中」＝予想上位3台に実際の高設定が1台でも含まれた日の割合。「拾い率」＝実高設定台のうち上位5位以内に入っていた割合。"+(isAll?"全店モードは各店の数値を合算（のべ日数）。":"")+"学習が要るエンジンは窓全体で学習して各日に適用しているため実運用と多少異なります。</p>";
   el.innerHTML=h; _ecmp={key,html:h};
 }
+function store0(srAll){ return srAll.length?srAll[0].store:""; }
 
 // ========== 明日の投入予想（読みやすいカード版）==========
 function renderForecast(){
@@ -4861,17 +4875,8 @@ document.getElementById("tabs").addEventListener("click",e=>{
   document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
   e.target.classList.add("active");
   document.getElementById("p-"+e.target.dataset.t).classList.add("active");
-  // 重いタブ（予想・新／実戦予想）は開いた時に計算する
-  const t=e.target.dataset.t;
-  if(t==="ranknew") renderRankNew(load());
-  else if(t==="battle") renderBattle();
-  else if(t==="andetail") renderAnswerDetail();
-  else if(t==="inject") renderInjection();
-  else if(t==="forecast") renderForecast();
-  else if(t==="inject3") renderInjection3();
-  else if(t==="inject4") renderInjection4();
-  else if(t==="inject5") renderInjection5();
-  else if(t==="ecompare") renderEngineCompare();
+  // 表示中のタブだけ計算（各描画は _act で自分が表示中か判定して即returnする）
+  render();
 });
 
 // ---------- 初期化 ----------
