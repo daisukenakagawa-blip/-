@@ -4363,6 +4363,30 @@ function renderInjection5Inner(){
     else h+="<div class='note' style='font-size:12px'>🎉 イベント日の統計：イベント日のデータがまだ少なく集計できません（イベント日を登録・蓄積すると表示）。</div>";
   }
 
+  // ===== 不発連続・据え置き連続データ（全台）=====
+  { const CU=KR.CU; const isHi=CU.isHi;
+    const streakStats=hist=>{ const keepRuns=[],missRuns=[]; let ck=0,cm=0;
+      hist.forEach(r=>{ if(isHi(r)){ if(cm>0){missRuns.push(cm);cm=0;} ck++; } else { if(ck>0){keepRuns.push(ck);ck=0;} cm++; } });
+      if(ck>0)keepRuns.push(ck); if(cm>0)missRuns.push(cm);
+      const av=a=>a.length?+(a.reduce((x,y)=>x+y,0)/a.length).toFixed(1):0;
+      return {maxKeep:keepRuns.length?Math.max(...keepRuns):0, maxMiss:missRuns.length?Math.max(...missRuns):0, avgKeep:av(keepRuns), avgMiss:av(missRuns)}; };
+    const byMs={}; KR.out.forEach(o=>{(byMs[o.mname]=byMs[o.mname]||[]).push(o);});
+    const mns=Object.keys(byMs).sort();
+    h+="<details class='note' open style='background:#f1f5f9;border-color:#64748b'><summary><b>📊 不発連続・据え置き連続データ（全台まとめ）</b></summary>"+
+      "<p class='muted' style='font-size:12px'>各台の「今」の状態（据え置き中◯日／不発◯日）と、過去の最長・平均の連続日数。据え置きが伸びている台・不発が溜まっている台が一覧で分かります。</p>";
+    for(const mname of mns){ const list=byMs[mname].slice().sort((a,b)=>a.mno-b.mno);
+      h+="<div style='font-weight:bold;margin:8px 0 2px'>🎰 "+mname+"</div>"+
+        "<div class='scroll'><table style='font-size:12px'><tr><th>台</th><th>今の状態</th><th>据え置き<br>連続(今)</th><th>不発<br>連続(今)</th><th>過去最長<br>据え置き</th><th>過去最長<br>不発</th><th>平均<br>据え置き</th><th>平均<br>不発</th></tr>"+
+        list.map(o=>{ const hist=CU.byM[o.mno]||[]; const st=streakStats(hist);
+          const now = o.keepRun>0?"<span style='color:#1a7f37;font-weight:bold'>据え置き中 "+o.keepRun+"日</span>":o.streak>0?"<span style='color:#b35900;font-weight:bold'>不発 "+o.streak+"日</span>":"<span class='muted'>-</span>";
+          const kc=o.keepRun>=3?"#16a34a":o.keepRun>0?"#65a30d":"#bbb"; const mc=o.streak>=4?"#dc2626":o.streak>0?"#ea580c":"#bbb";
+          return "<tr><td><b>"+o.mno+"</b></td><td style='text-align:left'>"+now+"</td>"+
+            "<td style='color:"+kc+";font-weight:bold'>"+(o.keepRun||0)+"日</td><td style='color:"+mc+";font-weight:bold'>"+(o.streak||0)+"日</td>"+
+            "<td>"+st.maxKeep+"日</td><td>"+st.maxMiss+"日</td><td>"+st.avgKeep+"日</td><td>"+st.avgMiss+"日</td></tr>"; }).join("")+
+        "</table></div>"; }
+    h+="</details>";
+  }
+
   // 機種別 100点 カード
   const byM={}; KR.out.forEach(o=>{(byM[o.mname]=byM[o.mname]||[]).push(o);});
   const mn=Object.keys(byM).sort((a,b)=>Math.max(...byM[b].map(o=>o.hiScore))-Math.max(...byM[a].map(o=>o.hiScore)));
