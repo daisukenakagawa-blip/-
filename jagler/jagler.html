@@ -510,7 +510,7 @@
         <option value="inject">投入期待スコア</option>
         <option value="forecast">🔮 明日の投入予想（学習反映）</option>
         <option value="inject3">🧠 投入予想3（学習反映）</option>
-        <option value="inject4">🔢 投入予想4（据え置き/上げ・自己学習）</option>
+        <option value="inject4">🧠 投入ツール5/6（据え置き/上げ・自己学習）</option>
       </select></div>
     </div>
     <button class="primary" onclick="render()">🔍 答え合わせする</button>
@@ -2930,7 +2930,7 @@ function renderAnswerDetailInner(){
     : engine==="inject3" ? computeInjection3(srAll,store,dd)
     : (engine==="inject"||engine==="forecast") ? computeInjection(srAll,store,dd)
     : computeRanking(srAll,store,dd,false,null);
-  const engLabel=engine==="inject4"?"投入予想4 総合期待度":engine==="inject3"?"投入予想3スコア":engine==="forecast"?"明日の投入予想スコア":engine==="inject"?"投入期待スコア":"予想スコア";
+  const engLabel=engine==="inject4"?"投入ツール5/6 総合期待度":engine==="inject3"?"投入予想3スコア":engine==="forecast"?"明日の投入予想スコア":engine==="inject"?"投入期待スコア":"予想スコア";
   let R;
   if(engine==="forecast"){ const bt=injectionBacktest(srAll,store,D);
     R=computeInjection(srAll,store,D,{missPattern:{missN:bt.missN,missRate:bt.missRate},factorWeights:bt.factorWeights}); }
@@ -4638,6 +4638,11 @@ function renderInjection6Inner(){
   const cell=v=>"<td style='color:"+cc(v)+";font-weight:bold'>"+pc(v)+"</td>";
   let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+" ／ 学習"+KU.dayClass.length+"日分（未来不使用）／ 店タイプ：【"+KU.storeType+"】 ／ 高設定投入 計"+KU.hiTotal+"件（据え置き"+Math.round(KU.keepRatio*100)+"%・上げ"+Math.round(KU.upRatio*100)+"%）</p>"+
     "<div class='note' style='background:#eef2ff;border-color:#6366f1;font-size:13px'>📊 <b>店長の投入ロジックを11項目で集計。</b>据え置き/上げ/リセット/回収を分けて学習しています。</div>";
+  // 🧠 店長思考（ツール5と共通エンジン）
+  { const autoEv=eventsOn(targetDate,store); const evD=autoEv.length>0; const evL=autoEv.map(e=>e.name||eventDesc(e)).join("・");
+    const TH=managerThought(KU,KR,targetDate,evD,evL);
+    h+="<div class='note' style='background:#0f172a;color:#e2e8f0;border-color:#334155'><div style='font-size:15px;font-weight:bold;margin-bottom:6px'>🧠 店長思考（今日どこに設定を入れるか）</div>"+
+      TH.map(t=>{ const m=t.match(/^【(.+?)】(.*)$/); return m?"<div style='margin:5px 0'><b style='color:#fbbf24'>"+m[1]+"</b>：<span>"+m[2]+"</span></div>":"<div>"+t+"</div>"; }).join("")+"</div>"; }
   // 1. F（単体特徴量）
   { const fs=Object.entries(KU.feats).filter(e=>(e[1].keepN+e[1].upN+e[1].resetN)>=5).sort((a,b)=>(allr(b[1])||0)-(allr(a[1])||0));
     h+="<details class='note' open><summary><b>1. F（単体特徴量）— 件数・据え置き/上げ/リセット成功率・高設定率</b></summary><div class='scroll'><table style='font-size:12px'><tr><th>特徴量</th><th>件数</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>高設定率</th></tr>"+
