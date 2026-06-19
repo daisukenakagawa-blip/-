@@ -4610,7 +4610,7 @@ function renderEngineCompareInner(){
   const targetStores = isAll ? allStores : [store];
   const key="EC|"+(isAll?"ALL":store)+"|"+all.length+"|"+btDays();
   if(_ecmp&&_ecmp.key===key){ el.innerHTML=_ecmp.html; return; }
-  const ENG=["狙い台予想","狙い台予想・新","投入期待","投入予想3","投入予想4(命中率)","投入予想4/5(据置・上げ)"];
+  const ENG=["狙い台予想","狙い台予想・新","投入期待","投入予想3","投入予想4(命中率)","投入予想4/5/6(据置・上げ)"];
   // 1店ぶんの集計
   const runStore=(srAll)=>{
     if(srAll.length<2) return null;
@@ -4665,7 +4665,7 @@ function renderEngineCompareInner(){
     "<div class='scroll'><table style='font-size:12px'><tr><th>店舗</th><th>一番当たるエンジン</th><th>3位内的中</th><th>判定日数</th></tr>"+
     perStore.sort((a,b)=>b.winT3-a.winT3).map(p=>"<tr><td style='text-align:left'>"+p.store+"</td><td style='font-weight:bold'>"+p.win+"</td><td>"+p.winT3+"%</td><td>"+p.evalDays+"日</td></tr>").join("")+
     "</table></div></details>"; }
-  h+="<p class='muted' style='font-size:12px'>※「3位内的中」＝予想上位3台に実際の高設定が1台でも含まれた日の割合。「拾い率」＝実高設定台のうち上位5位以内に入っていた割合。"+(isAll?"全店モードは各店の数値を合算（のべ日数）。":"")+"学習が要るエンジンは窓全体で学習して各日に適用しているため実運用と多少異なります。</p>";
+  h+="<p class='muted' style='font-size:12px'>※「3位内的中」＝予想上位3台に実際の高設定が1台でも含まれた日の割合。「拾い率」＝実高設定台のうち上位5位以内に入っていた割合。"+(isAll?"全店モードは各店の数値を合算（のべ日数）。":"")+"学習が要るエンジンは窓全体で学習して各日に適用しているため実運用と多少異なります。<br>※「投入予想4/5/6」は同じエンジン（据え置き/上げ自己学習・hiScore順）です。投入ツール5は実戦カード表示、投入ツール6は全集計ダッシュボードで、予想の中身は共通のためこの1行で代表しています。</p>";
   el.innerHTML=h; _ecmp={key,html:h};
 }
 function store0(srAll){ return srAll.length?srAll[0].store:""; }
