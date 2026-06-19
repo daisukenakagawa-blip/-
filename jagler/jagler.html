@@ -3837,11 +3837,11 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     let total = prevState==="keep"?keepScore : prevState==="up"?upScore : resetScore;
     if(mPriorKeep>=0.6&&prevState==="keep") total=Math.min(100,total+3);
     if(mPriorKeep<=0.4&&prevState==="up") total=Math.min(100,total+3);
-    const margin=12; let verdict, side;
-    if(prevState==="reset"){ side="reset"; verdict = resetScore>=45?"新規投入本命":resetScore>=30?"新規投入候補":"新規投入薄"; }
-    else if(keepScore>=upScore+margin){ side="keep"; verdict = keepScore>=55?"据え置き本命":keepScore>=42?"据え置き有力":"据え置き寄り"; }
-    else if(upScore>=keepScore+margin){ side="up"; verdict = upScore>=55?"上げ本命":upScore>=42?"上げ有力":"上げ寄り"; }
-    else { side=prevHi?"keep":"up"; verdict="混合・様子見"; }
+    // 狙いの軸は前日の状態で決める（前日高設定＝据え置き軸／前日低設定＝上げ軸／前日不明＝新規軸）
+    let verdict, side;
+    if(prevState==="keep"){ side="keep"; verdict = keepScore>=55?"据え置き本命":keepScore>=42?"据え置き有力":keepScore>=28?"据え置き候補":"据え置き薄(切られ濃厚)"; }
+    else if(prevState==="up"){ side="up"; verdict = upScore>=55?"上げ本命":upScore>=42?"上げ有力":upScore>=28?"上げ候補":"上げ薄"; }
+    else { side="reset"; verdict = resetScore>=45?"新規投入本命":resetScore>=30?"新規投入候補":"新規投入薄"; }
     if(rescueHits>=1 && verdict.indexOf("本命")<0) verdict="🔧救済・"+verdict;
     const sideWhy = (side==="keep"?kE.why:side==="up"?uE.why:rE.why);
     // 一致したクセの数＝根拠の強さ。取りこぼし救済の一致も加える。
