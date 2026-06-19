@@ -4461,6 +4461,10 @@ function managerThought(KU,KR,targetDate,eventDay,evLabel){
      "据え置きと上げが半々。前日状況と当日の状況証拠を両にらみで判断する。"));
   const bz=KR.biz; if(bz&&bz.type){ const pp=k=>Math.round((bz.probs[k]||0)*100);
     T.push("【本日の営業読み】直近の傾向は"+bz.type+"（据え置き営業"+pp("据え置き営業")+"％／上げ営業"+pp("上げ営業")+"％／混合"+pp("混合営業")+"％／回収"+pp("回収営業")+"％）。"+bz.note+"。"); }
+  // ★この店で効く前兆（lift順）＝店ごとの正解を自動抽出
+  { const base=KU.baseHi||0; const fl=Object.entries(KU.feats).map(([k,s])=>{ const n=(s.keepN||0)+(s.upN||0)+(s.resetN||0), hi=(s.keepHi||0)+(s.upHi||0)+(s.resetHi||0); return {k,n,lift:n?hi/n-base:0}; }).filter(f=>f.n>=20&&f.lift>=0.04).sort((a,b)=>b.lift-a.lift).slice(0,6);
+    const weak=Object.entries(KU.feats).map(([k,s])=>{ const n=(s.keepN||0)+(s.upN||0)+(s.resetN||0), hi=(s.keepHi||0)+(s.upHi||0)+(s.resetHi||0); return {k,n,lift:n?hi/n-base:0}; }).filter(f=>f.n>=40&&f.lift<=-0.01).sort((a,b)=>a.lift-b.lift).slice(0,3);
+    if(fl.length) T.push("【この店で効く前兆】"+fl.map(f=>f.k+"(+"+Math.round(f.lift*100)+"pt)").join("・")+"。これらが重なる台ほど狙い目（点数も自動で高くなります）。"+(weak.length?"逆に効かない（頼ると外す）："+weak.map(f=>f.k).join("・")+"。":"")); }
   if(eventDay) T.push("【イベント】本日はイベント日（"+(evLabel||"")+"）。イベント時は通常日と投入パターンが変わりやすいので、過去同イベントの据え置き/上げ傾向を重視する。");
   // 据え置きの読み
   { const kd=Object.entries(KU.keepDays).map(([d,s])=>({d:+d,n:s.n,r:s.n?s.hi/s.n:0})).filter(o=>o.n>=5);
