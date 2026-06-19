@@ -1,0 +1,6 @@
+state/*.json
+screenshots/*.png
+logs/*.log
+posted_log.csv
+__pycache__/
+*.pyc
