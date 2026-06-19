@@ -3999,6 +3999,10 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     // 高設定が入る確率ベースの得点（0-100）：過去のクセから入る確率が高いほど高得点。
     // 状況スコア(total)と経験的な入る確率(expRate×140%)の高い方を採用し、強い手がかりを素直に高得点化。
     const hiScore = Math.max(0,Math.min(100, Math.round(Math.max(total, expRate*140))));
+    // 投入ツール6用：根拠が極めて強い台は100超えを許可（経験的な入る確率＋証拠の積み上げ＋複合/救済）
+    const base6=Math.max(total, expRate*148);
+    const evBonus6=Math.max(0,matchStrength-20)*0.8 + comboHits*3 + rescueHits*3 + (wmBonus>0?wmBonus*0.5:0);
+    const hiScore6=Math.max(0,Math.min(160, Math.round(base6 + (base6>=85?evBonus6:evBonus6*0.25))));
     // ★各台のコメント（このクセがあるので入りやすい等を言葉で）
     const cmt=[];
     if(side==="keep"){ cmt.push("前日高設定の据え置き候補（"+keepRun+"日目）"); if(expRate>=0.5)cmt.push(expWhy+Math.round(expRate*100)+"%と高く継続濃厚"); else if(expRate>=0.35)cmt.push(expWhy+Math.round(expRate*100)+"%"); }
@@ -4011,7 +4015,7 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
     if(rescueHits)cmt.push("過去取りこぼした手がかりに一致＝見逃し注意");
     const concl = hiScore>=70?"→ かなり入りやすい・狙い目":hiScore>=55?"→ 入りやすい":hiScore>=40?"→ そこそこ期待":hiScore>=25?"→ 期待薄":"→ 見送り寄り";
     const comment = cmt.join("／")+" "+concl;
-    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiScore,hiExp,expRate,expWhy,verdict,side,reasons,comment,wmRate,wmDiff,wmBonus,matchCount,matchStrength,comboHits,machHits,rescueHits,
+    out.push({mno,mname,tail,keepScore,upScore,resetScore,total,hiScore,hiScore6,hiExp,expRate,expWhy,verdict,side,reasons,comment,wmRate,wmDiff,wmBonus,matchCount,matchStrength,comboHits,machHits,rescueHits,
       prevState,prevHi,streak,keepRun,keptData,missData,prevComb,prevBig,prevReg,prevTot,nbHi,nbRate,
       s4,s5,s6,e4,e5,e6,honmei,aim:aimInfo(hist),days:hist.length,avgGap,
       score:total, mark:verdict, sig:sig.slice(), pros:reasons.slice(), cons:[],
@@ -4621,10 +4625,22 @@ function renderInjection6Inner(){
     h+="<details class='note' open><summary><b>11. dayClass（営業タイプ判定）</b></summary><div style='font-size:13px;padding:4px'>直近の営業傾向：<b>"+bz.type+"</b><br>"+
       "据え置き営業 <b>"+pp("据え置き営業")+"%</b>／上げ営業 <b>"+pp("上げ営業")+"%</b>／混合営業 <b>"+pp("混合営業")+"%</b>／回収営業 <b>"+pp("回収営業")+"%</b><br><span class='muted'>"+bz.note+"</span></div></details>"; }
   // ===== スコア出力（総合/据え置き/上げ/リセット＋機種平均差＋★）=====
-  const heBg=v=>v>=70?"#7CFC00":v>=55?"#b6f5a0":v>=40?"#d8f5c0":v>=25?"#ffe066":"#ffd0d0";
+  const heBg=v=>v>=100?"#22c55e":v>=70?"#7CFC00":v>=55?"#b6f5a0":v>=40?"#d8f5c0":v>=25?"#ffe066":"#ffd0d0";
+  const sc6=o=>(o.hiScore6!=null?o.hiScore6:o.hiScore);
+  // ★機種関係なく「設定が入りやすい」全台ランキング（100超えあり）
+  const allRank=KR.out.slice().sort((a,b)=>sc6(b)-sc6(a)).slice(0,20);
+  h+="<h3 style='margin:16px 0 4px;background:#b45309;color:#fff;padding:7px 10px;border-radius:6px'>🏆 全台ランキング（機種関係なく・設定が入りやすい順）</h3>"+
+    "<p class='muted' style='font-size:12px'>機種をまたいで全台を比較。<b>根拠が非常に強い台は100点を超えます</b>（過去の入る確率＋証拠の積み上げ＋複合一致）。</p>"+
+    "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>得点</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>判定</th><th>狙い</th></tr>"+
+    allRank.map((o,i)=>{ const v=sc6(o); const medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":(i+1);
+      return "<tr><td style='font-weight:bold'>"+medal+"</td><td><b>"+o.mno+"</b></td><td style='text-align:left'>"+o.mname+"</td>"+
+        "<td style='background:"+heBg(v)+";font-weight:bold;font-size:15px'>"+v+(v>100?" <span style='font-size:10px'>★超</span>":"")+"</td>"+
+        "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td><td style='color:#7c3aed'>"+o.resetScore+"</td>"+
+        "<td style='white-space:nowrap;font-size:11px'>"+o.verdict+"</td><td style='font-size:11px'>"+(o.comment||"").split("→").pop()+"</td></tr>"; }).join("")+
+    "</table></div>";
   const byM={}; KR.out.forEach(o=>{(byM[o.mname]=byM[o.mname]||[]).push(o);});
-  const mn=Object.keys(byM).sort((a,b)=>Math.max(...byM[b].map(o=>o.hiScore))-Math.max(...byM[a].map(o=>o.hiScore)));
-  h+="<h3 style='margin:16px 0 4px;background:#1e3a8a;color:#fff;padding:7px 10px;border-radius:6px'>🎯 各台スコア（総合／据え置き／上げ／リセット期待度＋機種平均差＋★）</h3>";
+  const mn=Object.keys(byM).sort((a,b)=>Math.max(...byM[b].map(o=>sc6(o)))-Math.max(...byM[a].map(o=>sc6(o))));
+  h+="<h3 style='margin:16px 0 4px;background:#1e3a8a;color:#fff;padding:7px 10px;border-radius:6px'>🎯 機種別 各台スコア（総合／据え置き／上げ／リセット期待度＋機種平均差＋★）</h3>";
   // 据え置き中／不発中の各日データ（BIG/バケ(REG)/合算/差枚）
   const sabeStr=v=>v==null?"-":(v>=0?"+":"")+v;
   const dataTbl6=(o)=>{ if(o.side==="keep"){ const a=o.keptData||[]; if(!a.length)return "<span class='muted'>据え置き"+o.keepRun+"日目</span>";
@@ -4634,10 +4650,10 @@ function renderInjection6Inner(){
       return "<b>不発"+o.streak+"日</b>（不発分）<table style='font-size:10px;margin-top:1px'><tr><th>日</th><th>設定</th><th>BIG</th><th>バケ</th><th>合算</th><th>差枚</th></tr>"+
         a.map(d=>"<tr><td>"+d.date.slice(5)+"</td><td>"+(d.sete||"-")+"</td><td>1/"+(d.big?Math.round(d.big):"-")+"</td><td>1/"+(d.reg?Math.round(d.reg):"-")+"</td><td>1/"+(d.comb?Math.round(d.comb):"-")+"</td><td>"+sabeStr(d.sabe)+"</td></tr>").join("")+"</table>"; }
     return "<span style='color:#7c3aed'>新規投入（前日なし）</span>"; };
-  for(const mname of mn){ const list=byM[mname].slice().sort((a,b)=>b.hiScore-a.hiScore);
+  for(const mname of mn){ const list=byM[mname].slice().sort((a,b)=>sc6(b)-sc6(a));
     h+="<h4 style='margin:10px 0 3px'>🎰 "+mname+"</h4><div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>総合</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>機種平均</th><th>平均差</th><th>評価</th><th>判定</th><th>据え置き中／不発中データ<br>(設定/BIG/バケ/合算/差枚)</th></tr>"+
       list.map((o,i)=>"<tr><td>"+(i+1)+"</td><td><b>"+o.mno+"</b></td>"+
-        "<td style='background:"+heBg(o.hiScore)+";font-weight:bold;font-size:14px'>"+o.hiScore+"</td>"+
+        "<td style='background:"+heBg(sc6(o))+";font-weight:bold;font-size:14px'>"+sc6(o)+"</td>"+
         "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td><td style='color:#7c3aed'>"+o.resetScore+"</td>"+
         "<td>"+o.machAvg+"</td><td style='font-weight:bold;color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td><td style='white-space:nowrap'>"+o.verdict+"</td>"+
         "<td style='text-align:left;font-size:11px'>"+dataTbl6(o)+"</td></tr>").join("")+
