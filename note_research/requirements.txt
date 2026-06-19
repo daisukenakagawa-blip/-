@@ -1,0 +1,4 @@
+requests>=2.31
+python-dotenv>=1.0
+# AI 考察を使う場合のみ必要(なくても動きます)
+anthropic>=0.49
