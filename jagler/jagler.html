@@ -90,6 +90,7 @@
     <button data-t="inject4">🔢 投入予想4</button>
     <button data-t="inject5">🧠 投入ツール5</button>
     <button data-t="inject6">📊 投入ツール6</button>
+    <button data-t="inject7">🎯 設定5・6狙い</button>
     <button data-t="ecompare">🏆 エンジン比較</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
@@ -431,6 +432,40 @@
     </div>
     <button class="primary" onclick="render()">📊 投入ツール6を計算する</button>
     <div id="t-inject6"></div>
+  </div>
+
+  <!-- 投入ツール7（設定5・6ピンポイント） -->
+  <div class="panel" id="p-inject7">
+    <h2>🎯 設定5・6ピンポイント狙い</h2>
+    <p class="muted">前日候補（5以上/6が入りそうな台）を絞り、店の5・6投入実績（機種/台番号/イベント/曜日）を表示。
+      さらに<b>当日確認モード</b>で、打っている台のBIG/REG/総G/ぶどうから<b>設定6濃厚／5以上／撤退</b>を判定（5と6を実戦データで分離）。</p>
+    <div class="row">
+      <div><label>店舗</label><select id="inj7-store" onchange="render()"></select></div>
+      <div><label>予想する日（空欄＝最新の翌日）</label><input id="inj7-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">🎯 5・6候補を出す</button>
+    <div class="note" style="background:#fef9c3;border-color:#eab308;margin-top:8px">
+      <div style="font-weight:bold;margin-bottom:4px">🔬 当日確認モード（5と6を分離）</div>
+      <div class="row" style="gap:6px">
+        <div><label>機種</label><select id="j56-mach">
+          <option value="マイジャグラー5">マイジャグラー</option>
+          <option value="ネオアイムジャグラー">アイム/ネオアイム</option>
+          <option value="ファンキージャグラー2">ファンキー</option>
+          <option value="ゴーゴージャグラー3">ゴーゴー</option>
+          <option value="ハッピージャグラーV3">ハッピー</option>
+          <option value="ジャグラーガールズSS">ガールズ</option>
+          <option value="ミスタージャグラー">ミスター</option>
+        </select></div>
+        <div><label>BIG回数</label><input id="j56-big" type="number" inputmode="numeric" style="width:70px"></div>
+        <div><label>REG回数</label><input id="j56-reg" type="number" inputmode="numeric" style="width:70px"></div>
+        <div><label>総回転(G)</label><input id="j56-g" type="number" inputmode="numeric" style="width:90px"></div>
+        <div><label>ぶどう(任意 例1/5.9)</label><input id="j56-bud" type="text" style="width:90px"></div>
+      </div>
+      <button class="primary" style="margin-top:6px" onclick="judge56()">🔬 設定を判定する</button>
+      <div id="j56-result" style="margin-top:6px"></div>
+    </div>
+    <div id="t-inject7"></div>
   </div>
 
   <!-- エンジン比較 -->
@@ -1533,6 +1568,7 @@ function refreshAll(){
   fillSelect("inj4-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj5-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj6-store",stores.length?stores:["（データなし）"]);
+  fillSelect("inj7-store",stores.length?stores:["（データなし）"]);
   fillSelect("ec-store",stores.length?["（全店まとめ）",...stores]:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1559,7 +1595,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderInjection6); safe(renderEngineCompare); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderInjection6); safe(renderInjection7); safe(renderEngineCompare); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function _act(id){ const p=document.getElementById(id); return !!(p&&p.classList.contains("active")); }   // タブが表示中か（重い再計算を表示中のみに）
@@ -4591,6 +4627,82 @@ function renderInjection6Inner(){
         "<td>"+o.machAvg+"</td><td style='font-weight:bold;color:"+(o.diff>=0?'#1a7f37':'#c00')+"'>"+(o.diff>=0?"+":"")+o.diff+"</td><td>"+o.stars+"</td><td style='white-space:nowrap'>"+o.verdict+"</td>"+
         "<td style='text-align:left;font-size:11px'>"+dataTbl6(o)+"</td></tr>").join("")+
       "</table></div>"; }
+  el.innerHTML=h;
+}
+
+// ========== 投入ツール7（設定5・6ピンポイント）==========
+function judge56(){
+  const el=document.getElementById("j56-result"); if(!el)return;
+  const mn=val("j56-mach"); const big=parseInt(val("j56-big"),10)||0, reg=parseInt(val("j56-reg"),10)||0, tot=parseInt(val("j56-g"),10)||0; const budS=val("j56-bud");
+  if(!tot||tot<500){ el.innerHTML="<span style='color:#c00'>総回転を500G以上入れてください。</span>"; return; }
+  const rec=enrich({machine_name:mn, total:tot, big, reg, budou:budS||""});
+  const e=estimateSetting(rec);
+  if(!e){ el.innerHTML="<span style='color:#c00'>対応機種を選んでください。</span>"; return; }
+  const pc=v=>Math.round(v*100)+"%"; const p1_2=e.probs[0]+e.probs[1], p5only=e.probs[4];
+  let verdict, vc;
+  if(e.p6>=0.5){ verdict="🔥 設定6濃厚"; vc="#16a34a"; }
+  else if(e.p6>=0.3){ verdict="設定6の可能性あり（5か6）"; vc="#16a34a"; }
+  else if(e.p5>=0.6){ verdict="設定5以上濃厚（ほぼ5）"; vc="#65a30d"; }
+  else if(e.high>=0.6){ verdict="設定4以上（高設定だが5・6は薄い）"; vc="#ca8a04"; }
+  else if(p1_2>=0.55){ verdict="⛔ 設定1-2濃厚 → 撤退推奨"; vc="#dc2626"; }
+  else { verdict="判別不能（サンプル不足）"; vc="#777"; }
+  const comb=rec.combined, rp=rec.reg_prob, bp=rec.big_prob;
+  let budNote=""; const bd=budouDen(budS); if(bd){ budNote = bd<=5.95?"ぶどう設定6級(1/"+bd+")":bd<=6.1?"ぶどう設定5-6級(1/"+bd+")":bd<=6.3?"ぶどう設定4級(1/"+bd+")":"ぶどう低設定級(1/"+bd+")"; }
+  const need = tot<2000?"⚠ まだ"+tot+"G。あと"+Math.max(0,3000-tot)+"G以上回すと5と6が分離しやすい":tot<5000?"3000G超。6000Gまで回すと6判定の精度UP":"十分なサンプル量";
+  el.innerHTML="<div style='font-size:15px;font-weight:bold;color:"+vc+"'>"+verdict+"</div>"+
+    "<div style='font-size:12px;margin-top:3px'>推定設定 <b>設定"+e.setting+"</b>（信頼度"+e.conf+"%）／ P(設定6)=<b>"+pc(e.p6)+"</b>・P(設定5)="+pc(p5only)+"・P(設定5以上)=<b>"+pc(e.p5)+"</b>・P(設定4以上)="+pc(e.high)+"・P(設定1-2)="+pc(p1_2)+"</div>"+
+    "<div style='font-size:12px;margin-top:2px'>実数値：合算1/"+(comb?Math.round(comb):"-")+"・BIG1/"+(bp?Math.round(bp):"-")+"・REG(バケ)1/"+(rp?Math.round(rp):"-")+"・"+tot+"G"+(budNote?"・"+budNote:"")+"</div>"+
+    "<div class='muted' style='font-size:11px;margin-top:2px'>"+need+"。REGとぶどうが良いほど6寄り。BIGだけ良くREGが弱い時は5以下を疑う。</div>";
+}
+let _inj7=null;
+function renderInjection7(){
+  const el=document.getElementById("t-inject7"); if(!el) return;
+  const panel=document.getElementById("p-inject7");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと計算します（重い処理のため）。</p>"; return; }
+  try{ renderInjection7Inner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+function renderInjection7Inner(){
+  const el=document.getElementById("t-inject7"); const store=val("inj7-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>当日確認モードは上の🔬から使えます。前日候補を出すにはデータを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("inj7-date")||fmtDate(ndDef);
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  if(!_inj7||_inj7.key!==key){ const KU=keepUpLearn(srAll,store,targetDate); const ML=missLearn(srAll,store,targetDate,KU);
+    const KR=computeKeepUp(srAll,store,targetDate,KU,ML); _inj7={key,KU,ML,KR}; }
+  const {KR}=_inj7; const pc=v=>Math.round((v||0)*100)+"%";
+  const sr=srAll.filter(r=>r.date<targetDate);
+  // 店の5・6投入実績
+  const mach56={}, no56={}; const machAll={};
+  sr.forEach(r=>{ machAll[r.machine_name]=(machAll[r.machine_name]||0)+1; const e=estimateSetting(r); if(!e)return; const is5=e.setting===5,is6=e.setting===6; if(!is5&&!is6)return;
+    const m=mach56[r.machine_name]=mach56[r.machine_name]||{s5:0,s6:0}; if(is5)m.s5++; if(is6)m.s6++;
+    const o=no56[r.machine_no]=no56[r.machine_no]||{s5:0,s6:0,mname:r.machine_name}; if(is5)o.s5++; if(is6)o.s6++; });
+  const evRecs=sr.filter(r=>isEventDate(r.date,store)).length, normRecs=sr.length-evRecs;
+  const evDays=[...new Set(sr.filter(r=>isEventDate(r.date,store)).map(r=>r.date))].length;
+  let normS5=0,normS6=0,evS5=0,evS6=0;
+  sr.forEach(r=>{ const e=estimateSetting(r); if(!e)return; const ev=isEventDate(r.date,store);
+    if(e.setting===5){ if(ev)evS5++; else normS5++; } if(e.setting===6){ if(ev)evS6++; else normS6++; } });
+  let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+" ／ 学習"+sr.length+"件（未来不使用）</p>"+
+    "<div class='note' style='background:#fff1f2;border-color:#fb7185;font-size:13px'>🎯 <b>設定5・6は数が少なく前日ピンポイントは難しい</b>ので、「<b>確率で候補を絞る＋店の5・6実績＋当日確認</b>」で攻めます。確実に取るなら候補を当日2〜5千G回して上の🔬で確定。</div>";
+  const cand=KR.out.map(o=>({...o, p5plus:(o.hiScore/100)*((o.e5||0)+(o.e6||0)), p6:(o.hiScore/100)*(o.e6||0)})).sort((a,b)=>b.p6-a.p6||b.p5plus-a.p5plus);
+  h+="<h3 style='margin:14px 0 4px;background:#be123c;color:#fff;padding:7px 10px;border-radius:6px'>🔥 前日の 設定5以上／設定6 候補ランキング</h3>"+
+    "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>機種</th><th>高設定<br>期待度</th><th>5以上<br>期待</th><th>設定6<br>期待</th><th>過去5/6<br>回数</th><th>狙い方</th></tr>"+
+    cand.slice(0,15).map((o,i)=>{ const c6=o.p6>=0.25?"#16a34a":o.p6>=0.12?"#ca8a04":"#777";
+      return "<tr><td>"+(i+1)+"</td><td><b>"+o.mno+"</b></td><td style='text-align:left'>"+o.mname+"</td>"+
+        "<td>"+o.hiScore+"</td><td style='font-weight:bold;color:#65a30d'>"+pc(o.p5plus)+"</td><td style='font-weight:bold;color:"+c6+"'>"+pc(o.p6)+"</td>"+
+        "<td>5:"+o.s5+"回 6:"+o.s6+"回</td><td style='white-space:nowrap;font-size:11px'>"+o.verdict+"</td></tr>"; }).join("")+
+    "</table></div><p class='muted' style='font-size:11px'>「設定6期待」＝高設定が入る確率×（入った場合に6である割合）。あくまで確率。確定は当日確認で。</p>";
+  const ml=Object.entries(mach56).filter(e=>machAll[e[0]]>=10).sort((a,b)=>(b[1].s6/machAll[b[0]])-(a[1].s6/machAll[a[0]]));
+  if(ml.length){ h+="<details class='note' open><summary><b>🎰 機種別 設定5・6の投入実績（この店が5/6を入れる機種）</b></summary><div class='scroll'><table style='font-size:12px'><tr><th>機種</th><th>設定5率</th><th>設定6率</th><th>5回数</th><th>6回数</th><th>総数</th></tr>"+
+    ml.map(([m,s])=>{ const tot=machAll[m]; return "<tr><td style='text-align:left'>"+m+"</td><td style='color:#65a30d;font-weight:bold'>"+pc(tot?s.s5/tot:0)+"</td><td style='color:#16a34a;font-weight:bold'>"+pc(tot?s.s6/tot:0)+"</td><td>"+s.s5+"</td><td>"+s.s6+"</td><td>"+tot+"</td></tr>"; }).join("")+"</table></div></details>"; }
+  const nl=Object.entries(no56).filter(e=>e[1].s6>0).sort((a,b)=>b[1].s6-a[1].s6).slice(0,12);
+  if(nl.length){ h+="<details class='note'><summary><b>🔢 設定6が入った台番号（過去に6実績のある台）</b></summary><div class='scroll'><table style='font-size:12px'><tr><th>台</th><th>機種</th><th>設定6回数</th><th>設定5回数</th></tr>"+
+    nl.map(([no,s])=>"<tr><td><b>"+no+"</b></td><td style='text-align:left'>"+s.mname+"</td><td style='color:#16a34a;font-weight:bold'>"+s.s6+"回</td><td>"+s.s5+"回</td></tr>").join("")+"</table></div></details>"; }
+  h+="<details class='note' open><summary><b>🎉 イベント日 vs 通常日 の 設定5・6率</b></summary><div style='font-size:12px;padding:4px'>"+
+    "イベント日（"+evDays+"日・"+evRecs+"台）：設定5 <b>"+pc(evRecs?evS5/evRecs:0)+"</b>／設定6 <b style='color:#16a34a'>"+pc(evRecs?evS6/evRecs:0)+"</b><br>"+
+    "通常日（"+normRecs+"台）：設定5 "+pc(normRecs?normS5/normRecs:0)+"／設定6 "+pc(normRecs?normS6/normRecs:0)+
+    "<br><span class='muted'>"+(evRecs&&(evS6/Math.max(1,evRecs))>(normS6/Math.max(1,normRecs))*1.5?"→ この店はイベント日に6が出やすい。6狙いはイベント日優先。":"→ イベント日と通常日で6率に大差なし。")+"</span></div></details>";
   el.innerHTML=h;
 }
 
