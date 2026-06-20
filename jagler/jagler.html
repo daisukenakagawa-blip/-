@@ -3040,6 +3040,12 @@ function renderAnswerDetailInner(){
   el.innerHTML=h;
 }
 
+// 撤去/番号変更で最近見かけない台は予想から除外（ありえない台番号対策）。直近5回の収集日のどれかに出ていればアクティブ。
+function isActiveTai(hist, CU){
+  if(!hist||!hist.length||!CU||!CU.dates||!CU.dates.length) return true;
+  const cut=CU.dates[Math.max(0,CU.dates.length-5)];
+  return hist[hist.length-1].date >= cut;
+}
 // ========== 投入期待スコア専用エンジン（REG/合算/BIG/設定推定を一切使わない）==========
 // 「今日その台に高設定(設定4以上)が投入される確率」を、店のクセだけから推定する。
 function computeInjection(srAll, store, targetDate, opts){
@@ -3076,7 +3082,7 @@ function computeInjection(srAll, store, targetDate, opts){
   const rp=(rate,max)=>rate==null?0:Math.min(max,Math.max(0,max*rate/0.40));   // 投入率40%で満点
   const out=[];
   for(const mno of allNos){
-    const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
+    const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)) continue;
     const tail=mno%10, isl=Math.floor(mno/10), mname=hist[hist.length-1].machine_name||"";
     const ld=lastDay[mno]; const prevHi=ld?CU.isHi(ld):false;
     let streak=0; for(let i=hist.length-1;i>=0;i--){ if(!CU.isHi(hist[i]))streak++; else break; }
@@ -3355,7 +3361,7 @@ function computeInjection3(srAll, store, targetDate, opts){
   const rp=(rate,max)=>rate==null?0:Math.min(max,Math.max(0,max*rate/0.40));
   const out=[];
   for(const mno of allNos){
-    const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
+    const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)) continue;
     const tail=mno%10, isl=Math.floor(mno/10), mname=hist[hist.length-1].machine_name||"";
     const ld=lastDay[mno]; const prevHi=ld?CU.isHi(ld):false;
     let streak=0; for(let i=hist.length-1;i>=0;i--){ if(!CU.isHi(hist[i]))streak++; else break; }
@@ -3717,7 +3723,7 @@ function computeInjection4(srAll, store, targetDate, opts){
   const dist=(arr)=>{let a=0,b=0,c=0;arr.forEach(r=>{const e=estimateSetting(r);if(e){if(e.setting===4)a++;else if(e.setting===5)b++;else if(e.setting===6)c++;}});return{s4:a,s5:b,s6:c,n:a+b+c};};
   const Sdist=dist(sr), Edist=dist(sr.filter(r=>isEventDate(r.date,store)));
   const out=[];
-  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
+  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)) continue;
     const {F,sig,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x);
     let wsum=0,rsum=0; const C={}; const reasons=[];
     F.forEach(k=>{ const st=FS[k]; if(!st||!st.n) return; const conf=st.n/(st.n+15), rate=st.hi/st.n;
@@ -3963,7 +3969,7 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
   const distOf=arr=>{let a=0,b=0,c=0;arr.forEach(r=>{const e=estimateSetting(r);if(e){if(e.setting===4)a++;else if(e.setting===5)b++;else if(e.setting===6)c++;}});return{s4:a,s5:b,s6:c,n:a+b+c};};
   const Sdist=distOf(sr), Edist=distOf(sr.filter(r=>isEventDate(r.date,store)));
   const LP=(ml&&ml.learnPts)||{};
-  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2) continue;
+  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)) continue;
     const {F,sig,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x); const ld=x.lastDay[mno];
     const prevState = !ld?"reset":(prevHi?"keep":"up");
     const mStat=learned.byMachine[mname];
