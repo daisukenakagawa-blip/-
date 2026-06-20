@@ -1377,13 +1377,13 @@ function _learnCuspCalc(sr, isEvtDate, md){
   const dates=[...new Set(sr.map(r=>r.date))].sort();
   const byM={}; sr.forEach(r=>{(byM[r.machine_no]=byM[r.machine_no]||[]).push(r);});
   for(const k in byM) byM[k].sort((a,b)=>a.date<b.date?-1:1);
-  // 台番号の外れ値検出：機種ごとの台番号の塊から極端に離れた台＝取り込みミス（例3344）を除外用に記録
+  // 台番号の外れ値検出：機種ごとに主バンク(多数派)から大きく外れた台＝取り込みミス（例3343-3345の小クラスタ）を除外用に記録
   const badNos=new Set();
   { const noByMach={}; for(const noS in byM){ const mn=byM[noS][byM[noS].length-1].machine_name||""; (noByMach[mn]=noByMach[mn]||[]).push(+noS); }
-    for(const mn in noByMach){ const nos=noByMach[mn].slice().sort((a,b)=>a-b); if(nos.length<4)continue;
-      const gaps=[]; for(let i=1;i<nos.length;i++)gaps.push(nos[i]-nos[i-1]); const sg=gaps.slice().sort((a,b)=>a-b); const medGap=sg[Math.floor(sg.length/2)]||1;
-      const thr=Math.max(50, medGap*10);
-      nos.forEach((no,i)=>{ const left=i>0?no-nos[i-1]:Infinity, right=i<nos.length-1?nos[i+1]-no:Infinity; if(Math.min(left,right)>thr) badNos.add(no); }); } }
+    for(const mn in noByMach){ const nos=noByMach[mn].slice().sort((a,b)=>a-b); const N=nos.length; if(N<6)continue;
+      const q=p=>nos[Math.min(N-1,Math.floor(p*N))]; const q1=q(0.25), q3=q(0.75); const iqr=Math.max(1,q3-q1);
+      const lo=q1-3*iqr, hi=q3+3*iqr;   // 四分位範囲の3倍を超える台＝主バンクから外れた取り込みミス
+      nos.forEach(no=>{ if(no<lo||no>hi) badNos.add(no); }); } }
   const byDateNo={}; sr.forEach(r=>{(byDateNo[r.date]=byDateNo[r.date]||{})[r.machine_no]=r;});
   const nos=[...new Set(sr.map(r=>r.machine_no))].sort((a,b)=>a-b);
   const minNo=nos[0], maxNo=nos[nos.length-1];
