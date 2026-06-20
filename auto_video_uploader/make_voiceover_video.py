@@ -188,6 +188,22 @@ def main() -> int:
             tmp.unlink(missing_ok=True)
         else:
             _audio_exact(None, D, aud)
+
+        # 効果音(ガコ音など)をシーン頭に重ねる: manifest の "se": "gako"
+        se_name = sc.get("se")
+        if se_name:
+            se_file = config.ASSETS_DIR / f"se_{se_name}.mp3"
+            se_at = float(sc.get("se_at") or 0.0)
+            if se_file.exists():
+                mixed = work / f"{STORY}_am{i}.wav"
+                ms = int(se_at * 1000)
+                _run(["ffmpeg", "-y", "-i", str(aud), "-i", str(se_file),
+                      "-filter_complex",
+                      f"[1:a]adelay={ms}|{ms},volume=0.9[se];"
+                      "[0:a][se]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]",
+                      "-map", "[a]", "-ar", "44100", "-ac", "2", str(mixed)])
+                aud.unlink(missing_ok=True)
+                aud = mixed
         aud_paths.append(aud)
 
         total += D
