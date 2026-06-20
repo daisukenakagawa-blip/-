@@ -1377,13 +1377,6 @@ function _learnCuspCalc(sr, isEvtDate, md){
   const dates=[...new Set(sr.map(r=>r.date))].sort();
   const byM={}; sr.forEach(r=>{(byM[r.machine_no]=byM[r.machine_no]||[]).push(r);});
   for(const k in byM) byM[k].sort((a,b)=>a.date<b.date?-1:1);
-  // 台番号の外れ値検出：機種ごとに主バンク(多数派)から大きく外れた台＝取り込みミス（例3343-3345の小クラスタ）を除外用に記録
-  const badNos=new Set();
-  { const noByMach={}; for(const noS in byM){ const mn=byM[noS][byM[noS].length-1].machine_name||""; (noByMach[mn]=noByMach[mn]||[]).push(+noS); }
-    for(const mn in noByMach){ const nos=noByMach[mn].slice().sort((a,b)=>a-b); const N=nos.length; if(N<6)continue;
-      const q=p=>nos[Math.min(N-1,Math.floor(p*N))]; const q1=q(0.25), q3=q(0.75); const iqr=Math.max(1,q3-q1);
-      const lo=q1-3*iqr, hi=q3+3*iqr;   // 四分位範囲の3倍を超える台＝主バンクから外れた取り込みミス
-      nos.forEach(no=>{ if(no<lo||no>hi) badNos.add(no); }); } }
   const byDateNo={}; sr.forEach(r=>{(byDateNo[r.date]=byDateNo[r.date]||{})[r.machine_no]=r;});
   const nos=[...new Set(sr.map(r=>r.machine_no))].sort((a,b)=>a-b);
   const minNo=nos[0], maxNo=nos[nos.length-1];
@@ -1475,7 +1468,7 @@ function _learnCuspCalc(sr, isEvtDate, md){
     if(types.includes("イベント依存型")&&f==="⑦")m+=0.2;
     return m; };
 
-  return {isHi,overallHi,minNo,maxNo,byM,byDateNo,dates,badNos,
+  return {isHi,overallHi,minNo,maxNo,byM,byDateNo,dates,
     keepRate,keepT,downRate:(keepRate!=null?1-keepRate:null),missRate,cornerSet,c2Set,c3Set,cornerR,c2R,c3R,innerHi,
     narabiRate,narabiT,nbRate,nbT,machHi,evKeepRate,evKeepT,rotate,phaseRate,phase,
     tailHiMap,islHiMap,bandHiMap,wdHiMap,types,tmul,lowUpRate,lowUpT,evHi,normHi};
@@ -3089,7 +3082,7 @@ function computeInjection(srAll, store, targetDate, opts){
   const rp=(rate,max)=>rate==null?0:Math.min(max,Math.max(0,max*rate/0.40));   // 投入率40%で満点
   const out=[];
   for(const mno of allNos){
-    const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)||(CU.badNos&&CU.badNos.has(mno))) continue;
+    const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)) continue;
     const tail=mno%10, isl=Math.floor(mno/10), mname=hist[hist.length-1].machine_name||"";
     const ld=lastDay[mno]; const prevHi=ld?CU.isHi(ld):false;
     let streak=0; for(let i=hist.length-1;i>=0;i--){ if(!CU.isHi(hist[i]))streak++; else break; }
@@ -3368,7 +3361,7 @@ function computeInjection3(srAll, store, targetDate, opts){
   const rp=(rate,max)=>rate==null?0:Math.min(max,Math.max(0,max*rate/0.40));
   const out=[];
   for(const mno of allNos){
-    const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)||(CU.badNos&&CU.badNos.has(mno))) continue;
+    const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)) continue;
     const tail=mno%10, isl=Math.floor(mno/10), mname=hist[hist.length-1].machine_name||"";
     const ld=lastDay[mno]; const prevHi=ld?CU.isHi(ld):false;
     let streak=0; for(let i=hist.length-1;i>=0;i--){ if(!CU.isHi(hist[i]))streak++; else break; }
@@ -3730,7 +3723,7 @@ function computeInjection4(srAll, store, targetDate, opts){
   const dist=(arr)=>{let a=0,b=0,c=0;arr.forEach(r=>{const e=estimateSetting(r);if(e){if(e.setting===4)a++;else if(e.setting===5)b++;else if(e.setting===6)c++;}});return{s4:a,s5:b,s6:c,n:a+b+c};};
   const Sdist=dist(sr), Edist=dist(sr.filter(r=>isEventDate(r.date,store)));
   const out=[];
-  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)||(CU.badNos&&CU.badNos.has(mno))) continue;
+  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)) continue;
     const {F,sig,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x);
     let wsum=0,rsum=0; const C={}; const reasons=[];
     F.forEach(k=>{ const st=FS[k]; if(!st||!st.n) return; const conf=st.n/(st.n+15), rate=st.hi/st.n;
@@ -3976,7 +3969,7 @@ function computeKeepUp(srAll, store, targetDate, learned, ml){
   const distOf=arr=>{let a=0,b=0,c=0;arr.forEach(r=>{const e=estimateSetting(r);if(e){if(e.setting===4)a++;else if(e.setting===5)b++;else if(e.setting===6)c++;}});return{s4:a,s5:b,s6:c,n:a+b+c};};
   const Sdist=distOf(sr), Edist=distOf(sr.filter(r=>isEventDate(r.date,store)));
   const LP=(ml&&ml.learnPts)||{};
-  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)||(CU.badNos&&CU.badNos.has(mno))) continue;
+  for(const mnoS in CU.byM){ const mno=+mnoS; const hist=CU.byM[mno]||[]; if(hist.length<2||!isActiveTai(hist,CU)) continue;
     const {F,sig,prevHi,streak,tail,mname}=inj4Feats(mno,CU,x); const ld=x.lastDay[mno];
     const prevState = !ld?"reset":(prevHi?"keep":"up");
     const mStat=learned.byMachine[mname];
