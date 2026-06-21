@@ -23,7 +23,7 @@ STORY = os.getenv("STORY", "voiceover_story")
 STORY_DIR = config.BASE_DIR / "drafts" / STORY
 VOICE_STYLE = os.getenv("VOICE_STYLE", "female").lower()
 # BGM の音量(ナレーション=1.0 に対する比)。env で調整可。
-BGM_VOL = float(os.getenv("VO_BGM_VOLUME", "0.32"))
+BGM_VOL = float(os.getenv("VO_BGM_VOLUME", "0.22"))
 # アフレコの話速(早口目)。VOICEVOX の speedScale / pyopenjtalk の atempo に反映。
 VO_SPEED = float(os.getenv("VO_SPEED", "1.3"))
 
