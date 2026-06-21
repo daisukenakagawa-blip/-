@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://daisukenakagawa-blip.github.io/-/sitemap.xml
