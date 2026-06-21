@@ -91,6 +91,7 @@
     <button data-t="inject5">🧠 投入ツール5</button>
     <button data-t="inject6">📊 投入ツール6</button>
     <button data-t="inject7">🎯 設定5・6狙い</button>
+    <button data-t="inject8">📆 曜日×機種 予想</button>
     <button data-t="ecompare">🏆 エンジン比較</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
@@ -466,6 +467,20 @@
       <div id="j56-result" style="margin-top:6px"></div>
     </div>
     <div id="t-inject7"></div>
+  </div>
+
+  <!-- 投入ツール8（曜日×機種 主導の翌日予想） -->
+  <div class="panel" id="p-inject8">
+    <h2>📆 曜日×機種 主導の翌日予想</h2>
+    <p class="muted">クセが弱く「曜日でアツい機種が決まる」店（エスパス本館など）向け。予想日の<b>曜日にアツい機種をランキング</b>し、
+      その機種に絞って候補台を出します。<b>読みにくい日は正直に「見送り推奨」</b>を表示。<b>予想日より前のみ使用（未来不使用）。</b></p>
+    <div class="row">
+      <div><label>店舗</label><select id="inj8-store" onchange="render()"></select></div>
+      <div><label>予想する日（空欄＝最新の翌日）</label><input id="inj8-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">📆 曜日×機種で予想する</button>
+    <div id="t-inject8"></div>
   </div>
 
   <!-- エンジン比較 -->
@@ -1585,6 +1600,7 @@ function refreshAll(){
   fillSelect("inj5-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj6-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj7-store",stores.length?stores:["（データなし）"]);
+  fillSelect("inj8-store",stores.length?stores:["（データなし）"]);
   fillSelect("ec-store",stores.length?["（全店まとめ）",...stores]:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1611,7 +1627,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderInjection6); safe(renderInjection7); safe(renderEngineCompare); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderInjection6); safe(renderInjection7); safe(renderInjection8); safe(renderEngineCompare); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function _act(id){ const p=document.getElementById(id); return !!(p&&p.classList.contains("active")); }   // タブが表示中か（重い再計算を表示中のみに）
@@ -4850,6 +4866,61 @@ function renderInjection7Inner(){
     "イベント日（"+evDays+"日・"+evRecs+"台）：設定5 <b>"+pc(evRecs?evS5/evRecs:0)+"</b>／設定6 <b style='color:#16a34a'>"+pc(evRecs?evS6/evRecs:0)+"</b><br>"+
     "通常日（"+normRecs+"台）：設定5 "+pc(normRecs?normS5/normRecs:0)+"／設定6 "+pc(normRecs?normS6/normRecs:0)+
     "<br><span class='muted'>"+(evRecs&&(evS6/Math.max(1,evRecs))>(normS6/Math.max(1,normRecs))*1.5?"→ この店はイベント日に6が出やすい。6狙いはイベント日優先。":"→ イベント日と通常日で6率に大差なし。")+"</span></div></details>";
+  el.innerHTML=h;
+}
+
+// ========== 投入ツール8（曜日×機種 主導の翌日予想）==========
+let _inj8=null;
+function renderInjection8(){
+  const el=document.getElementById("t-inject8"); if(!el) return;
+  const panel=document.getElementById("p-inject8");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと計算します（重い処理のため）。</p>"; return; }
+  try{ renderInjection8Inner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+function renderInjection8Inner(){
+  const el=document.getElementById("t-inject8"); const store=val("inj8-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("inj8-date")||fmtDate(ndDef);
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  if(!_inj8||_inj8.key!==key){ const KU=keepUpLearn(srAll,store,targetDate); const ML=missLearn(srAll,store,targetDate,KU);
+    const KR=computeKeepUp(srAll,store,targetDate,KU,ML); _inj8={key,KU,ML,KR}; }
+  const {KU,KR}=_inj8; const base=KU.baseHi||0; const pc=v=>v==null?"-":Math.round(v*100)+"%";
+  const nextWd=WD[new Date(targetDate+"T00:00:00").getDay()];
+  const machRank=Object.keys(KU.machHiRate).filter(m=>KU.machHiRate[m].n>=10).map(m=>{
+    const wm=KU.wmStat[nextWd]&&KU.wmStat[nextWd][m]; const wdRate=(wm&&wm.n>=3)?wm.hi/wm.n:null;
+    const mr=KU.machHiRate[m].n?KU.machHiRate[m].hi/KU.machHiRate[m].n:0;
+    return {m, wdRate, wdN:wm?wm.n:0, mr, lift:wdRate!=null?wdRate-base:(mr-base)}; })
+    .sort((a,b)=>(b.wdRate!=null?b.wdRate:b.mr)-(a.wdRate!=null?a.wdRate:a.mr));
+  const topLift=machRank.length?machRank[0].lift:0;
+  const conf = topLift>=0.10?["読める日（機種が絞れる）","#16a34a"]:topLift>=0.05?["やや読める","#65a30d"]:topLift>=0.02?["読みにくい","#ca8a04"]:["見送り推奨（手がかり薄い）","#dc2626"];
+  let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"（"+nextWd+"曜）／ 店基準高設定率 "+pc(base)+" ／ 店タイプ【"+KU.storeType+"】</p>";
+  h+="<div class='note' style='background:#eff6ff;border-color:#3b82f6;font-size:14px'>📆 <b>"+nextWd+"曜の読み：<span style='color:"+conf[1]+"'>"+conf[0]+"</span></b>"+
+    (machRank.length&&machRank[0].wdRate!=null?"<br>今日アツい機種＝<b>"+machRank[0].m+"</b>（"+nextWd+"曜の高設定率 "+pc(machRank[0].wdRate)+"／店基準＋"+Math.round(machRank[0].lift*100)+"pt）":"")+"</div>";
+  h+="<h3 style='margin:14px 0 4px;background:#1e3a8a;color:#fff;padding:7px 10px;border-radius:6px'>🎰 "+nextWd+"曜にアツい機種ランキング</h3>"+
+    "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>機種</th><th>"+nextWd+"曜の<br>高設定率</th><th>件数</th><th>機種平均</th><th>店基準＋</th><th>狙い</th></tr>"+
+    machRank.map((x,i)=>{ const rc=x.lift>=0.08?"#16a34a":x.lift>=0.03?"#65a30d":x.lift>=0?"#ca8a04":"#c00";
+      const aim=x.lift>=0.08?"◎狙い目":x.lift>=0.03?"○":x.lift>=0?"△":"×";
+      return "<tr><td>"+(i+1)+"</td><td style='text-align:left'><b>"+x.m+"</b></td><td style='color:"+rc+";font-weight:bold;font-size:14px'>"+pc(x.wdRate)+(x.wdRate==null?"<span class='muted'>(曜日薄)</span>":"")+"</td><td>"+x.wdN+"</td><td>"+pc(x.mr)+"</td><td style='color:"+(x.lift>=0?'#16a34a':'#c00')+";font-weight:bold'>"+(x.lift>=0?"+":"")+Math.round(x.lift*100)+"pt</td><td style='color:"+rc+";font-weight:bold'>"+aim+"</td></tr>"; }).join("")+
+    "</table></div><p class='muted' style='font-size:11px'>「店基準＋」がプラスで大きい機種ほど、その曜日に設定が入りやすい。曜日データが薄い機種は機種平均で代用。</p>";
+  const heBg=v=>v>=70?"#7CFC00":v>=55?"#b6f5a0":v>=40?"#d8f5c0":v>=25?"#ffe066":"#ffd0d0";
+  const byM={}; KR.out.forEach(o=>{(byM[o.mname]=byM[o.mname]||[]).push(o);});
+  const top3=machRank.slice(0,3).filter(x=>x.lift>=0);
+  h+="<h3 style='margin:14px 0 4px;background:#065f46;color:#fff;padding:7px 10px;border-radius:6px'>🎯 アツい機種の候補台（"+nextWd+"曜）</h3>";
+  if(!top3.length){ h+="<div class='note'>この曜日に基準を超える機種がありません＝見送り推奨。</div>"; }
+  for(const x of top3){ const list=(byM[x.m]||[]).slice().sort((a,b)=>(b.hiScore6||b.hiScore)-(a.hiScore6||a.hiScore)).slice(0,6);
+    if(!list.length)continue;
+    h+="<h4 style='margin:10px 0 3px'>🎰 "+x.m+" <span class='muted' style='font-weight:normal;font-size:12px'>（"+nextWd+"曜 "+pc(x.wdRate)+"／基準＋"+Math.round(x.lift*100)+"pt）</span></h4>"+
+      "<div class='scroll'><table style='font-size:12px'><tr><th>順位</th><th>台</th><th>得点</th><th>判定</th><th>据え置き</th><th>上げ</th><th>リセット</th><th>期待設定</th><th>根拠</th></tr>"+
+      list.map((o,i)=>{ const v=o.hiScore6||o.hiScore; return "<tr><td>"+(i+1)+"</td><td><b>"+o.mno+"</b></td>"+
+        "<td style='background:"+heBg(v)+";font-weight:bold;font-size:14px'>"+v+"</td>"+
+        "<td style='white-space:nowrap;font-size:11px'>"+o.verdict+"</td>"+
+        "<td style='color:#1a7f37;font-weight:bold'>"+o.keepScore+"</td><td style='color:#b35900;font-weight:bold'>"+o.upScore+"</td><td style='color:#7c3aed'>"+o.resetScore+"</td>"+
+        "<td>設定"+o.honmei+"</td><td style='text-align:left;font-size:11px'>"+(o.reasons.length?o.reasons.slice(0,3).join("<br>"):"—")+"</td></tr>"; }).join("")+
+      "</table></div>"; }
+  h+="<p class='muted' style='font-size:12px'>※クセが弱い店では台ピンポイントが難しいため、まず機種を絞り、当日朝のデータ（ツール7の当日確認）で最終判断するのがおすすめです。</p>";
   el.innerHTML=h;
 }
 
