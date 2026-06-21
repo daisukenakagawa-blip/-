@@ -3908,6 +3908,10 @@ function ratePoints(r){ return r>=0.50?10:r>=0.45?8:r>=0.40?6:r>=0.35?4:r>=0.30?
 // 複合特徴量ボーナス（2条件／3条件）
 function comboBonus(r,nC){ if(nC>=3) return r>=0.70?20:r>=0.60?15:r>=0.50?10:0; return r>=0.70?12:r>=0.60?8:r>=0.50?5:0; }
 // 1台×1サイド(keep/up/reset)の加点スコア：Σ(特徴量点×信頼度×学習補正)＋Σ複合ボーナス
+// 台を区別しない広域シグナルは点を抑える（機種/島/日が一律に効くと全台同点になり台を絞れないため）
+const BROAD_DAMP={"イベント日":0.3,"放出日（回収明け）":0.3,"回収続き明け":0.3,"フロア大回収明け":0.3,"ゾロ目・特日":0.3,"月初投入傾向":0.3,"月中投入傾向":0.3,"月末投入傾向":0.3,"曜日実績高":0.45,
+  "機種ローテ期":0.5,"機種が前日放出":0.5,"イベント翌日据置":0.6,
+  "島実績高":0.6,"島ローテ期":0.6,"自島が前日放出":0.6,"隣島が前日放出":0.6,"島×曜日強":0.6};
 function kuScore(feats, mname, learned, learnPts, side){
   const nOf=s=>side==="keep"?s.keepN:side==="up"?s.upN:s.resetN;
   const rOf=s=>side==="keep"?s.keepRate:side==="up"?s.upRate:s.resetRate;
@@ -3921,10 +3925,12 @@ function kuScore(feats, mname, learned, learnPts, side){
     // ★lift加点：その特徴量の「全体」高設定率が店の基準を超える分を加点（側サンプルが少なくても全体で強い前兆なら点になる）
     const allN=(st.keepN||0)+(st.upN||0)+(st.resetN||0); const ar=allRate(st);
     const lift = (ar!=null&&allN>=12) ? Math.max(0, ar-base) : 0;
-    const liftB = Math.min(12, +(lift*55).toFixed(1));   // 強い前兆ほど加点（角2のような少数精鋭も乗る）
+    let liftB = Math.min(10, +(lift*48).toFixed(1));   // 強い前兆ほど加点（角2のような少数精鋭も乗る）
     let pts=0; if(n>=12){ pts=ratePoints(rOf(st))*confCoef(n); if(useM)pts*=1.1; }   // 側サンプル12件以上で成功率→点
+    const damp=BROAD_DAMP[k]||1; pts*=damp; liftB*=damp;   // 広域シグナルは抑える（台を絞るため）
     if(n<12 && liftB<2) return;   // 側も少なく前兆も弱いならスキップ
-    const lp=(learnPts&&learnPts[k])||0; const net=pts+lp+liftB;      // 成功率点＋学習補正＋lift加点
+    const lp=((learnPts&&learnPts[k])||0)*(damp<1?0.6:1);   // 広域は学習補正も控えめ
+    const net=pts+lp+liftB;      // 成功率点＋学習補正＋lift加点
     if(Math.abs(net)>=0.5){ sum+=net; why.push({label:useM?k+"〔機種〕":k, pts:+net.toFixed(1), rate:rOf(st), n, src:useM?"機種":"店"}); }
   });
   comboKeys(feats).forEach(ck=>{ const st=learned.combo[ck]; if(!st)return; const n=nOf(st); if(n<50)return;   // 件数50未満=無効
