@@ -91,8 +91,9 @@
     <button data-t="inject5">🧠 投入ツール5</button>
     <button data-t="inject6">📊 投入ツール6</button>
     <button data-t="inject7">🎯 設定5・6狙い</button>
-    <button data-t="inject8">📆 曜日×機種 予想</button>
-    <button data-t="inject9">🏯 新館（合算ライン）</button>
+    <button data-t="inject8">🏛 本館専用（曜日×機種）</button>
+    <button data-t="inject9">🏯 新館専用（合算ライン）</button>
+    <button data-t="inject10">🎡 楽園専用（角台・放出）</button>
     <button data-t="ecompare">🏆 エンジン比較</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
@@ -472,8 +473,8 @@
 
   <!-- 投入ツール8（曜日×機種 主導の翌日予想） -->
   <div class="panel" id="p-inject8">
-    <h2>📆 曜日×機種 主導の翌日予想</h2>
-    <p class="muted">クセが弱く「曜日でアツい機種が決まる」店（エスパス本館など）向け。予想日の<b>曜日にアツい機種をランキング</b>し、
+    <h2>🏛 本館専用：曜日×機種 主導の翌日予想</h2>
+    <p class="muted">クセが弱く「曜日でアツい機種が決まる」店（エスパス上野本館など）向け。予想日の<b>曜日にアツい機種をランキング</b>し、
       その機種に絞って候補台を出します。<b>読みにくい日は正直に「見送り推奨」</b>を表示。<b>予想日より前のみ使用（未来不使用）。</b></p>
     <div class="row">
       <div><label>店舗</label><select id="inj8-store" onchange="render()"></select></div>
@@ -485,7 +486,7 @@
   </div>
 
   <div class="panel" id="p-inject9">
-    <h2>🏯 新館向け：合算ライン主導の翌日予想</h2>
+    <h2>🏯 新館専用：合算ライン主導の翌日予想</h2>
     <p class="muted">エスパス上野新館のように<b>前日の合算ラインで据え置き/上げがハッキリ分かれる店</b>向け。前日合算が
       <b>1/120以内なら据え置き継続</b>、<b>1/140〜まで落ちたら上げ（新規投入）</b>として候補を二分し、新館で効く<b>末尾ローテ・回収続き明け</b>の前兆を加味します。
       <b>予想日より前のみ使用（未来不使用）。</b></p>
@@ -496,6 +497,20 @@
     </div>
     <button class="primary" onclick="render()">🏯 合算ラインで予想する</button>
     <div id="t-inject9"></div>
+  </div>
+
+  <div class="panel" id="p-inject10">
+    <h2>🎡 楽園専用：角台・放出明け主導の翌日予想</h2>
+    <p class="muted">楽園上野のように<b>角台・角2に高設定が集中し、回収明け（放出日）に動く店</b>向け。
+      <b>角台/角2の高設定率</b>と<b>放出明け前兆</b>を主軸に、角の台を優先して候補を出します。
+      <b>予想日より前のみ使用（未来不使用）。</b></p>
+    <div class="row">
+      <div><label>店舗</label><select id="inj10-store" onchange="render()"></select></div>
+      <div><label>予想する日（空欄＝最新の翌日）</label><input id="inj10-date" type="date" onchange="render()"></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">🎡 角台・放出で予想する</button>
+    <div id="t-inject10"></div>
   </div>
 
   <!-- エンジン比較 -->
@@ -1617,6 +1632,7 @@ function refreshAll(){
   fillSelect("inj7-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj8-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj9-store",stores.length?stores:["（データなし）"]);
+  fillSelect("inj10-store",stores.length?stores:["（データなし）"]);
   fillSelect("ec-store",stores.length?["（全店まとめ）",...stores]:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1643,7 +1659,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderInjection6); safe(renderInjection7); safe(renderInjection8); safe(renderInjection9); safe(renderEngineCompare); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderInjection6); safe(renderInjection7); safe(renderInjection8); safe(renderInjection9); safe(renderInjection10); safe(renderEngineCompare); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function _act(id){ const p=document.getElementById(id); return !!(p&&p.classList.contains("active")); }   // タブが表示中か（重い再計算を表示中のみに）
@@ -5019,6 +5035,74 @@ function renderInjection9Inner(){
   if(allTop){ h+="<div class='note' style='background:#ecfdf5;border-color:#10b981;font-size:14px'>🎯 <b>本命：台"+allTop.mno+"（"+allTop.mname+"）"+sc6(allTop)+"点</b>／"+allTop.verdict+"／本命設定"+allTop.honmei+
     "（4:"+pc(allTop.e4)+" 5:"+pc(allTop.e5)+" 6:"+pc(allTop.e6)+"）"+(allTop.prevComb!=null?"／前日合算 "+lineTag(allTop):"")+"</div>"; }
   h+="<p class='muted' style='font-size:12px'>※この店は前日合算ラインで据え置き/上げがハッキリ分かれます。まず合算帯で台を絞り、末尾ローテ・回収続き明けの前兆が重なる台を本命に。当日朝はツール7の当日確認で最終判断を。</p>";
+  el.innerHTML=h;
+}
+
+// ========== 投入ツール10：角台・放出明け主導の翌日予想（楽園向け）==========
+let _inj10=null;
+function renderInjection10(){
+  const el=document.getElementById("t-inject10"); if(!el) return;
+  const panel=document.getElementById("p-inject10");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと計算します（重い処理のため）。</p>"; return; }
+  try{ renderInjection10Inner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+function renderInjection10Inner(){
+  const el=document.getElementById("t-inject10"); const store=val("inj10-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("inj10-date")||fmtDate(ndDef);
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays();
+  if(!_inj10||_inj10.key!==key){ const KU=keepUpLearn(srAll,store,targetDate); const ML=missLearn(srAll,store,targetDate,KU);
+    const KR=computeKeepUp(srAll,store,targetDate,KU,ML); _inj10={key,KU,ML,KR}; }
+  const {KU,KR}=_inj10; const base=KU.baseHi||0;
+  const pc=v=>v==null?"-":Math.round(v*100)+"%";
+  const nextWd=WD[new Date(targetDate+"T00:00:00").getDay()];
+  // --- 角台・角2・角3 の高設定率（KU.feats から lift で評価）---
+  const featRate=k=>{ const s=KU.feats[k]; if(!s)return null; const n=s.keepN+s.upN+s.resetN, hi=s.keepHi+s.upHi+s.resetHi; return n?{rate:hi/n,n,lift:hi/n-base}:null; };
+  const corner=featRate("角台"), c2=featRate("角2"), c3=featRate("角3");
+  const lineCol=l=>l>=0.10?"#16a34a":l>=0.05?"#65a30d":l>=0?"#ca8a04":"#dc2626";
+  // --- 放出明け系の前兆（lift順）---
+  const fl=Object.entries(KU.feats).map(([k,s])=>{ const n=s.keepN+s.upN+s.resetN, hi=s.keepHi+s.upHi+s.resetHi; const rate=n?hi/n:0;
+    return {k,n,rate,lift:rate-base}; }).filter(f=>f.n>=8).sort((a,b)=>b.lift-a.lift);
+  const relKeys=["放出日（回収明け）","回収続き明け","フロア大回収明け","自島が前日放出","隣島が前日放出","島ローテ期"];
+  const hotRel=fl.filter(f=>relKeys.some(c=>f.k.indexOf(c)>=0) && f.lift>=0.04).slice(0,5);
+  let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"（"+nextWd+"曜）／ 店基準高設定率 "+pc(base)+" ／ 店タイプ【"+KU.storeType+"】</p>";
+  const cBar=(lab,o)=>o?"・<b>"+lab+"</b>：高設定率 <b style='color:"+lineCol(o.lift)+"'>"+pc(o.rate)+"</b>（基準＋"+Math.round(o.lift*100)+"pt・"+o.n+"件）":"・<b>"+lab+"</b>：データ不足";
+  h+="<div class='note' style='background:#fdf2f8;border-color:#ec4899;font-size:14px'>🎡 <b>角台の効きぐあい（この店の実データ学習）</b><br>"+
+    cBar("角台",corner)+"<br>"+cBar("角2",c2)+"<br>"+cBar("角3",c3)+"</div>";
+  if(hotRel.length){ h+="<div class='note' style='background:#fffbeb;border-color:#f59e0b;font-size:13px'>🔎 <b>放出明けの前兆（この店で効く手がかり）</b><br>"+
+    hotRel.map(f=>"・<b>"+f.k+"</b>：高設定率 "+pc(f.rate)+"（基準＋"+Math.round(f.lift*100)+"pt・"+f.n+"件）").join("<br>")+"</div>"; }
+  // --- 候補台を「角台・角2」「その他」に二分 ---
+  const sc6=o=>(o.hiScore6!=null?o.hiScore6:o.hiScore);
+  const isCorner=o=>{ const s=o.sig||[]; return s.indexOf("corner")>=0||s.indexOf("corner2")>=0||s.indexOf("corner3")>=0; };
+  const cornerLabel=o=>{ const s=o.sig||[]; return s.indexOf("corner")>=0?"角台":s.indexOf("corner2")>=0?"角2":s.indexOf("corner3")>=0?"角3":"—"; };
+  const cornerCand=KR.out.filter(isCorner).slice().sort((a,b)=>sc6(b)-sc6(a));
+  const otherCand=KR.out.filter(o=>!isCorner(o)).slice().sort((a,b)=>sc6(b)-sc6(a));
+  const heBg=v=>v>=100?"#22c55e":v>=70?"#7CFC00":v>=55?"#b6f5a0":v>=40?"#d8f5c0":v>=25?"#ffe066":"#ffd0d0";
+  const denCell=v=>v==null?"-":"1/"+Math.round(v);
+  const relTag=o=>{ const s=(o.sig||[]); const hit=s.filter(k=>/放出|回収|島ローテ/.test(k)); return hit.length?hit.slice(0,2).join(" "):"—"; };
+  const tableHead=g=>"<tr><th>順</th><th>台</th>"+(g?"<th>角</th>":"")+"<th>機種</th><th>得点</th><th>前日合算</th><th>前日BIG</th><th>前日REG</th><th>判定</th><th>本命</th><th>放出前兆</th></tr>";
+  const rowHtml=(g)=>(o,i)=>{ const v=sc6(o); return "<tr><td>"+(i+1)+"</td><td><b>"+o.mno+"</b></td>"+
+    (g?"<td style='color:#be185d;font-weight:bold'>"+cornerLabel(o)+"</td>":"")+
+    "<td style='text-align:left;font-size:11px'>"+o.mname+"</td>"+
+    "<td style='background:"+heBg(v)+";font-weight:bold;font-size:14px'>"+v+(v>100?"<span style='font-size:9px'>★</span>":"")+"</td>"+
+    "<td>"+denCell(o.prevComb)+"</td><td>"+denCell(o.prevBig)+"</td><td>"+denCell(o.prevReg)+"</td>"+
+    "<td style='white-space:nowrap;font-size:11px'>"+o.verdict+"</td><td>設定"+o.honmei+"</td><td style='text-align:left;font-size:10px'>"+relTag(o)+"</td></tr>"; };
+  h+="<h3 style='margin:16px 0 4px;background:#be185d;color:#fff;padding:7px 10px;border-radius:6px'>🎯 角台・角2 候補（この店の主役）</h3>";
+  if(!cornerCand.length){ h+="<div class='note'>角台・角2の候補がありません。</div>"; }
+  else h+="<div class='scroll'><table style='font-size:12px'>"+tableHead(true)+cornerCand.slice(0,10).map(rowHtml(true)).join("")+"</table></div>"+
+    "<p class='muted' style='font-size:11px'>"+store+"は角台・角2に高設定が集中しやすい店。"+(corner?"角台の高設定率は "+pc(corner.rate)+"（基準＋"+Math.round(corner.lift*100)+"pt）。":"")+"放出明け前兆が乗る角台ほど本命。</p>";
+  h+="<h3 style='margin:16px 0 4px;background:#b45309;color:#fff;padding:7px 10px;border-radius:6px'>🟠 その他の候補（角以外で得点上位）</h3>";
+  if(!otherCand.length){ h+="<div class='note'>候補がありません。</div>"; }
+  else h+="<div class='scroll'><table style='font-size:12px'>"+tableHead(false)+otherCand.slice(0,8).map(rowHtml(false)).join("")+"</table></div>"+
+    "<p class='muted' style='font-size:11px'>角以外でも放出明け前兆・据え置き濃厚な台は拾う。角が弱い日はこちらが主役になることも。</p>";
+  // --- 総合の本命 ---
+  const allTop=KR.out.slice().sort((a,b)=>sc6(b)-sc6(a))[0];
+  if(allTop){ h+="<div class='note' style='background:#ecfdf5;border-color:#10b981;font-size:14px'>🎯 <b>本命：台"+allTop.mno+"（"+allTop.mname+"）"+sc6(allTop)+"点</b>"+(isCorner(allTop)?"〔"+cornerLabel(allTop)+"〕":"")+"／"+allTop.verdict+"／本命設定"+allTop.honmei+
+    "（4:"+pc(allTop.e4)+" 5:"+pc(allTop.e5)+" 6:"+pc(allTop.e6)+"）</div>"; }
+  h+="<p class='muted' style='font-size:12px'>※この店は角台・角2が主役。まず角の台を確認し、放出明け（回収明け）の前兆が重なる角台を本命に。角が薄い日は『その他』上位や当日朝のデータ（ツール7）で補完を。</p>";
   el.innerHTML=h;
 }
 
