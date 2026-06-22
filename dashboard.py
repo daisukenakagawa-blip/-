@@ -14,16 +14,96 @@
 import argparse
 import json
 import os
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from fx_bot.backtest import run as run_backtest
 from fx_bot.config import Config
+from fx_bot.data import TF_SECONDS, TimeframeIndex, generate_synthetic, resample
 from fx_bot.indicators import atr, ema, rsi
 from fx_bot.strategy import entry_signal, trend_direction
 
 CFG = Config()
 TOKEN = os.environ.get("DASH_TOKEN", "")
+
+_CHART_CACHE = {"t": 0.0, "data": None}
+CHART_SHOW = 140          # 表示するM15本数
+CHART_HISTORY = 4000      # 指標/シグナル計算に使う履歴本数(EMA200(H4)に十分な量)
+
+
+def _candles_for_chart():
+    """チャート用のM15足を返す。(ライブ or サンプル, ソース表示用ラベル)"""
+    try:
+        from fx_bot.oanda import OandaClient
+        client = OandaClient()
+        m15 = client.candles(CFG.symbol, "M15", count=CHART_HISTORY)
+        if len(m15) >= 300:
+            return m15, "ライブ"
+    except Exception:
+        pass
+    # 未接続ならサンプル(合成)データで表示
+    return generate_synthetic(months=6, seed=7), "サンプル"
+
+
+def build_chart() -> dict:
+    """MT4風チャート用データ: ローソク足 + EMA50/200 + 売買シグナル矢印。
+
+    EMAはH4(環境認識足)で計算し、各M15足が見ている確定H4値を割り当てる。
+    シグナル矢印はバックテストエンジンを実データに通して得たエントリー位置。
+    """
+    if _CHART_CACHE["data"] and time.time() - _CHART_CACHE["t"] < 60:
+        return _CHART_CACHE["data"]
+
+    m15, source = _candles_for_chart()
+
+    # H4のEMA50/200を計算し、M15時刻へ割り当て(ボットが実際に見ている値)
+    h4 = resample(m15, TF_SECONDS["H4"])
+    ef = ema([b.close for b in h4], CFG.ema_fast)
+    es = ema([b.close for b in h4], CFG.ema_slow)
+    idx_h4 = TimeframeIndex(h4, TF_SECONDS["H4"])
+
+    # シグナル位置(エントリー)をバックテストで取得
+    markers = []
+    try:
+        res = run_backtest(m15, CFG)
+        for t in res.trades:
+            markers.append({"time": t.entry_time, "dir": t.direction})
+    except Exception:
+        pass
+
+    # 表示窓: ライブは最新側。サンプルは最後のシグナルが見える位置に寄せる
+    end = len(m15)
+    if source == "サンプル" and markers:
+        last_t = markers[-1]["time"]
+        for i in range(len(m15) - 1, -1, -1):
+            if m15[i].time == last_t:
+                end = min(len(m15), i + 20)
+                break
+    start = max(0, end - CHART_SHOW)
+    visible = m15[start:end]
+    vstart = visible[0].time
+    candles = []
+    for b in visible:
+        j = idx_h4.last_closed_index(b.time)
+        candles.append({
+            "t": b.time, "o": b.open, "h": b.high, "l": b.low, "c": b.close,
+            "ef": ef[j] if j >= 0 and ef[j] is not None else None,
+            "es": es[j] if j >= 0 and es[j] is not None else None,
+        })
+    vis_markers = [m for m in markers if m["time"] >= vstart]
+
+    data = {
+        "symbol": "USDJPY  M15",
+        "source": source,
+        "candles": candles,
+        "markers": vis_markers,
+        "ema_fast": CFG.ema_fast,
+        "ema_slow": CFG.ema_slow,
+    }
+    _CHART_CACHE.update(t=time.time(), data=data)
+    return data
 
 
 def build_status() -> dict:
@@ -109,6 +189,17 @@ PAGE = """<!DOCTYPE html>
 <body><div class="wrap">
   <h1>USD/JPY 自動売買ボット</h1>
   <div class="sub" id="time">読み込み中...</div>
+  <div class="card" style="padding:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:2px 4px 8px">
+      <span class="v" id="chartTitle">USDJPY M15</span>
+      <span class="pill" id="chartSrc">-</span>
+    </div>
+    <canvas id="chart" style="width:100%;height:280px;display:block"></canvas>
+    <div class="foot" style="margin-top:6px">
+      <span style="color:#58a6ff">━ EMA50</span>　<span style="color:#f0883e">━ EMA200</span>
+      <span style="color:#3fb950">▲買い</span> <span style="color:#f85149">▼売り</span>
+    </div>
+  </div>
   <div id="body"><div class="card muted">接続中...</div></div>
   <div class="foot">30秒ごとに自動更新 / 監視専用画面<br>発注はサーバー側のボットが行います</div>
 </div>
@@ -145,7 +236,73 @@ async function refresh(){
     document.getElementById('body').innerHTML='<div class="err">読み込み失敗: '+e+'</div>';
   }
 }
+// ===== MT4風ローソク足チャート (canvasに自前描画・外部ライブラリなし) =====
+function drawChart(d){
+  const cv = document.getElementById('chart');
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  g.clearRect(0,0,W,H);
+  g.fillStyle = '#0d1117'; g.fillRect(0,0,W,H);
+  const cs = d.candles || [];
+  if(cs.length === 0){ g.fillStyle='#8b949e'; g.fillText('データ取得中...',12,24); return; }
+
+  const padL=6, padR=52, padT=10, padB=14;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  let lo=Infinity, hi=-Infinity;
+  for(const c of cs){ lo=Math.min(lo,c.l); hi=Math.max(hi,c.h);
+    if(c.ef){lo=Math.min(lo,c.ef);hi=Math.max(hi,c.ef);}
+    if(c.es){lo=Math.min(lo,c.es);hi=Math.max(hi,c.es);} }
+  const pad=(hi-lo)*0.08||0.1; lo-=pad; hi+=pad;
+  const x = i => padL + (i+0.5)*(plotW/cs.length);
+  const y = v => padT + (hi-v)/(hi-lo)*plotH;
+
+  // グリッド + 価格目盛り
+  g.strokeStyle='#21262d'; g.fillStyle='#6e7681'; g.font='10px sans-serif'; g.lineWidth=1;
+  for(let k=0;k<=4;k++){ const v=lo+(hi-lo)*k/4, yy=y(v);
+    g.beginPath(); g.moveTo(padL,yy); g.lineTo(padL+plotW,yy); g.stroke();
+    g.fillText(v.toFixed(3), padL+plotW+4, yy+3); }
+
+  // ローソク足
+  const cw = Math.max(1.5, plotW/cs.length*0.6);
+  for(let i=0;i<cs.length;i++){ const c=cs[i], up=c.c>=c.o;
+    g.strokeStyle = up?'#3fb950':'#f85149'; g.fillStyle = up?'#3fb950':'#f85149';
+    g.beginPath(); g.moveTo(x(i), y(c.h)); g.lineTo(x(i), y(c.l)); g.stroke();
+    const yo=y(c.o), yc=y(c.c); g.fillRect(x(i)-cw/2, Math.min(yo,yc), cw, Math.max(1,Math.abs(yc-yo))); }
+
+  // EMA線
+  function line(key,color){ g.strokeStyle=color; g.lineWidth=1.4; g.beginPath(); let started=false;
+    for(let i=0;i<cs.length;i++){ const v=cs[i][key]; if(v==null){started=false;continue;}
+      const px=x(i),py=y(v); if(!started){g.moveTo(px,py);started=true;}else g.lineTo(px,py);} g.stroke(); }
+  line('ef','#58a6ff'); line('es','#f0883e');
+
+  // シグナル矢印
+  const t2i = {}; cs.forEach((c,i)=>t2i[c.t]=i);
+  for(const m of (d.markers||[])){ const i=t2i[m.time]; if(i==null) continue;
+    g.fillStyle = m.dir===1?'#3fb950':'#f85149'; g.beginPath();
+    if(m.dir===1){ const yy=y(cs[i].l)+10; g.moveTo(x(i),yy-7); g.lineTo(x(i)-5,yy); g.lineTo(x(i)+5,yy); }
+    else { const yy=y(cs[i].h)-10; g.moveTo(x(i),yy+7); g.lineTo(x(i)-5,yy); g.lineTo(x(i)+5,yy); }
+    g.closePath(); g.fill(); }
+
+  // 現在値ライン
+  const last=cs[cs.length-1].c; g.strokeStyle='#e6edf3'; g.setLineDash([3,3]); g.lineWidth=1;
+  g.beginPath(); g.moveTo(padL,y(last)); g.lineTo(padL+plotW,y(last)); g.stroke(); g.setLineDash([]);
+  g.fillStyle='#e6edf3'; g.fillRect(padL+plotW, y(last)-7, padR, 14);
+  g.fillStyle='#0d1117'; g.font='bold 10px sans-serif'; g.fillText(last.toFixed(3), padL+plotW+4, y(last)+3);
+}
+async function refreshChart(){
+  try{
+    const r = await fetch('api/chart'+location.search);
+    const d = await r.json();
+    document.getElementById('chartTitle').textContent = d.symbol||'USDJPY M15';
+    document.getElementById('chartSrc').textContent = d.source||'-';
+    drawChart(d);
+  }catch(e){}
+}
 refresh(); setInterval(refresh, 30000);
+refreshChart(); setInterval(refreshChart, 60000);
+window.addEventListener('resize', refreshChart);
 </script>
 </body></html>"""
 
@@ -174,6 +331,17 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif path == "/api/status":
             body = json.dumps(build_status(), ensure_ascii=False).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif path == "/api/chart":
+            try:
+                payload = build_chart()
+            except Exception as e:
+                payload = {"error": str(e), "candles": [], "markers": []}
+            body = json.dumps(payload, ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
