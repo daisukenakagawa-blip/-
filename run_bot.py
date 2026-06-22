@@ -31,6 +31,26 @@ from fx_bot.config import Config
 from fx_bot.live import evaluate_and_trade, log
 
 TOKEN_FILE = ".fxbot_token"
+ENV_FILE = ".env"
+
+
+def load_dotenv(path: str = ENV_FILE):
+    """.env ファイルがあれば環境変数に読み込む (スマホでの入力を楽にするため)。
+
+    形式: KEY=VALUE を1行ずつ。# で始まる行とクオートは無視。
+    """
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
 
 
 def get_or_make_token() -> str:
@@ -97,6 +117,7 @@ def main() -> int:
     p.add_argument("--interval", type=int, default=30, help="判定の間隔(秒)")
     args = p.parse_args()
 
+    load_dotenv()  # .env があれば認証情報を読み込む
     token = get_or_make_token()
     start_dashboard(args.port, token)
     print_banner(args.port, token, args.monitor)
