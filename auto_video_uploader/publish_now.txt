@@ -1,2 +1,2 @@
-publish voiceover_story5 NOW (public, immediate)
-triggered: 2026-06-21
+publish voiceover_story6 at 2026-06-22 17:00 JST
+triggered: 2026-06-22
