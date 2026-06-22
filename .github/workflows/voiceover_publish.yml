@@ -10,6 +10,10 @@ on:
         description: "対象ストーリー (drafts 配下のフォルダ名)"
         required: false
         default: "voiceover_story2"
+      account:
+        description: "投稿先アカウント (1=メイン / 2=サブ)"
+        required: false
+        default: "1"
       publish_at_jst:
         description: "公開時刻 JST (例: 2026-06-18 12:00)。空なら非公開のまま"
         required: false
@@ -65,15 +69,27 @@ jobs:
 
       - name: 認証ファイルを配置
         env:
+          ACCOUNT: ${{ github.event.inputs.account || '1' }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+          YOUTUBE_CLIENT_SECRET_2: ${{ secrets.YOUTUBE_CLIENT_SECRET_2 }}
+          YOUTUBE_TOKEN_2: ${{ secrets.YOUTUBE_TOKEN_2 }}
         run: |
-          if [ -z "$YOUTUBE_CLIENT_SECRET" ] || [ -z "$YOUTUBE_TOKEN" ]; then
-            echo "::error::Secrets の YOUTUBE_CLIENT_SECRET / YOUTUBE_TOKEN が未設定です"
+          if [ "$ACCOUNT" = "2" ]; then
+            TOKEN="$YOUTUBE_TOKEN_2"
+            CS="${YOUTUBE_CLIENT_SECRET_2:-$YOUTUBE_CLIENT_SECRET}"
+            echo "投稿先: アカウント2 (サブ)"
+          else
+            TOKEN="$YOUTUBE_TOKEN"
+            CS="$YOUTUBE_CLIENT_SECRET"
+            echo "投稿先: アカウント1 (メイン)"
+          fi
+          if [ -z "$CS" ] || [ -z "$TOKEN" ]; then
+            echo "::error::アカウント${ACCOUNT} の Secrets (CLIENT_SECRET / TOKEN) が未設定です"
             exit 1
           fi
-          printf '%s' "$YOUTUBE_CLIENT_SECRET" > client_secret.json
-          printf '%s' "$YOUTUBE_TOKEN" > token.json
+          printf '%s' "$CS" > client_secret.json
+          printf '%s' "$TOKEN" > token.json
 
       - name: アフレコ動画を生成 → YouTube 予約投稿
         env:
