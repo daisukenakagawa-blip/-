@@ -99,10 +99,10 @@ jobs:
           # 0 = 四国めたん(あまあま) 可愛い系の女性声。今後のアフレコ動画の既定。
           VOICEVOX_SPEAKER: "0"
           # 対象ストーリー(既定は最新の voiceover_story2)
-          STORY: ${{ github.event.inputs.story || 'voiceover_story6' }}
-          # 公開時刻 JST。空なら publishAt 無し(非公開のまま)。
-          PUBLISH_AT_JST: ${{ github.event.inputs.publish_at_jst || '2026-06-22 17:00' }}
-          PRIVACY_STATUS: private
+          STORY: ${{ github.event.inputs.story || 'voiceover_story7' }}
+          # 空なら即時。今回は今すぐ公開するため publishAt 無し + public。
+          PUBLISH_AT_JST: ${{ github.event.inputs.publish_at_jst || '' }}
+          PRIVACY_STATUS: public
         run: python publish_voiceover.py
 
       - name: 失敗時はエラー内容をログに表示
