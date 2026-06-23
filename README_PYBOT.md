@@ -64,6 +64,27 @@ python3 run_backtest.py --csv usdjpy_m15.csv --trades
 - OANDAのAPIから取得(`fx_bot/oanda.py` の `candles()` を利用)
 - Dukascopy / HistData などの無料ヒストリカルデータ
 
+### HistDataのデータを変換する (10年バックテスト用)
+
+[HistData.com](https://www.histdata.com) からUSDJPYの1分足データ
+(年ごと/月ごと)を無料でダウンロードし、`prepare_histdata.py` で
+M15のCSVに一括変換できます。zipのまま渡せます。
+
+```bash
+# ダウンロードした年次/月次ファイルをまとめて変換 (zip可)
+python3 prepare_histdata.py "DAT_ASCII_USDJPY_M1_*.zip" -o usdjpy_m15.csv
+
+# HistData Generic ASCII は時刻がEST(UTC-5)。揃える場合:
+python3 prepare_histdata.py "DAT_ASCII_USDJPY_M1_*.zip" -o usdjpy_m15.csv --tz-offset -5
+
+# できたファイルで10年バックテスト:
+python3 run_backtest.py --csv usdjpy_m15.csv --trades
+```
+
+対応フォーマット(自動判別): HistData Generic ASCII / HistData MetaTrader /
+すでに `time,open,high,low,close` 形式のCSV。複数年ファイルを渡すと
+時刻順に結合し、重複も自動除去します。1分足を渡せばM15に集約します。
+
 ### 主なオプション
 
 ```bash
