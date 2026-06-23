@@ -1,0 +1,19 @@
+# 認証情報・秘密情報は絶対にコミットしない
+.env
+
+# 生成物・ログ・履歴
+generated/*
+!generated/.gitkeep
+logs/*
+!logs/.gitkeep
+posted_log.csv
+
+# 添付画像(実機の写真などはコミットしない)
+assets/images/*
+!assets/images/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
