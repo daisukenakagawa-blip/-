@@ -124,3 +124,29 @@ PRIVACY_STATUS = os.getenv("PRIVACY_STATUS", "public")
 # 予約投稿の時刻 (topics.csv の date が未来日の場合に使用)
 PUBLISH_TIME = os.getenv("PUBLISH_TIME", "19:00")
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Tokyo")
+
+# ---------------------------------------------------------------------------
+# X (旧 Twitter)  ※ OAuth 1.0a ユーザーコンテキスト
+#   https://developer.x.com でアプリを作成し、権限を「Read and write」にして発行
+# ---------------------------------------------------------------------------
+X_API_KEY = os.getenv("X_API_KEY", "").strip()
+X_API_SECRET = os.getenv("X_API_SECRET", "").strip()
+X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN", "").strip()
+X_ACCESS_TOKEN_SECRET = os.getenv("X_ACCESS_TOKEN_SECRET", "").strip()
+
+# ---------------------------------------------------------------------------
+# Instagram (Graph API / リール)
+#   プロアカウント + 連携 Facebook ページ + 長期アクセストークンが必要
+# ---------------------------------------------------------------------------
+INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN", "").strip()
+INSTAGRAM_BUSINESS_ACCOUNT_ID = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "").strip()
+# リールをフィードにも表示するか (true/false)
+INSTAGRAM_SHARE_TO_FEED = os.getenv("INSTAGRAM_SHARE_TO_FEED", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+# Instagram Graph API は公開 URL の動画しか取り込めない。videos/ を公開している
+# 場合はそのベース URL を設定する。未設定なら catbox.moe に一時アップロードする。
+PUBLIC_MEDIA_BASE_URL = os.getenv("PUBLIC_MEDIA_BASE_URL", "").strip()

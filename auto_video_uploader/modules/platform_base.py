@@ -45,8 +45,14 @@ def get_uploader(platform: str) -> BaseUploader:
         from modules.youtube_uploader import YouTubeUploader
 
         return YouTubeUploader()
+    if platform in ("x", "twitter"):
+        from modules.x_uploader import XUploader
+
+        return XUploader()
+    if platform in ("instagram", "ig", "reels"):
+        from modules.instagram_uploader import InstagramUploader
+
+        return InstagramUploader()
     # 将来の拡張ポイント:
     # if platform == "tiktok": return TikTokUploader()
-    # if platform == "instagram": return InstagramUploader()
-    # if platform == "x": return XUploader()
     raise ValueError(f"未対応のプラットフォームです: {platform}")

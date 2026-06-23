@@ -456,25 +456,39 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="動画自動生成 & YouTube アップロード")
     parser.add_argument("--all", action="store_true", help="pending のテーマを全件処理する")
     parser.add_argument("--no-upload", action="store_true", help="動画生成まで行い、アップロードしない")
-    parser.add_argument("--auth-only", action="store_true", help="YouTube の OAuth 認証のみ行う")
+    parser.add_argument(
+        "--auth-only",
+        nargs="?",
+        const="youtube",
+        help="アップロードせず認証のみ確認する (youtube / x / instagram。既定 youtube)",
+    )
     parser.add_argument("--topic", help="topics.csv を使わず、このテーマを単発処理する")
     parser.add_argument("--date", help="--topic 使用時の投稿予定日 (YYYY-MM-DD)")
+    parser.add_argument(
+        "--platform",
+        default="youtube",
+        help="--topic 使用時の投稿先 (youtube / x / instagram。既定 youtube)",
+    )
     args = parser.parse_args()
 
     config.ensure_dirs()
     logger = get_logger()
 
     if args.auth_only:
-        from modules.youtube_uploader import YouTubeUploader
+        from modules.platform_base import get_uploader
 
-        YouTubeUploader().authenticate()
+        uploader = get_uploader(args.auth_only)
+        if not hasattr(uploader, "authenticate"):
+            logger.error("%s は認証確認に対応していません", args.auth_only)
+            return 1
+        uploader.authenticate()
         return 0
 
     if args.topic:
         row = {
             "date": args.date or "",
             "topic": args.topic,
-            "platform": "youtube",
+            "platform": (args.platform or "youtube").strip().lower(),
             "status": "pending",
         }
         return 0 if process_topic(row, no_upload=args.no_upload) else 1

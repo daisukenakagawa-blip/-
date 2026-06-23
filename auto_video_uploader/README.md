@@ -63,6 +63,9 @@ GitHub Actions (`.github/workflows/auto_upload.yml`) により、**毎日 08:00 
 | `TOPICS_SHEET_URL` | スプレッドシートの「ウェブに公開(CSV)」URL | 推奨 |
 | `ANTHROPIC_API_KEY` | 台本の AI 生成用 | 任意 |
 | `PEXELS_API_KEY` | 背景動画の自動取得用 (https://www.pexels.com/api/ で無料発行) | 任意 |
+| `X_API_KEY` / `X_API_SECRET` / `X_ACCESS_TOKEN` / `X_ACCESS_TOKEN_SECRET` | X (Twitter) 投稿用(`platform=x` を使う場合) | 任意 |
+| `INSTAGRAM_ACCESS_TOKEN` / `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram 投稿用(`platform=instagram` を使う場合) | 任意 |
+| `PUBLIC_MEDIA_BASE_URL` | Instagram 用の動画公開先 URL(未設定なら catbox.moe に一時アップロード) | 任意 |
 
 2. **Google Cloud Console → OAuth 同意画面 → 「アプリを公開」**(公開ステータスを「本番環境」に)。
    テスト状態のままだと認証が**7日で失効**し、クラウド実行が止まります。
@@ -261,7 +264,7 @@ date,topic,platform,status
 ```
 
 - `date` … 投稿予定日。**未来日なら自動的に予約投稿**(`PUBLISH_TIME` の時刻、`privacyStatus=private` + `publishAt`)。当日・過去日なら即時投稿。
-- `platform` … 現状は `youtube`。将来 `tiktok` / `instagram` / `x` を追加予定。
+- `platform` … `youtube` / `x` / `instagram` に対応(設定方法は「7. X (Twitter) / Instagram への自動投稿」を参照)。`tiktok` は将来対応予定。
 - `status` … `pending` のものだけ処理され、成功すると `done` に自動更新。
 
 > Google Sheets を使う場合は「ファイル → ダウンロード → CSV」で `topics.csv` として保存するか、`gspread` 等で同形式の CSV を書き出してください(読み込み口は `main.py` の `load_topics()` に集約してあります)。
@@ -306,18 +309,76 @@ topics.csv 読込
 
 ---
 
-## 7. TikTok / Instagram / X への拡張方法
+## 7. X (Twitter) / Instagram への自動投稿
 
-アップロード処理は `modules/platform_base.py` の `BaseUploader` で抽象化されています。拡張は3ステップ:
+YouTube に加えて **X (旧 Twitter)** と **Instagram (リール)** への自動投稿に対応しています。`topics.csv`(またはスプレッドシート)の `platform` 列に `x` / `instagram` を指定するだけで、同じ動画生成パイプラインがそのまま使えます。
 
-1. `modules/tiktok_uploader.py` を作成し、`BaseUploader` を継承して `upload()` を実装
+```csv
+date,topic,platform,status
+2026-06-25,先ペカするジャグラーは高設定説,x,pending
+2026-06-26,据え置き狙いできる台の条件3選,instagram,pending
+```
+
+> **予約投稿について**: X API・Instagram Graph API には公式の予約投稿エンドポイントがありません。そのため `date` が未来日でも **処理されたタイミングで即時投稿**されます(YouTube のみ予約投稿に対応)。投稿日を厳密に制御したい場合は、その日に GitHub Actions の Run workflow を実行してください。
+
+### 7-1. X (Twitter) 投稿の設定
+
+1. [X Developer Portal](https://developer.x.com/) でアプリを作成
+2. アプリの **User authentication settings** で権限を **「Read and write」** に設定(これを忘れると投稿時に 403 になります)
+3. **Keys and tokens** タブで以下の 4 つを発行し、`.env`(クラウド運用時は GitHub Secrets)に登録:
+
+| 変数 | 対応する値 |
+|---|---|
+| `X_API_KEY` | API Key (Consumer Key) |
+| `X_API_SECRET` | API Key Secret (Consumer Secret) |
+| `X_ACCESS_TOKEN` | Access Token |
+| `X_ACCESS_TOKEN_SECRET` | Access Token Secret |
+
+4. 認証確認:
+
+```bash
+python main.py --auth-only x        # @ユーザー名 が表示されれば OK
+```
+
+動画は v1.1 のチャンクアップロード(INIT→APPEND→FINALIZE→STATUS)でアップロードし、エンコード完了を待ってから v2 の `POST /2/tweets` でツイートします。本文はタイトル + ハッシュタグを 280 文字に収まるよう自動調整します。
+
+### 7-2. Instagram 投稿の設定
+
+Instagram Graph API でリールとして公開します。事前準備が少し多めです:
+
+1. Instagram アカウントを **プロアカウント(ビジネス or クリエイター)** に変更
+2. そのアカウントを **Facebook ページ** に連携
+3. [Meta for Developers](https://developers.facebook.com/) でアプリを作成し、**Instagram Graph API** を追加
+4. **長期アクセストークン**(`instagram_basic` + `instagram_content_publish` 権限)と **Instagram ビジネスアカウント ID** を取得し、`.env` / Secrets に登録:
+
+| 変数 | 説明 |
+|---|---|
+| `INSTAGRAM_ACCESS_TOKEN` | 長期アクセストークン |
+| `INSTAGRAM_BUSINESS_ACCOUNT_ID` | IG ビジネスアカウント ID |
+| `INSTAGRAM_SHARE_TO_FEED` | リールをフィードにも出すか(既定 true) |
+| `PUBLIC_MEDIA_BASE_URL` | 動画の公開先ベース URL(任意・下記参照) |
+
+5. 認証確認:
+
+```bash
+python main.py --auth-only instagram    # @ユーザー名 が表示されれば OK
+```
+
+> **重要 — 動画の公開 URL について**
+> Instagram Graph API は **公開 URL からしか動画を取り込めず**、ローカルファイルを直接送れません。本ツールは次のどちらかで対応します:
+> - `PUBLIC_MEDIA_BASE_URL` を設定した場合 … `{PUBLIC_MEDIA_BASE_URL}/{動画ファイル名}` から取得します(自前のサーバ / S3 / CDN などで `videos/` を公開している場合)
+> - 未設定の場合 … 匿名アップローダ **catbox.moe** に一時アップロードし、その直リンクを使います(手軽ですが、安定運用には自前ホスティングを推奨)
+
+### 7-3. 仕組みと拡張
+
+アップロード処理は `modules/platform_base.py` の `BaseUploader` で抽象化されています。動画生成部分(台本・音声・合成・サムネ)はプラットフォーム共通です。TikTok など別プラットフォームを足す場合も同じパターンで拡張できます:
+
+1. `modules/<platform>_uploader.py` を作成し、`BaseUploader` を継承して `upload()` を実装
    - TikTok: [Content Posting API](https://developers.tiktok.com/doc/content-posting-api-get-started/)(Direct Post)
-   - Instagram Reels: [Instagram Graph API](https://developers.facebook.com/docs/instagram-api/guides/content-publishing)(ビジネスアカウント必須・動画は公開URL経由)
-   - X: [v2 media upload + POST /2/tweets](https://docs.x.com/x-api)
-2. `platform_base.py` の `get_uploader()` に分岐を1行追加
-3. `topics.csv` の `platform` 列に `tiktok` 等を指定
+2. `platform_base.py` の `get_uploader()` に分岐を追加
+3. `topics.csv` の `platform` 列に指定
 
-動画生成部分(台本・音声・合成・サムネ)はそのまま共通で使えます。プラットフォームごとに尺やアスペクト比を変えたい場合は `.env` の `VIDEO_WIDTH` / `VIDEO_HEIGHT` / `TARGET_MAX_SEC` を切り替えてください。
+プラットフォームごとに尺やアスペクト比を変えたい場合は `.env` の `VIDEO_WIDTH` / `VIDEO_HEIGHT` / `TARGET_MAX_SEC` を切り替えてください。
 
 ---
 

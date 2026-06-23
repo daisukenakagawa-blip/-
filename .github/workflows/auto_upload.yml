@@ -75,7 +75,7 @@ jobs:
           printf '%s' "$YOUTUBE_CLIENT_SECRET" > client_secret.json
           printf '%s' "$YOUTUBE_TOKEN" > token.json
 
-      - name: 動画生成 → YouTube アップロード
+      - name: 動画生成 → 各 SNS へアップロード
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TOPICS_SHEET_URL: ${{ secrets.TOPICS_SHEET_URL }}
@@ -83,6 +83,15 @@ jobs:
           FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc
           FONT_NAME: Noto Sans CJK JP
           TTS_ENGINE: auto
+          # X (platform=x のテーマがある場合に使用。未設定なら X 投稿のみ失敗)
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          # Instagram (platform=instagram のテーマがある場合に使用)
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
+          PUBLIC_MEDIA_BASE_URL: ${{ secrets.PUBLIC_MEDIA_BASE_URL }}
         run: python main.py
 
       - name: 投稿状態をリポジトリに保存
