@@ -95,6 +95,7 @@
     <button data-t="inject9">🏯 新館専用（合算ライン）</button>
     <button data-t="inject10">🎡 楽園専用（角台・放出）</button>
     <button data-t="inject11">🔬 バックテスト言語化（全台）</button>
+    <button data-t="inject12">🎯 鉄板ピックアップ（高確度のみ）</button>
     <button data-t="ecompare">🏆 エンジン比較</button>
     <button data-t="battle">🥇 実戦予想（総合）</button>
     <button data-t="andetail">🔍 答え合わせ詳細</button>
@@ -525,6 +526,25 @@
     </div>
     <button class="primary" onclick="render()">🔬 バックテストを言語化する</button>
     <div id="t-inject11"></div>
+  </div>
+
+  <div class="panel" id="p-inject12">
+    <h2>🎯 鉄板ピックアップ：高設定が確実に入る台だけ</h2>
+    <p class="muted">過去の各日を採点しなおすバックテストで「<b>この点数以上なら実際にほぼ高設定だった</b>」という鉄板ラインを見つけ、
+      予想日でそのラインを超えた台<b>だけ</b>を出します。確実性を最優先するため、<b>クリアする台が無い日は正直に「見送り推奨」</b>。
+      <b>予想日より前のみ使用（未来不使用）。</b></p>
+    <div class="row">
+      <div><label>店舗</label><select id="inj12-store" onchange="render()"></select></div>
+      <div><label>予想する日（空欄＝最新の翌日）</label><input id="inj12-date" type="date" onchange="render()"></div>
+      <div><label>狙う確度</label><select id="inj12-conf" onchange="render()">
+        <option value="0.6">60%以上（やや広め）</option>
+        <option value="0.7" selected>70%以上（標準・おすすめ）</option>
+        <option value="0.8">80%以上（厳しめ・鉄板のみ）</option>
+      </select></div>
+      <div><label>バックテスト期間</label><select class="btdays-sel" onchange="setBtDays(this.value)"></select></div>
+    </div>
+    <button class="primary" onclick="render()">🎯 鉄板だけ抽出する</button>
+    <div id="t-inject12"></div>
   </div>
 
   <!-- エンジン比較 -->
@@ -1648,6 +1668,7 @@ function refreshAll(){
   fillSelect("inj9-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj10-store",stores.length?stores:["（データなし）"]);
   fillSelect("inj11-store",stores.length?stores:["（データなし）"]);
+  fillSelect("inj12-store",stores.length?stores:["（データなし）"]);
   fillSelect("ec-store",stores.length?["（全店まとめ）",...stores]:["（データなし）"]);
   fillBtDays();
   fillSelect("in-store-sel",["（入力済みの店から選ぶ）",...stores]);
@@ -1674,7 +1695,7 @@ function render(){
   // 各描画を個別に保護：1つが失敗しても他（と取り込み）を止めない
   const safe=(fn,a)=>{ try{ fn(a); }catch(e){ console.error(fn.name+" でエラー:",e); } };
   [renderList,renderStore,renderTail,renderWeek,renderRank,renderStoreReport].forEach(fn=>safe(fn,rows));
-  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderInjection6); safe(renderInjection7); safe(renderInjection8); safe(renderInjection9); safe(renderInjection10); safe(renderInjection11); safe(renderEngineCompare); safe(renderMyPlay);
+  safe(renderEventAnalysis); safe(renderBattle); safe(()=>renderRankNew(rows)); safe(renderAnswerDetail); safe(renderInjection); safe(renderForecast); safe(renderInjection3); safe(renderInjection4); safe(renderInjection5); safe(renderInjection6); safe(renderInjection7); safe(renderInjection8); safe(renderInjection9); safe(renderInjection10); safe(renderInjection11); safe(renderInjection12); safe(renderEngineCompare); safe(renderMyPlay);
 }
 function metric(v,l){ return '<div class="metric"><b>'+v+'</b><span>'+l+'</span></div>'; }
 function _act(id){ const p=document.getElementById(id); return !!(p&&p.classList.contains("active")); }   // タブが表示中か（重い再計算を表示中のみに）
@@ -5203,6 +5224,103 @@ function renderInjection11Inner(){
         "<td style='text-align:left;font-size:11px;line-height:1.5'>"+comment(o)+"</td></tr>"; }).join("")+
     "</table></div>";
   h+="<p class='muted' style='font-size:12px'>※コメントの数値はすべて「予想日より前のデータ」で学習したバックテスト結果（継続率・上げ率・クセのlift）です。件数が少ない数字は参考程度に。</p>";
+  el.innerHTML=h;
+}
+
+// ========== 投入ツール12：鉄板ピックアップ（高確度のみ）==========
+// 過去の各日を computeKeepUp で採点しなおし、「得点◯以上は実際に高設定だった割合(精度)」を計測。
+// その精度が目標確度を満たす最低ラインを鉄板ラインとし、予想日でそれを超えた台だけを出す。
+let _inj12=null;
+function renderInjection12(){
+  const el=document.getElementById("t-inject12"); if(!el) return;
+  const panel=document.getElementById("p-inject12");
+  if(!panel||!panel.classList.contains("active")){ el.innerHTML="<p class='muted'>このタブを開くと計算します（重い処理のため）。</p>"; return; }
+  try{ renderInjection12Inner(); }catch(e){ el.innerHTML="<div class='warn'>計算エラー: "+(e&&e.message||e)+"</div>"; }
+}
+function renderInjection12Inner(){
+  const el=document.getElementById("t-inject12"); const store=val("inj12-store");
+  if(!store||store==="（データなし）"){ el.innerHTML="<p class='muted'>データを入力してください。</p>"; return; }
+  const srAll=load().filter(r=>r.store===store);
+  if(srAll.length<2){ el.innerHTML="<p class='muted'>もう少しデータが必要です（複数日分）。</p>"; return; }
+  const md0=maxDate(srAll); const ndDef=new Date(md0+"T00:00:00"); ndDef.setDate(ndDef.getDate()+1);
+  const targetDate=val("inj12-date")||fmtDate(ndDef);
+  const target=parseFloat(val("inj12-conf"))||0.7;
+  const key=store+"|"+srAll.length+"|"+targetDate+"|"+btDays()+"|"+target;
+  const sc6=o=>(o.hiScore6!=null?o.hiScore6:o.hiScore);
+  const isHi=r=>{const e=estimateSetting(r);return !!(e&&e.setting>=4);};
+  if(!_inj12||_inj12.key!==key){
+    const KU=keepUpLearn(srAll,store,targetDate); const ML=missLearn(srAll,store,targetDate,KU);
+    const KR=computeKeepUp(srAll,store,targetDate,KU,ML);
+    // --- 得点→精度のバックテスト（過去各日を採点しなおす）---
+    const dates=[...new Set(srAll.filter(r=>r.date<targetDate).map(r=>r.date))].sort();
+    const start=Math.max(1,dates.length-btDays());
+    const recs=[]; let evalDays=0, hiDaysTotal=0;
+    for(let i=start;i<dates.length;i++){ const D=dates[i];
+      const act=srAll.filter(r=>r.date===D); if(act.length<2) continue;
+      const actHiSet={}; act.forEach(r=>{ if(isHi(r)) actHiSet[r.machine_no]=1; });
+      const hiCnt=Object.keys(actHiSet).length; if(!hiCnt) continue; evalDays++; hiDaysTotal+=hiCnt;
+      let R=null; try{ R=computeKeepUp(srAll,store,D,KU,ML); }catch(e){}
+      if(!R||!R.out) continue;
+      R.out.forEach(o=>{ recs.push({score:sc6(o), high:!!actHiSet[o.mno]}); });
+    }
+    // 5点刻みでビン化し、上位からの累積精度を計算
+    const bins={}; recs.forEach(r=>{ const f=Math.floor(r.score/5)*5; const b=bins[f]=bins[f]||{n:0,hi:0}; b.n++; if(r.high)b.hi++; });
+    const floors=Object.keys(bins).map(Number).sort((a,b)=>b-a);
+    let cumN=0,cumHi=0,line=null,linePrec=null,lineN=0; const band=[];
+    const minN=6;
+    for(const f of floors){ cumN+=bins[f].n; cumHi+=bins[f].hi; const prec=cumN?cumHi/cumN:0;
+      band.push({floor:f,n:bins[f].n,hi:bins[f].hi,binPrec:bins[f].n?bins[f].hi/bins[f].n:0,cumN,cumPrec:prec});
+      if(prec>=target && cumN>=minN){ line=f; linePrec=prec; lineN=cumN; }
+      else if(line!=null && prec<target){ break; }   // 一度ラインが立った後に精度が割れたら確定
+    }
+    const baseRate = recs.length? recs.filter(r=>r.high).length/recs.length : 0;
+    _inj12={key,KR,band,line,linePrec,lineN,evalDays,baseRate,recN:recs.length,target,KU};
+  }
+  const {KR,band,line,linePrec,lineN,evalDays,baseRate,recN,KU}=_inj12;
+  const pc=v=>v==null?"-":Math.round(v*100)+"%";
+  let h="<p class='muted'>"+store+" ／ 予想日="+targetDate.slice(5)+"（"+WD[new Date(targetDate+"T00:00:00").getDay()]+"曜）／ 狙う確度 "+pc(target)+"以上 ／ 検証 "+evalDays+"日・"+recN+"件</p>";
+  if(recN<20){ h+="<div class='note'>バックテストの件数が少なく、確度を測れません（データが増えると使えるようになります）。</div>"; el.innerHTML=h; return; }
+  // 鉄板ライン説明
+  if(line==null){
+    h+="<div class='note' style='background:#fef2f2;border-color:#ef4444;font-size:14px'>🚫 <b>この店では「確度"+pc(target)+"以上」を満たす点数ラインが見つかりませんでした。</b><br>"+
+      "どの点数帯でも実際の高設定率が"+pc(target)+"に届かない＝鉄板で取れる店ではありません。確度を下げる（60%）か、機種・曜日で絞る他ツールをご利用ください。</div>";
+  } else {
+    h+="<div class='note' style='background:#ecfdf5;border-color:#10b981;font-size:14px'>🎯 <b>鉄板ライン＝"+line+"点以上</b><br>"+
+      "過去、得点"+line+"点以上だった台は<b>実際に"+pc(linePrec)+"が高設定</b>でした（"+lineN+"件で検証／店全体の高設定率は"+pc(baseRate)+"なので約"+(baseRate?(linePrec/baseRate).toFixed(1):"-")+"倍の精度）。この点数を超えた台だけを下に出します。</div>";
+  }
+  // 精度キャリブレーション表
+  h+="<details class='note' style='font-size:12px'><summary><b>📊 得点帯ごとの的中精度（バックテスト）</b></summary>"+
+    "<div class='scroll'><table style='font-size:12px'><tr><th>得点帯</th><th>件数</th><th>この帯の<br>高設定率</th><th>この点以上<br>累積精度</th><th>累積件数</th></tr>"+
+    band.map(b=>{ const hit=line!=null&&b.floor>=line; const pcol=b.cumPrec>=target?"#16a34a":b.cumPrec>=target-0.15?"#ca8a04":"#c00";
+      return "<tr"+(hit?" style='background:#d8f5c0'":"")+"><td><b>"+b.floor+"〜"+(b.floor+4)+"</b></td><td>"+b.n+"</td><td>"+pc(b.binPrec)+"</td>"+
+        "<td style='color:"+pcol+";font-weight:bold'>"+pc(b.cumPrec)+"</td><td>"+b.cumN+"</td></tr>"; }).join("")+
+    "</table></div><p class='muted' style='font-size:11px'>「この点以上 累積精度」がその点数ライン以上の台を採用したときの実際の高設定率。緑＝目標確度クリア。</p></details>";
+  // 予想日のピックアップ
+  const heBg=v=>v>=100?"#22c55e":v>=70?"#7CFC00":v>=55?"#b6f5a0":"#d8f5c0";
+  const picks = line==null? [] : KR.out.filter(o=>sc6(o)>=line).slice().sort((a,b)=>sc6(b)-sc6(a));
+  h+="<h3 style='margin:14px 0 4px;background:#065f46;color:#fff;padding:7px 10px;border-radius:6px'>🎯 鉄板ピックアップ（"+pc(target)+"以上の確度）</h3>";
+  if(line==null){ h+="<div class='note'>鉄板ラインがないため、本日のピックアップはありません＝<b>見送り推奨</b>。</div>"; }
+  else if(!picks.length){ h+="<div class='note' style='background:#fffbeb;border-color:#f59e0b'>⚠️ <b>今日は鉄板ライン（"+line+"点）を超える台がありません＝見送り推奨。</b><br>無理に張らないのが確実性重視の正解です。下の参考候補は基準未満なので自己責任で。</div>";
+    // 参考に最上位3台
+    const ref=KR.out.slice().sort((a,b)=>sc6(b)-sc6(a)).slice(0,3);
+    h+="<div class='scroll'><table style='font-size:12px'><tr><th>台</th><th>機種</th><th>得点</th><th>判定</th><th>本命</th></tr>"+
+      ref.map(o=>"<tr><td><b>"+o.mno+"</b></td><td style='text-align:left;font-size:11px'>"+o.mname+"</td><td style='font-weight:bold'>"+sc6(o)+"</td><td style='font-size:11px'>"+o.verdict+"</td><td>設定"+o.honmei+"</td></tr>").join("")+
+      "</table></div>"; }
+  else {
+    h+="<p class='muted' style='font-size:12px'>下の台はすべて鉄板ライン超え。<b>過去この水準は"+pc(linePrec)+"が高設定</b>でした。</p>"+
+      "<div class='scroll'><table style='font-size:13px'><tr><th>順</th><th>台</th><th>機種</th><th>得点</th><th>想定<br>的中率</th><th>判定</th><th>本命設定</th><th>根拠</th></tr>"+
+      picks.map((o,i)=>{ const v=sc6(o);
+        const why=[]; if(o.side==="keep")why.push("据え置き"+o.keepRun+"日目"); else if(o.side==="up")why.push("不発"+o.streak+"日→上げ"); else why.push("新規投入");
+        if(o.prevComb!=null)why.push("前日合算1/"+Math.round(o.prevComb));
+        if(o.nbHi)why.push("並び投入");
+        return "<tr><td style='font-weight:bold'>"+(i+1)+"</td><td><b>"+o.mno+"</b></td><td style='text-align:left;font-size:11px'>"+o.mname+"</td>"+
+          "<td style='background:"+heBg(v)+";font-weight:bold;font-size:15px'>"+v+"</td>"+
+          "<td style='color:#16a34a;font-weight:bold'>"+pc(linePrec)+"</td>"+
+          "<td style='white-space:nowrap;font-size:11px'>"+o.verdict+"</td>"+
+          "<td><b>設定"+o.honmei+"</b><br><span style='font-size:10px'>4:"+pc(o.e4)+" 5:"+pc(o.e5)+" 6:"+pc(o.e6)+"</span></td>"+
+          "<td style='text-align:left;font-size:11px'>"+why.join("／")+"</td></tr>"; }).join("")+
+      "</table></div>"; }
+  h+="<p class='muted' style='font-size:12px'>※「想定的中率」は鉄板ライン以上の台の過去精度（"+pc(linePrec==null?baseRate:linePrec)+"）。確実性を優先する分、拾える台は少なめ・ゼロの日もあります。台数が欲しい日はツール6や全台ツールを併用してください。</p>";
   el.innerHTML=h;
 }
 
