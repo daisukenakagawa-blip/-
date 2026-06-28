@@ -230,7 +230,15 @@ def main() -> int:
 
     # 最終合成 (映像 + 音声 + BGM)
     out = config.VIDEOS_DIR / f"{STORY}.mp4"
-    bgm = Path(config.BGM_PATH)
+    # manifest に "bgm" があればそれを優先 (BASE_DIR 相対 or 絶対)。無ければ既定。
+    bgm_rel = (manifest.get("bgm") or "").strip()
+    if bgm_rel:
+        cand = Path(bgm_rel)
+        bgm = cand if cand.is_absolute() else (config.BASE_DIR / cand)
+        if not bgm.exists():
+            bgm = Path(config.BGM_PATH)
+    else:
+        bgm = Path(config.BGM_PATH)
     cmd = ["ffmpeg", "-y", "-i", str(video_only), "-i", str(voice)]
     if bgm.exists():
         cmd += ["-stream_loop", "-1", "-i", str(bgm),
