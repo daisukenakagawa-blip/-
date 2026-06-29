@@ -7,3 +7,7 @@ venv/
 models/
 data/
 logs/
+
+# YOLO 学習出力
+runs/
+*.pt
