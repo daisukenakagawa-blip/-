@@ -4,9 +4,13 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
-models/
 data/
 logs/
+
+# モデル: 生成物は除外しつつ、同梱モデルとドキュメントは追跡
+models/*
+!models/README.md
+!models/cards_yolo_synthetic.pt
 
 # YOLO 学習出力
 runs/
