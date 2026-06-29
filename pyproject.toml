@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackjack-counter"
+version = "0.1.0"
+description = "ブラックジャックのカードカウンティング学習・練習ツール（手動 + 自動）"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+# 自動カウント（DOM 読取）
+browser = ["playwright>=1.40"]
+# 自動カウント（画面の画像認識）
+vision = ["opencv-python>=4.8", "mss>=9.0", "numpy>=1.24"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+blackjack-counter = "blackjack_counter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
