@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ライブバカラ 統計・罫線ツール</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI','Hiragino Sans',sans-serif;background:#101820;color:#e8e8e8;min-height:100vh;padding:14px;user-select:none}
+.wrap{max-width:1000px;margin:0 auto}
+h1{text-align:center;font-size:1.5rem;color:#ffd700;margin-bottom:2px}
+.subtitle{text-align:center;font-size:.78rem;color:#7d8895;margin-bottom:14px}
+
+/* 入力エリア */
+.panel{background:#1a2430;border:1px solid #28323f;border-radius:12px;padding:14px;margin-bottom:14px}
+.panel h2{font-size:.85rem;color:#9fb0c0;margin-bottom:10px;letter-spacing:.05em}
+.input-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:10px}
+.big-btn{flex:1;min-width:90px;max-width:160px;padding:18px 0;border:none;border-radius:10px;font-size:1.15rem;font-weight:bold;color:#fff;cursor:pointer;transition:transform .08s,filter .15s;box-shadow:0 3px 8px rgba(0,0,0,.4)}
+.big-btn:active{transform:scale(.96)}
+.big-btn:hover{filter:brightness(1.12)}
+.btn-p{background:linear-gradient(135deg,#1e88e5,#1565c0)}
+.btn-b{background:linear-gradient(135deg,#e53935,#c62828)}
+.btn-t{background:linear-gradient(135deg,#43a047,#2e7d32)}
+.big-btn .sub{display:block;font-size:.7rem;font-weight:normal;opacity:.85;margin-top:2px}
+
+.toggle-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.toggle{padding:8px 14px;border:2px solid #3a4756;border-radius:20px;background:transparent;color:#9fb0c0;font-size:.8rem;cursor:pointer;transition:.15s}
+.toggle.on.p-toggle{border-color:#1e88e5;color:#64b5f6;background:rgba(30,136,229,.12)}
+.toggle.on.b-toggle{border-color:#e53935;color:#ef9a9a;background:rgba(229,57,53,.12)}
+
+.tool-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.tool-btn{padding:8px 16px;border:1px solid #3a4756;border-radius:8px;background:#222d3a;color:#cdd6e0;font-size:.8rem;cursor:pointer;transition:.15s}
+.tool-btn:hover{background:#2b3848}
+.tool-btn.danger{border-color:#5a2a2a;color:#e88}
+.tool-btn.danger:hover{background:#3a2020}
+
+/* 統計 */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.stat{background:#141d27;border-radius:10px;padding:12px;text-align:center}
+.stat .label{font-size:.72rem;color:#7d8895;margin-bottom:4px}
+.stat .val{font-size:1.35rem;font-weight:bold}
+.stat .pct{font-size:.78rem;color:#9fb0c0;margin-top:2px}
+.c-b{color:#ef5350}.c-p{color:#42a5f5}.c-t{color:#66bb6a}.c-y{color:#ffd54f}.c-n{color:#cdd6e0}
+
+/* 罫線 共通 */
+.roads-scroll{overflow-x:auto;padding-bottom:6px}
+.road{display:grid;grid-auto-flow:column;grid-template-rows:repeat(6,var(--cs));grid-auto-columns:var(--cs);background:#0c131b;border:1px solid #28323f;border-radius:6px;padding:2px;width:max-content;min-width:100%}
+.road-lg{--cs:30px}
+.road-sm{--cs:18px}
+.cell{display:flex;align-items:center;justify-content:center;position:relative}
+.bead{width:84%;height:84%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:bold;color:#fff}
+.bead.B{background:#e53935}.bead.P{background:#1e88e5}.bead.T{background:#43a047}
+/* 大路は中空丸 */
+.ring{width:82%;height:82%;border-radius:50%;border:3px solid;background:transparent;position:relative}
+.ring.B{border-color:#e53935}.ring.P{border-color:#1e88e5}
+.tie-slash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#66bb6a;font-weight:bold}
+.tie-count{position:absolute;top:-2px;right:-2px;font-size:.55rem;color:#66bb6a;font-weight:bold}
+/* ペアドット */
+.pair-b{position:absolute;top:1px;left:1px;width:7px;height:7px;border-radius:50%;background:#e53935;border:1px solid #fff}
+.pair-p{position:absolute;bottom:1px;right:1px;width:7px;height:7px;border-radius:50%;background:#1e88e5;border:1px solid #fff}
+/* 下三路マーク */
+.d-ring{width:74%;height:74%;border-radius:50%;border:2.5px solid;background:transparent}
+.d-fill{width:62%;height:62%;border-radius:50%}
+.d-slash{width:80%;height:2.5px;transform:rotate(-45deg);border-radius:2px}
+.r-red{border-color:#e53935;background-color:#e53935}
+.r-red.d-ring{background:transparent}
+.r-blue{border-color:#1e88e5;background-color:#1e88e5}
+.r-blue.d-ring{background:transparent}
+
+.road-title{font-size:.78rem;color:#9fb0c0;margin:10px 0 4px}
+.road-title small{color:#6b7888;font-weight:normal}
+
+/* 予測（問路） */
+.pred-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pred-col{background:#141d27;border-radius:10px;padding:10px}
+.pred-col h3{font-size:.8rem;margin-bottom:8px;text-align:center}
+.pred-row{display:flex;align-items:center;justify-content:space-between;font-size:.78rem;padding:4px 2px;border-bottom:1px solid #1f2a36}
+.pred-row:last-child{border-bottom:none}
+.pred-mark{width:14px;height:14px;border-radius:50%;display:inline-block}
+.empty-note{text-align:center;color:#5d6877;font-size:.82rem;padding:18px}
+.foot{text-align:center;font-size:.7rem;color:#5d6877;margin-top:18px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ライブバカラ 統計・罫線ツール</h1>
+  <div class="subtitle">結果を手入力 → 珠盤路・大路・下三路・出現率を自動表示（記録/可視化ツール）</div>
+
+  <!-- 入力 -->
+  <div class="panel">
+    <h2>結果を記録</h2>
+    <div class="input-row">
+      <button class="big-btn btn-p" onclick="record('P')">プレイヤー<span class="sub">PLAYER 閑</span></button>
+      <button class="big-btn btn-b" onclick="record('B')">バンカー<span class="sub">BANKER 荘</span></button>
+      <button class="big-btn btn-t" onclick="record('T')">タイ<span class="sub">TIE 和</span></button>
+    </div>
+    <div class="toggle-row">
+      <button id="tgB" class="toggle b-toggle" onclick="toggle('B')">バンカーペア</button>
+      <button id="tgP" class="toggle p-toggle" onclick="toggle('P')">プレイヤーペア</button>
+    </div>
+    <div class="tool-row">
+      <button class="tool-btn" onclick="undo()">↶ 1手戻す</button>
+      <button class="tool-btn" onclick="exportCSV()">CSV書き出し</button>
+      <button class="tool-btn danger" onclick="resetAll()">新しいシュー（全消去）</button>
+    </div>
+  </div>
+
+  <!-- 統計 -->
+  <div class="panel">
+    <h2>統計</h2>
+    <div class="stats-grid" id="stats"></div>
+  </div>
+
+  <!-- 罫線 -->
+  <div class="panel">
+    <h2>罫線（路）</h2>
+    <div id="roads-area"></div>
+  </div>
+
+  <!-- 予測 -->
+  <div class="panel">
+    <h2>予測（問路 / 下三路）<small style="font-weight:normal;color:#6b7888;font-size:.72rem"> ※過去パターンの整合性表示。次の出目を保証しません</small></h2>
+    <div id="pred-area"></div>
+  </div>
+
+  <div class="foot">
+    バカラの各ゲームは独立試行です。罫線は記録の可視化であり、出目予測・控除率の克服はできません。<br>
+    本ツールは手入力専用です（カジノ画面の自動取得・自動ベットは行いません）。データはこの端末のブラウザにのみ保存されます。
+  </div>
+</div>
+
+<script>
+/* ===== データ ===== */
+const KEY = 'baccarat_history_v1';
+let history = load();
+let pending = {bPair:false, pPair:false}; // 次の入力に付与するペア
+
+function load(){ try{ return JSON.parse(localStorage.getItem(KEY)) || []; }catch(e){ return []; } }
+function save(){ localStorage.setItem(KEY, JSON.stringify(history)); }
+
+/* ===== 入力操作 ===== */
+function record(result){
+  const e = {result};
+  if(result==='B'||result==='P'){ e.bPair=pending.bPair; e.pPair=pending.pPair; }
+  history.push(e);
+  pending = {bPair:false, pPair:false};
+  syncToggles();
+  save(); render();
+}
+function toggle(side){
+  if(side==='B') pending.bPair = !pending.bPair;
+  else pending.pPair = !pending.pPair;
+  syncToggles();
+}
+function syncToggles(){
+  document.getElementById('tgB').classList.toggle('on', pending.bPair);
+  document.getElementById('tgP').classList.toggle('on', pending.pPair);
+}
+function undo(){ history.pop(); save(); render(); }
+function resetAll(){
+  if(history.length && !confirm('現在のシューの全データを消去します。よろしいですか？')) return;
+  history = []; save(); render();
+}
+function exportCSV(){
+  let csv = 'no,result,bankerPair,playerPair\n';
+  history.forEach((h,i)=>{ csv += `${i+1},${h.result},${h.bPair?1:0},${h.pPair?1:0}\n`; });
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'baccarat_shoe.csv';
+  a.click();
+}
+
+/* ===== 大路（Big Road）の列構造を構築 ===== */
+function buildColumns(hist){
+  const cols = [];          // {result, beads:[{result,ties,bPair,pPair}]}
+  let leadingTie = 0;
+  for(const h of hist){
+    if(h.result==='T'){
+      if(cols.length===0){ leadingTie++; }
+      else{
+        const col = cols[cols.length-1];
+        col.beads[col.beads.length-1].ties++;
+      }
+      continue;
+    }
+    const bead = {result:h.result, ties:0, bPair:!!h.bPair, pPair:!!h.pPair};
+    if(leadingTie){ bead.ties += leadingTie; leadingTie = 0; }
+    if(cols.length===0 || cols[cols.length-1].result !== h.result){
+      cols.push({result:h.result, beads:[bead]});
+    }else{
+      cols[cols.length-1].beads.push(bead);
+    }
+  }
+  return cols;
+}
+
+/* ===== 大路をグリッド配置（ドラゴンテール対応） ===== */
+function layoutBigRoad(cols){
+  const occ = {};                       // "r_c" -> bead
+  const key=(r,c)=>r+'_'+c;
+  let maxC = 0, startPrev = -1;
+  const placed = [];
+  cols.forEach((col,ci)=>{
+    let startC = (ci===0) ? 0 : startPrev + 1;
+    while(occ[key(0,startC)]) startC++;
+    let r=0, c=startC;
+    col.beads.forEach((bead,bi)=>{
+      if(bi===0){ r=0; c=startC; }
+      else{
+        if(r+1<=5 && !occ[key(r+1,c)]) r=r+1;
+        else { c=c+1; while(occ[key(r,c)]) c++; }
+      }
+      occ[key(r,c)] = bead;
+      placed.push({r,c,bead,result:col.result});
+      if(c>maxC) maxC=c;
+    });
+    startPrev = startC;
+  });
+  return {placed, cols:maxC+1};
+}
+
+/* ===== 下三路（big eye=1, small=2, cockroach=3） ===== */
+function derivedRoad(cols, k){
+  const marks = []; // 'R' or 'B'
+  for(let ci=0; ci<cols.length; ci++){
+    for(let bi=0; bi<cols[ci].beads.length; bi++){
+      const m = bi+1; // 列内の行(1始まり)
+      if(m===1){
+        const a = ci-1, b = ci-1-k;
+        if(b<0) continue;
+        marks.push(cols[a].beads.length === cols[b].beads.length ? 'R' : 'B');
+      }else{
+        const b = ci-k;
+        if(b<0) continue;
+        marks.push(cols[b].beads.length >= m ? 'R' : 'B');
+      }
+    }
+  }
+  return marks;
+}
+
+/* マーク列を大路スタイルでグリッド配置 */
+function layoutMarks(marks){
+  const occ={}, key=(r,c)=>r+'_'+c, placed=[];
+  let maxC=0, startPrev=-1, prevColor=null;
+  // 同色連続を1列とみなす
+  const runs=[];
+  marks.forEach(mk=>{
+    if(runs.length===0 || runs[runs.length-1].color!==mk) runs.push({color:mk, n:1});
+    else runs[runs.length-1].n++;
+  });
+  runs.forEach((run,ci)=>{
+    let startC = (ci===0)?0:startPrev+1;
+    while(occ[key(0,startC)]) startC++;
+    let r=0,c=startC;
+    for(let i=0;i<run.n;i++){
+      if(i===0){ r=0; c=startC; }
+      else{
+        if(r+1<=5 && !occ[key(r+1,c)]) r=r+1;
+        else { c=c+1; while(occ[key(r,c)]) c++; }
+      }
+      occ[key(r,c)]=run.color;
+      placed.push({r,c,color:run.color});
+      if(c>maxC) maxC=c;
+    }
+    startPrev=startC;
+  });
+  return {placed, cols:maxC+1};
+}
+
+/* ===== 統計計算 ===== */
+function computeStats(hist){
+  let nB=0,nP=0,nT=0,bp=0,pp=0;
+  let maxB=0,maxP=0,run=0,runType=null;
+  hist.forEach(h=>{
+    if(h.result==='B'){ nB++; if(h.bPair)bp++; if(h.pPair)pp++; }
+    if(h.result==='P'){ nP++; if(h.bPair)bp++; if(h.pPair)pp++; }
+    if(h.result==='T'){ nT++; }
+    if(h.result!=='T'){
+      if(h.result===runType) run++; else { runType=h.result; run=1; }
+      if(runType==='B') maxB=Math.max(maxB,run);
+      if(runType==='P') maxP=Math.max(maxP,run);
+    }
+  });
+  // 現在の連
+  let curRun=0, curType=null;
+  for(let i=hist.length-1;i>=0;i--){
+    if(hist[i].result==='T') continue;
+    if(curType===null){ curType=hist[i].result; curRun=1; }
+    else if(hist[i].result===curType) curRun++;
+    else break;
+  }
+  const total=hist.length, decided=nB+nP;
+  return {nB,nP,nT,bp,pp,maxB,maxP,curRun,curType,total,decided};
+}
+
+/* ===== 描画 ===== */
+function render(){
+  const total = history.length;
+
+  // --- 統計 ---
+  const s = computeStats(history);
+  const pct = (n,d)=> d>0 ? (n/d*100).toFixed(1)+'%' : '–';
+  const curTxt = s.curType ? `${s.curType==='B'?'バンカー':'プレイヤー'} ${s.curRun}連` : '–';
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="label">総ゲーム数</div><div class="val c-n">${s.total}</div><div class="pct">タイ含む</div></div>
+    <div class="stat"><div class="label">バンカー</div><div class="val c-b">${s.nB}</div><div class="pct">${pct(s.nB,s.total)}</div></div>
+    <div class="stat"><div class="label">プレイヤー</div><div class="val c-p">${s.nP}</div><div class="pct">${pct(s.nP,s.total)}</div></div>
+    <div class="stat"><div class="label">タイ</div><div class="val c-t">${s.nT}</div><div class="pct">${pct(s.nT,s.total)}</div></div>
+    <div class="stat"><div class="label">B/P 勝負内訳</div><div class="val c-n" style="font-size:1rem">${pct(s.nB,s.decided)} / ${pct(s.nP,s.decided)}</div><div class="pct">タイ除く ${s.decided}戦</div></div>
+    <div class="stat"><div class="label">現在の連</div><div class="val ${s.curType==='B'?'c-b':s.curType==='P'?'c-p':'c-n'}" style="font-size:1.05rem">${curTxt}</div></div>
+    <div class="stat"><div class="label">最大連勝</div><div class="val c-n" style="font-size:1rem"><span class="c-b">B${s.maxB}</span> / <span class="c-p">P${s.maxP}</span></div></div>
+    <div class="stat"><div class="label">ペア</div><div class="val c-n" style="font-size:1rem"><span class="c-b">B${s.bp}</span> / <span class="c-p">P${s.pp}</span></div></div>
+  `;
+
+  // --- 罫線 ---
+  const cols = buildColumns(history);
+  const area = document.getElementById('roads-area');
+  if(total===0){
+    area.innerHTML = '<div class="empty-note">結果を入力すると罫線が表示されます</div>';
+    document.getElementById('pred-area').innerHTML = '<div class="empty-note">データがありません</div>';
+    return;
+  }
+
+  let html = '';
+  // 珠盤路
+  html += `<div class="road-title">珠盤路 <small>Bead Plate（全結果を順に記録）</small></div>`;
+  html += beadPlateHTML(history);
+  // 大路
+  html += `<div class="road-title">大路 <small>Big Road（タイは前の出目に重ね、連勝は縦に）</small></div>`;
+  html += bigRoadHTML(cols);
+  // 下三路
+  const eye = derivedRoad(cols,1), small = derivedRoad(cols,2), roach = derivedRoad(cols,3);
+  html += `<div class="road-title">大眼仔 <small>Big Eye Boy</small></div>` + derivedHTML(eye,'ring');
+  html += `<div class="road-title">小路 <small>Small Road</small></div>` + derivedHTML(small,'fill');
+  html += `<div class="road-title">曱甴路 <small>Cockroach Road</small></div>` + derivedHTML(roach,'slash');
+  area.innerHTML = html;
+
+  // --- 予測（問路） ---
+  renderPrediction();
+}
+
+function beadPlateHTML(hist){
+  let cells = '';
+  hist.forEach((h,i)=>{
+    const c = Math.floor(i/6), r = i%6;
+    const label = h.result==='B'?'庄':h.result==='P'?'閑':'和';
+    let dots='';
+    if(h.bPair) dots+='<span class="pair-b"></span>';
+    if(h.pPair) dots+='<span class="pair-p"></span>';
+    cells += `<div class="cell" style="grid-row:${r+1};grid-column:${c+1}"><div class="bead ${h.result}">${label}${dots}</div></div>`;
+  });
+  const cols = Math.max(1, Math.ceil(hist.length/6));
+  return `<div class="roads-scroll"><div class="road road-lg" style="grid-template-columns:repeat(${cols},var(--cs))">${cells}</div></div>`;
+}
+
+function bigRoadHTML(cols){
+  const {placed, cols:nc} = layoutBigRoad(cols);
+  let cells='';
+  placed.forEach(p=>{
+    let inner = `<div class="ring ${p.result}"></div>`;
+    let extra='';
+    if(p.bead.ties>0) extra += `<span class="tie-slash">／</span>` + (p.bead.ties>1?`<span class="tie-count">${p.bead.ties}</span>`:'');
+    if(p.bead.bPair) extra += '<span class="pair-b"></span>';
+    if(p.bead.pPair) extra += '<span class="pair-p"></span>';
+    cells += `<div class="cell" style="grid-row:${p.r+1};grid-column:${p.c+1}">${inner}${extra}</div>`;
+  });
+  return `<div class="roads-scroll"><div class="road road-lg" style="grid-template-columns:repeat(${Math.max(1,nc)},var(--cs))">${cells}</div></div>`;
+}
+
+function derivedHTML(marks, shape){
+  if(marks.length===0) return `<div class="roads-scroll"><div class="road road-sm" style="grid-template-columns:repeat(1,var(--cs))"></div></div>`;
+  const {placed, cols:nc} = layoutMarks(marks);
+  let cells='';
+  placed.forEach(p=>{
+    const cls = p.color==='R' ? 'r-red' : 'r-blue';
+    let el;
+    if(shape==='ring') el = `<div class="d-ring ${cls}"></div>`;
+    else if(shape==='fill') el = `<div class="d-fill ${cls}"></div>`;
+    else el = `<div class="d-slash ${cls}"></div>`;
+    cells += `<div class="cell" style="grid-row:${p.r+1};grid-column:${p.c+1}">${el}</div>`;
+  });
+  return `<div class="roads-scroll"><div class="road road-sm" style="grid-template-columns:repeat(${Math.max(1,nc)},var(--cs))">${cells}</div></div>`;
+}
+
+/* 問路: 次がB / Pだった場合に下三路がどの色を示すか */
+function renderPrediction(){
+  function predictFor(next){
+    const hyp = buildColumns(history.concat([{result:next}]));
+    return {
+      eye: lastMark(derivedRoad(hyp,1), derivedRoad(buildColumns(history),1)),
+      small: lastMark(derivedRoad(hyp,2), derivedRoad(buildColumns(history),2)),
+      roach: lastMark(derivedRoad(hyp,3), derivedRoad(buildColumns(history),3)),
+    };
+  }
+  // 仮の手で「新たに増えたマーク」を予測とする
+  function lastMark(hypMarks, curMarks){
+    if(hypMarks.length<=curMarks.length) return null; // 新規マークなし
+    return hypMarks[hypMarks.length-1];
+  }
+  const pb = predictFor('B'), pp = predictFor('P');
+  const dot = m => m===null ? '<span style="color:#5d6877">—</span>'
+    : `<span class="pred-mark" style="background:${m==='R'?'#e53935':'#1e88e5'}"></span> ${m==='R'?'赤':'青'}`;
+  const colHTML = (title,col,cls)=>`
+    <div class="pred-col">
+      <h3 class="${cls}">${title}</h3>
+      <div class="pred-row"><span>大眼仔</span><span>${dot(col.eye)}</span></div>
+      <div class="pred-row"><span>小路</span><span>${dot(col.small)}</span></div>
+      <div class="pred-row"><span>曱甴路</span><span>${dot(col.roach)}</span></div>
+    </div>`;
+  document.getElementById('pred-area').innerHTML =
+    `<div class="pred-grid">${colHTML('次が 庄(B) なら',pb,'c-b')}${colHTML('次が 閑(P) なら',pp,'c-p')}</div>`;
+}
+
+/* 初期化 */
+syncToggles();
+render();
+</script>
+</body>
+</html>
