@@ -1,2 +1,2 @@
-publish voiceover_story12 (演出3選・完全版) SCHEDULED for 2026-06-29 18:00 JST, account 1 (main)
-triggered: 2026-06-28 (re-render: title + rank cards + CTA)
+publish voiceover_story13 NOW (public, immediate, account 1 main)
+triggered: 2026-06-28
