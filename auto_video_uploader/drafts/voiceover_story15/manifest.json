@@ -1,0 +1,68 @@
+{
+  "title": "ジャグラー3選www 分かる人にはたまらない【マイジャグラー】#shorts",
+  "description": "ジャグラー好きに贈る3選🎰\n画面のテロップをチェックしてね!あなたはいくつ共感できる?\n\nコメントで教えてね💬\n毎日ジャグラーのショート動画あげてます!登録で一緒にペカろう👇\n\n#ジャグラー #パチスロ #shorts #マイジャグラー #ジャグラーあるある #GOGOランプ #スロット #パチンコ #北電子",
+  "tags": ["ジャグラー", "マイジャグラー", "パチスロ", "スロット", "ジャグラーあるある", "GOGOランプ", "3選", "北電子", "ガコ音", "Shorts", "あるある", "パチンコ", "ペカリ", "実戦", "オカルト"],
+  "voice": "voicevox_speaker_0_shikoku_metan_amaama (可愛い女性声・早口目)",
+  "bgm": "assets/bgm.mp3",
+  "scenes": [
+    {
+      "index": 1,
+      "image": "title.png",
+      "subtitle": "ジャグラー3選",
+      "narration": "みんな大好きジャグラー! 今日はこの3選を紹介するよ!",
+      "min_sec": 3.5
+    },
+    {
+      "index": 2,
+      "image": "rank_3.png",
+      "subtitle": "第3位",
+      "narration": "第3位は…",
+      "se": "gako",
+      "min_sec": 2.6
+    },
+    {
+      "index": 3,
+      "image": "item_a.png",
+      "subtitle": "第3位",
+      "narration": "第3位は、こちら! これ、分かる人にはめちゃくちゃ刺さるやつ!",
+      "min_sec": 5.5
+    },
+    {
+      "index": 4,
+      "image": "rank_2.png",
+      "subtitle": "第2位",
+      "narration": "第2位は…",
+      "se": "gako",
+      "min_sec": 2.6
+    },
+    {
+      "index": 5,
+      "image": "item_b.png",
+      "subtitle": "第2位",
+      "narration": "第2位は、こちら! これもジャグラーあるあるだよね!",
+      "min_sec": 5.5
+    },
+    {
+      "index": 6,
+      "image": "rank_1.png",
+      "subtitle": "第1位",
+      "narration": "そして、第1位は…",
+      "se": "gako",
+      "min_sec": 2.8
+    },
+    {
+      "index": 7,
+      "image": "item_c.png",
+      "subtitle": "第1位",
+      "narration": "そして、堂々の第1位は、こちら! やっぱりこれだよね、最高!",
+      "min_sec": 6.0
+    },
+    {
+      "index": 8,
+      "image": "cta.png",
+      "subtitle": "毎日ショート動画あげるので登録してね / じゃないと…ペカらせなくするぞ",
+      "narration": "あなたはいくつ共感できた? コメントで教えてね! 毎日ショート動画あげるので、登録してね!",
+      "min_sec": 5.0
+    }
+  ]
+}
