@@ -98,8 +98,8 @@ jobs:
           TTS_ENGINE: auto
           # 0 = 四国めたん(あまあま) 可愛い系の女性声。今後のアフレコ動画の既定。
           VOICEVOX_SPEAKER: "0"
-          # 対象ストーリー(既定は最新の voiceover_story14 = 復活して欲しい3選)
-          STORY: ${{ github.event.inputs.story || 'voiceover_story14' }}
+          # 対象ストーリー(既定は最新の voiceover_story15 = オカルト3選)
+          STORY: ${{ github.event.inputs.story || 'voiceover_story15' }}
           # 空なら即時公開。今回はメインに今すぐ公開。
           PUBLISH_AT_JST: ${{ github.event.inputs.publish_at_jst || '' }}
           PRIVACY_STATUS: public
