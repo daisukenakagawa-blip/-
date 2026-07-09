@@ -1,0 +1,544 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ジャグラー設定判別ナビ</title>
+<style>
+  :root {
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --bar: #2a78d6;          /* 系列色 (青・1系列) */
+    --bar-top: #184f95;      /* 最有力設定のエンファシス (同ラムプの濃い段) */
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --chip: #f0efec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --bar: #3987e5;
+      --bar-top: #86b6ef;
+      --good-text: #0ca30c;
+      --chip: #383835;
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface-1: #1a1a19; --page: #0d0d0d; --ink: #ffffff; --ink-2: #c3c2b7;
+    --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+    --bar: #3987e5; --bar-top: #86b6ef; --good-text: #0ca30c; --chip: #383835;
+  }
+  :root[data-theme="light"] {
+    --surface-1: #fcfcfb; --page: #f9f9f7; --ink: #0b0b0b; --ink-2: #52514e;
+    --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --bar: #2a78d6; --bar-top: #184f95; --good-text: #006300; --chip: #f0efec;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.55;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 14px 12px 48px; }
+  h1 { font-size: 19px; margin: 4px 0 2px; }
+  .sub { color: var(--ink-2); font-size: 12.5px; margin: 0 0 14px; }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; margin-bottom: 12px;
+  }
+  .card h2 {
+    font-size: 13px; margin: 0 0 10px; color: var(--ink-2);
+    font-weight: 600; letter-spacing: .02em;
+  }
+
+  label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 3px; }
+  input, select {
+    width: 100%; padding: 9px 10px; font-size: 16px;
+    border: 1px solid var(--baseline); border-radius: 8px;
+    background: var(--page); color: var(--ink);
+  }
+  input:focus, select:focus { outline: 2px solid var(--bar); outline-offset: 1px; border-color: transparent; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; min-width: 0; }
+  .row + .row, .stack + .stack { margin-top: 10px; }
+
+  .plusbtn {
+    margin-top: 4px; width: 100%; padding: 7px 0; font-size: 14px; font-weight: 600;
+    border: 1px solid var(--baseline); border-radius: 8px;
+    background: var(--chip); color: var(--ink); cursor: pointer;
+  }
+  .plusbtn:active { transform: scale(.97); }
+
+  /* ---- 結果: ステータスカード ---- */
+  #advice {
+    display: flex; gap: 10px; align-items: flex-start;
+    border-radius: 12px; padding: 13px 14px; margin-bottom: 12px;
+    border: 1px solid var(--border); background: var(--surface-1);
+  }
+  #advice .icon { font-size: 22px; line-height: 1.2; }
+  #advice .label { font-weight: 700; font-size: 15px; }
+  #advice .why { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
+  #advice.v-go   { border-left: 5px solid var(--good); }
+  #advice.v-keep { border-left: 5px solid var(--warning); }
+  #advice.v-warn { border-left: 5px solid var(--serious); }
+  #advice.v-stop { border-left: 5px solid var(--critical); }
+
+  /* ---- 統計タイル ---- */
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tile {
+    background: var(--page); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 10px;
+  }
+  .tile .k { font-size: 11px; color: var(--muted); }
+  .tile .v { font-size: 19px; font-weight: 700; margin-top: 1px; }
+  .tile .v.up { color: var(--good-text); }
+  .tile .v.down { color: var(--critical); }
+
+  /* ---- 設定確率バー ---- */
+  .bars { margin-top: 4px; }
+  .barrow { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .barrow .name { width: 46px; font-size: 12.5px; color: var(--ink-2); flex: none; }
+  .barrow.top .name { color: var(--ink); font-weight: 700; }
+  .track { flex: 1; height: 18px; background: var(--page); border-radius: 4px; position: relative; }
+  .fill {
+    position: absolute; inset: 0 auto 0 0; width: 0%;
+    background: var(--bar); border-radius: 4px 4px 4px 4px; min-width: 2px;
+    transition: width .25s ease;
+  }
+  .barrow.top .fill { background: var(--bar-top); }
+  .barrow .pct {
+    width: 58px; flex: none; text-align: right;
+    font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums;
+  }
+  .barrow.top .pct { color: var(--ink); font-weight: 700; }
+
+  .facts { margin-top: 10px; font-size: 12.5px; color: var(--ink-2); border-top: 1px solid var(--grid); padding-top: 8px; }
+  .facts b { color: var(--ink); }
+
+  /* ---- ぶどうカウンター ---- */
+  .grapewrap { display: flex; gap: 10px; align-items: stretch; }
+  .grapebtn {
+    flex: 1; padding: 22px 0; font-size: 18px; font-weight: 700;
+    border: none; border-radius: 12px; background: var(--bar); color: #fff; cursor: pointer;
+  }
+  .grapebtn:active { transform: scale(.98); }
+  .grapeside { display: flex; flex-direction: column; gap: 6px; width: 92px; flex: none; }
+  .grapeside button {
+    flex: 1; border: 1px solid var(--baseline); border-radius: 10px;
+    background: var(--chip); color: var(--ink); font-size: 13px; cursor: pointer;
+  }
+  .grapecount { text-align: center; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+  .grapecount b { font-size: 17px; color: var(--ink); }
+
+  details { margin-top: 4px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--ink-2); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th, td { padding: 4px 6px; text-align: right; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; }
+  th:first-child, td:first-child { text-align: left; }
+
+  .actions { display: flex; gap: 8px; margin-top: 4px; }
+  .actions button {
+    flex: 1; padding: 10px 0; border-radius: 10px; font-size: 14px; cursor: pointer;
+    border: 1px solid var(--baseline); background: var(--chip); color: var(--ink);
+  }
+  .foot { color: var(--muted); font-size: 11.5px; margin-top: 18px; }
+</style>
+
+<div class="wrap">
+  <h1>ジャグラー設定判別ナビ 🎰</h1>
+  <p class="sub">回転数・BIG・REG・ぶどうから設定を統計推定し、続行/やめの判断を助けます。入力は自動保存されます。</p>
+
+  <div class="card">
+    <h2>機種と条件</h2>
+    <div class="row">
+      <div>
+        <label for="machine">機種</label>
+        <select id="machine"></select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div>
+        <label for="prior">お店の設定状況の想定</label>
+        <select id="prior">
+          <option value="normal">通常営業 (高設定は少なめ)</option>
+          <option value="even">わからない (全設定均等)</option>
+          <option value="event">イベント・強い日 (高設定多め)</option>
+        </select>
+      </div>
+      <div>
+        <label for="rate">交換率</label>
+        <select id="rate">
+          <option value="20">等価 (5.0枚)</option>
+          <option value="18.87">5.3枚</option>
+          <option value="17.86">5.6枚</option>
+          <option value="16.67">6.0枚</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>台データ (データカウンターの数値)</h2>
+    <div class="row">
+      <div>
+        <label for="games">総回転数 (G)</label>
+        <input id="games" type="number" inputmode="numeric" min="0" placeholder="3000">
+      </div>
+      <div>
+        <label for="bigs">BIG</label>
+        <input id="bigs" type="number" inputmode="numeric" min="0" placeholder="12">
+        <button class="plusbtn" data-plus="bigs">＋1</button>
+      </div>
+      <div>
+        <label for="regs">REG</label>
+        <input id="regs" type="number" inputmode="numeric" min="0" placeholder="10">
+        <button class="plusbtn" data-plus="regs">＋1</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div>
+        <label for="grapes">ぶどう回数 (任意・精度UP)</label>
+        <input id="grapes" type="number" inputmode="numeric" min="0" placeholder="未計測なら空欄">
+      </div>
+      <div>
+        <label for="grapeGames">ぶどうを数えた回転数</label>
+        <input id="grapeGames" type="number" inputmode="numeric" min="0" placeholder="空欄=総回転数">
+      </div>
+    </div>
+  </div>
+
+  <div id="advice" class="v-keep" role="status">
+    <div class="icon" id="adviceIcon">⏳</div>
+    <div>
+      <div class="label" id="adviceLabel">データを入力してください</div>
+      <div class="why" id="adviceWhy">総回転数とBIG・REG回数を入れると判定が始まります。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>設定推測 (ベイズ推定)</h2>
+    <div class="tiles">
+      <div class="tile"><div class="k">期待機械割</div><div class="v" id="tRate">–</div></div>
+      <div class="tile"><div class="k">設定4以上</div><div class="v" id="tP4">–</div></div>
+      <div class="tile"><div class="k">設定5・6</div><div class="v" id="tP56">–</div></div>
+    </div>
+    <div class="bars" id="bars"></div>
+    <div class="facts" id="facts"></div>
+    <details>
+      <summary>機種スペック表 (設定別の理論値)</summary>
+      <div id="specTable"></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>続行した場合の期待収支</h2>
+    <div class="row">
+      <div>
+        <label for="remain">このあと回す予定の回転数</label>
+        <input id="remain" type="number" inputmode="numeric" min="0" value="2000">
+      </div>
+      <div>
+        <label>期待収支 (交換率込み)</label>
+        <div class="tile" style="padding:8px 10px"><div class="v" id="tProfit" style="font-size:18px">–</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ぶどうカウンター (打ちながらタップ)</h2>
+    <div class="grapewrap">
+      <button class="grapebtn" id="grapeTap">🍇 ぶどう ＋1</button>
+      <div class="grapeside">
+        <button id="grapeUndo">↩ 戻す</button>
+        <button id="grapeToInput">入力欄へ反映</button>
+      </div>
+    </div>
+    <div class="grapecount">カウント中: <b id="grapeLive">0</b> 回</div>
+  </div>
+
+  <div class="actions">
+    <button id="resetBtn">🗑 この台のデータをリセット</button>
+  </div>
+
+  <p class="foot">
+    ※ 本ツールは公表値・実戦値ベースの統計推定であり、設定や勝利を保証するものではありません。
+    判別精度は回転数に依存します (目安: 3000G未満は参考程度)。数値仕様は機種データ
+    (ソース内 MACHINES) を編集して調整できます。遊技は計画的に。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+ * 機種スペック (公表値・解析値の近似)
+ * big/reg/grape は「1/◯◯」の◯◯。grape は実戦値ベースの近似。
+ * payout は機械割 (3枚掛け・フル攻略時の近似)。
+ * 新しい機種や数値改定は、この定義を書き換えるだけで反映される。
+ * ============================================================ */
+const MACHINES = {
+  "マイジャグラーV": {
+    big:   [273.1, 270.8, 266.4, 254.0, 240.1, 229.1],
+    reg:   [409.6, 385.5, 336.1, 290.0, 268.6, 229.1],
+    grape: [5.90, 5.85, 5.80, 5.78, 5.76, 5.66],
+    payout:[0.970, 0.980, 0.999, 1.028, 1.053, 1.094],
+  },
+  "アイムジャグラーEX": {
+    big:   [273.1, 273.1, 269.7, 259.0, 259.0, 255.0],
+    reg:   [439.8, 407.1, 366.1, 336.1, 290.0, 255.0],
+    grape: [6.02, 6.02, 6.02, 6.02, 6.02, 5.78],
+    payout:[0.970, 0.980, 0.995, 1.011, 1.033, 1.055],
+  },
+  "ファンキージャグラー2": {
+    big:   [266.4, 259.0, 256.0, 249.2, 240.1, 219.9],
+    reg:   [439.8, 407.1, 366.1, 322.8, 299.3, 262.1],
+    grape: [5.95, 5.92, 5.90, 5.88, 5.86, 5.79],
+    payout:[0.970, 0.985, 0.998, 1.025, 1.044, 1.090],
+  },
+  "ゴーゴージャグラー3": {
+    big:   [259.0, 258.0, 257.0, 254.0, 247.3, 234.9],
+    reg:   [354.2, 332.7, 306.2, 268.6, 247.3, 234.9],
+    grape: [6.25, 6.20, 6.15, 6.07, 6.00, 5.92],
+    payout:[0.980, 0.988, 0.999, 1.022, 1.043, 1.066],
+  },
+};
+
+/* 事前確率: お店の設定状況の想定 (設定1〜6の置かれやすさ) */
+const PRIORS = {
+  normal: [0.38, 0.25, 0.17, 0.10, 0.06, 0.04],
+  even:   [1/6, 1/6, 1/6, 1/6, 1/6, 1/6],
+  event:  [0.16, 0.16, 0.16, 0.18, 0.17, 0.17],
+};
+
+const $ = (id) => document.getElementById(id);
+const fields = ["machine", "prior", "rate", "games", "bigs", "regs", "grapes", "grapeGames", "remain"];
+const STORE_KEY = "juggler-navi-v1";
+
+/* ---------- 初期化 ---------- */
+for (const name of Object.keys(MACHINES)) {
+  const opt = document.createElement("option");
+  opt.value = opt.textContent = name;
+  $("machine").appendChild(opt);
+}
+
+function loadState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+    for (const f of fields) if (saved[f] !== undefined && saved[f] !== "") $(f).value = saved[f];
+    grapeLiveCount = saved.grapeLive || 0;
+    $("grapeLive").textContent = grapeLiveCount;
+  } catch (e) { /* 破損時は初期状態で開始 */ }
+}
+function saveState() {
+  try {
+    const s = { grapeLive: grapeLiveCount };
+    for (const f of fields) s[f] = $(f).value;
+    localStorage.setItem(STORE_KEY, JSON.stringify(s));
+  } catch (e) { /* 埋め込み環境等で localStorage が使えない場合は保存なしで動作 */ }
+}
+
+/* ---------- ベイズ推定 ----------
+ * 尤度: BIG・REG・ぶどうをそれぞれ二項分布として対数尤度で合成。
+ * 組合せ項は設定間で共通なので正規化で消える。 */
+function estimate(spec, G, bigs, regs, grapes, grapeG, prior) {
+  const logL = [];
+  for (let s = 0; s < 6; s++) {
+    let ll = Math.log(prior[s]);
+    const pB = 1 / spec.big[s], pR = 1 / spec.reg[s];
+    ll += bigs * Math.log(pB) + (G - bigs) * Math.log(1 - pB);
+    ll += regs * Math.log(pR) + (G - regs) * Math.log(1 - pR);
+    if (grapes > 0 && grapeG > 0) {
+      const pG = 1 / spec.grape[s];
+      ll += grapes * Math.log(pG) + (grapeG - grapes) * Math.log(1 - pG);
+    }
+    logL.push(ll);
+  }
+  const max = Math.max(...logL);
+  const w = logL.map((v) => Math.exp(v - max));
+  const sum = w.reduce((a, b) => a + b, 0);
+  return w.map((v) => v / sum);
+}
+
+/* ---------- 判定文言 ---------- */
+function verdict(post, eRate, G) {
+  const p456 = post[3] + post[4] + post[5];
+  const p56 = post[4] + post[5];
+  if (G < 500) return ["v-keep", "⏳", "まだデータ不足",
+    "500G未満では偶然の偏りが大きすぎます。最低1000G、できれば3000G以降に判断を。"];
+  const low = G < 2000 ? "(まだ2000G未満なので過信は禁物) " : "";
+  if (eRate >= 1.03 && p456 >= 0.60)
+    return ["v-go", "✅", "続行推奨 — 高設定の可能性が高い",
+      low + `設定4以上 ${(p456*100).toFixed(0)}%・期待機械割 ${(eRate*100).toFixed(1)}%。粘る価値があります。`];
+  if (eRate >= 1.00)
+    return ["v-keep", "🔎", "続行寄り — もう少しデータを集めたい",
+      low + `期待機械割 ${(eRate*100).toFixed(1)}% でプラス圏。ぶどうも数えると精度が上がります。`];
+  if (eRate >= 0.99 && G < 3000)
+    return ["v-warn", "⚖️", "判断保留 — ボーダーライン",
+      low + "現状は中間〜低設定寄り。REG確率とぶどうを見ながら3000Gまでに結論を。"];
+  return ["v-stop", "🛑", "やめ推奨 — 低設定の可能性が高い",
+    `期待機械割 ${(eRate*100).toFixed(1)}%。この台に投資を続ける根拠が薄いです。台移動を検討しましょう。`];
+}
+
+/* ---------- 描画 ---------- */
+function fmt1(x) { return "1/" + x.toFixed(1); }
+
+function render() {
+  const spec = MACHINES[$("machine").value];
+  const prior = PRIORS[$("prior").value];
+  const G = Math.max(0, +$("games").value || 0);
+  const bigs = Math.max(0, +$("bigs").value || 0);
+  const regs = Math.max(0, +$("regs").value || 0);
+  const grapes = Math.max(0, +$("grapes").value || 0);
+  const grapeG = Math.max(0, +$("grapeGames").value || 0) || G;
+
+  renderSpecTable(spec);
+
+  const ready = G > 0 && bigs + regs <= G && grapes <= grapeG;
+  if (!ready) {
+    setAdvice("v-keep", "⏳", "データを入力してください",
+      G > 0 ? "BIG+REGが総回転数を超えています。入力を確認してください。"
+            : "総回転数とBIG・REG回数を入れると判定が始まります。");
+    $("tRate").textContent = $("tP4").textContent = $("tP56").textContent = "–";
+    $("tProfit").textContent = "–";
+    renderBars([1/6,1/6,1/6,1/6,1/6,1/6].map(() => 0), -1);
+    $("facts").innerHTML = "";
+    return;
+  }
+
+  // ぶどうの妥当性ガード: 実測1/4.0〜1/9.0の範囲外は「数え始め・入力ミス」と
+  // みなして推定から除外する (例: 数回タップしただけで反映すると 1/2500 の
+  // ような異常値になり、推定全体が壊れるため)
+  let grapeWarn = "";
+  let grapesUsed = grapes;
+  if (grapes > 0 && grapeG > 0) {
+    const gRate = grapeG / grapes;
+    if (gRate < 4.0 || gRate > 9.0) {
+      grapesUsed = 0;
+      grapeWarn = `⚠️ ぶどう ${fmt1(gRate)} は現実的な範囲 (1/4.0〜1/9.0) 外のため推定から除外しました。` +
+        `「ぶどうを数えた回転数」に実際に数えていた区間の回転数を入れてください`;
+    }
+  }
+
+  const post = estimate(spec, G, bigs, regs, grapesUsed, grapeG, prior);
+  const top = post.indexOf(Math.max(...post));
+  const eRate = post.reduce((a, p, i) => a + p * spec.payout[i], 0);
+  const p456 = post[3] + post[4] + post[5];
+  const p56 = post[4] + post[5];
+
+  renderBars(post, top);
+  $("tRate").textContent = (eRate * 100).toFixed(1) + "%";
+  $("tRate").className = "v " + (eRate >= 1 ? "up" : "down");
+  $("tP4").textContent = (p456 * 100).toFixed(0) + "%";
+  $("tP4").className = "v";
+  $("tP56").textContent = (p56 * 100).toFixed(0) + "%";
+  $("tP56").className = "v";
+
+  // 実測 vs 最有力設定の理論値
+  const gassan = bigs + regs > 0 ? G / (bigs + regs) : Infinity;
+  let facts = `実測: BIG ${bigs > 0 ? fmt1(G / bigs) : "–"} / REG ${regs > 0 ? fmt1(G / regs) : "–"}` +
+    ` / 合算 ${isFinite(gassan) ? fmt1(gassan) : "–"}`;
+  if (grapes > 0) facts += ` / ぶどう ${fmt1(grapeG / grapes)}`;
+  facts += `<br>最有力の<b>設定${top + 1}</b>の理論値: BIG ${fmt1(spec.big[top])} / REG ${fmt1(spec.reg[top])} / ぶどう ${fmt1(spec.grape[top])}`;
+  if (grapeWarn) facts += `<br>${grapeWarn}`;
+  else if (!(grapes > 0)) facts += `<br>💡 ぶどうを数えて入力すると判別精度が大きく上がります (下のカウンターをどうぞ)`;
+  $("facts").innerHTML = facts;
+
+  // 期待収支: 3枚掛け × (機械割-1) × 残りG × 交換率(円/枚)
+  const remain = Math.max(0, +$("remain").value || 0);
+  const yenPerCoin = +$("rate").value;
+  const coins = 3 * (eRate - 1) * remain;
+  const yen = Math.round(coins * yenPerCoin / 100) * 100;
+  $("tProfit").textContent = (yen >= 0 ? "+" : "") + yen.toLocaleString() + "円";
+  $("tProfit").className = "v " + (yen >= 0 ? "up" : "down");
+
+  setAdvice(...verdict(post, eRate, G));
+}
+
+function setAdvice(cls, icon, label, why) {
+  const el = $("advice");
+  el.className = cls;
+  $("adviceIcon").textContent = icon;
+  $("adviceLabel").textContent = label;
+  $("adviceWhy").textContent = why;
+}
+
+function renderBars(post, top) {
+  const box = $("bars");
+  box.innerHTML = "";
+  post.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "barrow" + (i === top ? " top" : "");
+    row.innerHTML =
+      `<span class="name">設定${i + 1}</span>` +
+      `<span class="track"><span class="fill" style="width:${(p * 100).toFixed(1)}%"></span></span>` +
+      `<span class="pct">${(p * 100).toFixed(1)}%${i === top ? " ◀" : ""}</span>`;
+    box.appendChild(row);
+  });
+}
+
+function renderSpecTable(spec) {
+  let html = "<table><tr><th>設定</th><th>BIG</th><th>REG</th><th>ぶどう</th><th>機械割</th></tr>";
+  for (let s = 0; s < 6; s++) {
+    html += `<tr><td>設定${s + 1}</td><td>${fmt1(spec.big[s])}</td><td>${fmt1(spec.reg[s])}</td>` +
+      `<td>${fmt1(spec.grape[s])}</td><td>${(spec.payout[s] * 100).toFixed(1)}%</td></tr>`;
+  }
+  $("specTable").innerHTML = html + "</table>";
+}
+
+/* ---------- イベント ---------- */
+let grapeLiveCount = 0;
+
+for (const f of fields) $(f).addEventListener("input", () => { saveState(); render(); });
+
+document.querySelectorAll(".plusbtn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const input = $(btn.dataset.plus);
+    input.value = (+input.value || 0) + 1;
+    saveState(); render();
+  });
+});
+
+$("grapeTap").addEventListener("click", () => {
+  grapeLiveCount++;
+  $("grapeLive").textContent = grapeLiveCount;
+  if (navigator.vibrate) navigator.vibrate(15);
+  saveState();
+});
+$("grapeUndo").addEventListener("click", () => {
+  grapeLiveCount = Math.max(0, grapeLiveCount - 1);
+  $("grapeLive").textContent = grapeLiveCount;
+  saveState();
+});
+$("grapeToInput").addEventListener("click", () => {
+  $("grapes").value = grapeLiveCount;
+  saveState(); render();
+});
+
+$("resetBtn").addEventListener("click", () => {
+  if (!confirm("この台の入力データをすべてリセットしますか?")) return;
+  for (const f of ["games", "bigs", "regs", "grapes", "grapeGames"]) $(f).value = "";
+  grapeLiveCount = 0;
+  $("grapeLive").textContent = "0";
+  saveState(); render();
+});
+
+loadState();
+render();
+</script>
