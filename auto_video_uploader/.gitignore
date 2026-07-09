@@ -3,6 +3,7 @@
 client_secret.json
 client_secret*.json
 token.json
+tiktok_token.json
 
 # 生成物
 videos/*

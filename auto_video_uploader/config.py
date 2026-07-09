@@ -124,3 +124,50 @@ PRIVACY_STATUS = os.getenv("PRIVACY_STATUS", "public")
 # 予約投稿の時刻 (topics.csv の date が未来日の場合に使用)
 PUBLISH_TIME = os.getenv("PUBLISH_TIME", "19:00")
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Tokyo")
+
+# ---------------------------------------------------------------------------
+# マルチプラットフォーム展開 (収益機会を増やす)
+# ---------------------------------------------------------------------------
+# 全テーマに追加でクロス投稿するプラットフォーム (例: "tiktok,instagram,x")。
+# topics.csv の platform 列に書かなくても、ここに書けば毎回自動で投稿される。
+CROSS_POST_PLATFORMS = [
+    p.strip().lower()
+    for p in os.getenv("CROSS_POST_PLATFORMS", "").split(",")
+    if p.strip()
+]
+
+# --- TikTok (Content Posting API) ---
+TIKTOK_CLIENT_KEY = os.getenv("TIKTOK_CLIENT_KEY", "").strip()
+TIKTOK_CLIENT_SECRET = os.getenv("TIKTOK_CLIENT_SECRET", "").strip()
+TIKTOK_REFRESH_TOKEN = os.getenv("TIKTOK_REFRESH_TOKEN", "").strip()
+TIKTOK_TOKEN_FILE = os.getenv("TIKTOK_TOKEN_FILE", str(BASE_DIR / "tiktok_token.json"))
+# inbox: アプリの受信箱に下書き送信 (未監査アプリでも公開投稿できる・既定)
+# direct: API から直接投稿 (未監査アプリは自分のみ閲覧の SELF_ONLY に制限)
+TIKTOK_POST_MODE = os.getenv("TIKTOK_POST_MODE", "inbox").strip().lower()
+TIKTOK_PRIVACY = os.getenv("TIKTOK_PRIVACY", "SELF_ONLY").strip().upper()
+
+# --- Instagram Reels (Graph API) ---
+IG_USER_ID = os.getenv("IG_USER_ID", "").strip()
+IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "").strip()
+IG_API_VERSION = os.getenv("IG_API_VERSION", "v21.0").strip()
+# Instagram 用の一時公開 URL。自前ストレージがある場合のみ設定 (通常は空でOK)
+PUBLIC_VIDEO_BASE_URL = os.getenv("PUBLIC_VIDEO_BASE_URL", "").strip()
+
+# --- X (旧 Twitter) ---
+X_API_KEY = os.getenv("X_API_KEY", "").strip()
+X_API_SECRET = os.getenv("X_API_SECRET", "").strip()
+X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN", "").strip()
+X_ACCESS_TOKEN_SECRET = os.getenv("X_ACCESS_TOKEN_SECRET", "").strip()
+
+# ---------------------------------------------------------------------------
+# 収益リンクの自動挿入 (説明欄アフィリエイト等)
+# ---------------------------------------------------------------------------
+# links.txt (1行1件 "ラベル|URL") または MONETIZE_LINKS 環境変数で設定
+MONETIZE_LINKS_FILE = BASE_DIR / "links.txt"
+MONETIZE_LINKS = os.getenv("MONETIZE_LINKS", "")
+MONETIZE_HEADER = os.getenv("MONETIZE_HEADER", "▼おすすめ・お得情報")
+# ステマ規制 (景品表示法) 対応の PR 表記。空にすると挿入しない (非推奨)
+MONETIZE_DISCLOSURE = os.getenv(
+    "MONETIZE_DISCLOSURE",
+    "※上記にはアフィリエイトリンク(PR)を含む場合があります。",
+)

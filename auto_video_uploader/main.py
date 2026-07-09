@@ -30,10 +30,41 @@ from modules import (
     video_editor,
     voice_generator,
 )
+from modules import monetize
 from modules.logger import append_uploaded_log, get_logger, is_already_uploaded, log_error
 from modules.platform_base import get_uploader
 
 TOPIC_FIELDS = ["date", "topic", "platform", "status", "background", "script", "bgm"]
+
+ALL_PLATFORMS = ["youtube", "tiktok", "instagram", "x"]
+PLATFORM_ALIASES = {
+    "yt": "youtube",
+    "ig": "instagram",
+    "insta": "instagram",
+    "reels": "instagram",
+    "twitter": "x",
+}
+
+
+def parse_platforms(raw: str) -> list:
+    """platform 列を投稿先リストに展開する。
+
+    "youtube+tiktok" / "youtube,tiktok" のような複数指定と "all" に対応。
+    さらに環境変数 CROSS_POST_PLATFORMS のプラットフォームを常に追加する
+    (シートに書かなくても毎回クロス投稿される)。
+    """
+    raw = (raw or "youtube").strip().lower()
+    if raw in ("all", "全部", "すべて", "全て"):
+        names = list(ALL_PLATFORMS)
+    else:
+        names = [p for p in re.split(r"[+,/・\s]+", raw) if p]
+    names += config.CROSS_POST_PLATFORMS
+    result = []
+    for name in names:
+        name = PLATFORM_ALIASES.get(name, name)
+        if name not in result:
+            result.append(name)
+    return result or ["youtube"]
 
 
 # ---------------------------------------------------------------------------
@@ -282,18 +313,20 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "",
     """
     logger = get_logger()
     topic = row["topic"].strip()
-    platform = (row.get("platform") or "youtube").strip().lower()
+    platform_raw = (row.get("platform") or "youtube").strip().lower()
+    platforms = parse_platforms(platform_raw)
     date_str = (row.get("date") or "").strip()
     stem = make_stem(date_str, topic)
 
     logger.info("=" * 60)
-    logger.info("テーマ処理開始: %s (platform=%s, stem=%s)", topic, platform, stem)
+    logger.info("テーマ処理開始: %s (platforms=%s, stem=%s)",
+                topic, "+".join(platforms), stem)
 
     try:
-        # --- 重複投稿防止 -------------------------------------------------
-        if is_already_uploaded(topic, platform):
+        # --- 重複投稿防止 (全プラットフォーム投稿済みならスキップ) --------
+        if all(is_already_uploaded(topic, p) for p in platforms):
             logger.info("アップロード済みのためスキップします: %s", topic)
-            mark_topic_done(topic, platform)
+            mark_topic_done(topic, platform_raw)
             return True
 
         # --- 1〜4. 台本→音声→動画→サムネ (品質チェック付きで最大N回) ------
@@ -417,29 +450,53 @@ def process_topic(row: dict, no_upload: bool = False, background_url: str = "",
         if publish_at:
             logger.info("予約投稿: %s", publish_at)
 
-        uploader = get_uploader(platform)
-        result = uploader.upload(
-            video_path=video_path,
-            title=content["title"],
-            description=content["description"],
-            tags=content["tags"],
-            thumbnail_path=thumb_path,
-            publish_at=publish_at,
-        )
+        # 収益リンク (links.txt / MONETIZE_LINKS) を説明欄に自動挿入
+        description = monetize.inject(content["description"])
 
-        # --- 6. ログ保存 & ステータス更新 ----------------------------------
-        append_uploaded_log(
-            {
-                "date": date_str,
-                "topic": topic,
-                "platform": platform,
-                "video_id": result.video_id,
-                "video_url": result.video_url,
-                "title": content["title"],
-                "publish_at": result.publish_at,
-            }
-        )
-        mark_topic_done(topic, platform)
+        # 同じ動画を各プラットフォームへ順番に投稿。一部が失敗しても残りは
+        # 続行し、成功分は uploaded_log に記録されるため再実行時にスキップされる
+        failed_platforms = []
+        for p in platforms:
+            if is_already_uploaded(topic, p):
+                logger.info("%s は投稿済みのためスキップします", p)
+                continue
+            try:
+                uploader = get_uploader(p)
+                result = uploader.upload(
+                    video_path=video_path,
+                    title=content["title"],
+                    description=description,
+                    tags=content["tags"],
+                    thumbnail_path=thumb_path,
+                    publish_at=publish_at,
+                )
+                append_uploaded_log(
+                    {
+                        "date": date_str,
+                        "topic": topic,
+                        "platform": p,
+                        "video_id": result.video_id,
+                        "video_url": result.video_url,
+                        "title": content["title"],
+                        "publish_at": result.publish_at,
+                    }
+                )
+            except Exception as e:
+                failed_platforms.append(p)
+                log_error(
+                    f"テーマ「{topic}」の {p} への投稿に失敗: {e}\n"
+                    f"{traceback.format_exc()}"
+                )
+
+        # --- 6. ステータス更新 ----------------------------------------------
+        if failed_platforms:
+            logger.warning(
+                "一部プラットフォームへの投稿に失敗: %s (再実行でリトライされます)",
+                ", ".join(failed_platforms),
+            )
+            return False
+
+        mark_topic_done(topic, platform_raw)
         logger.info("テーマ処理完了: %s", topic)
         return True
 
@@ -459,6 +516,10 @@ def main() -> int:
     parser.add_argument("--auth-only", action="store_true", help="YouTube の OAuth 認証のみ行う")
     parser.add_argument("--topic", help="topics.csv を使わず、このテーマを単発処理する")
     parser.add_argument("--date", help="--topic 使用時の投稿予定日 (YYYY-MM-DD)")
+    parser.add_argument(
+        "--platforms",
+        help='--topic 使用時の投稿先 (例: "youtube+tiktok" / "all")。既定は youtube',
+    )
     args = parser.parse_args()
 
     config.ensure_dirs()
@@ -474,7 +535,7 @@ def main() -> int:
         row = {
             "date": args.date or "",
             "topic": args.topic,
-            "platform": "youtube",
+            "platform": args.platforms or "youtube",
             "status": "pending",
         }
         return 0 if process_topic(row, no_upload=args.no_upload) else 1

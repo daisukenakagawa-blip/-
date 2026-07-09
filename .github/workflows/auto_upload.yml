@@ -7,6 +7,10 @@
 #   TOPICS_SHEET_URL      ... スプレッドシートの「ウェブに公開(CSV)」URL (推奨)
 #   ANTHROPIC_API_KEY     ... 台本の AI 生成 (任意)
 #   PEXELS_API_KEY        ... 背景動画の自動取得 (任意)
+#   MONETIZE_LINKS        ... 説明欄に挿入する収益リンク (任意)
+#   TIKTOK_* / IG_* / X_* ... クロス投稿の認証情報 (任意。README 参照)
+# Variables:
+#   CROSS_POST_PLATFORMS  ... 毎回クロス投稿する媒体 (例: tiktok,instagram,x)
 
 name: auto-video-upload
 
@@ -75,7 +79,7 @@ jobs:
           printf '%s' "$YOUTUBE_CLIENT_SECRET" > client_secret.json
           printf '%s' "$YOUTUBE_TOKEN" > token.json
 
-      - name: 動画生成 → YouTube アップロード
+      - name: 動画生成 → 各プラットフォームへアップロード
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TOPICS_SHEET_URL: ${{ secrets.TOPICS_SHEET_URL }}
@@ -83,6 +87,22 @@ jobs:
           FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc
           FONT_NAME: Noto Sans CJK JP
           TTS_ENGINE: auto
+          # クロス投稿 (任意): リポジトリの Variables に tiktok,instagram,x 等を設定
+          CROSS_POST_PLATFORMS: ${{ vars.CROSS_POST_PLATFORMS }}
+          # TikTok (任意)
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+          # Instagram Reels (任意)
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          # X (任意)
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          # 収益リンク (任意): links.txt をコミットするか、この Secret に複数行で設定
+          MONETIZE_LINKS: ${{ secrets.MONETIZE_LINKS }}
         run: python main.py
 
       - name: 投稿状態をリポジトリに保存
