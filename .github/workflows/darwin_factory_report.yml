@@ -1,0 +1,44 @@
+# ダーウィン工場: 週次成績表の自動生成
+# 毎週月曜 09:00 JST に全事業の登録数を集計し、観測中/生存/撤退勧告を判定して
+# darwin_factory/reports/ にコミットする。手動実行も可(Run workflow ボタン)。
+#
+# 注意: schedule はリポジトリのデフォルトブランチでのみ動く。
+name: darwin-factory-report
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 0 * * 1" # 毎週月曜 09:00 JST
+
+permissions:
+  contents: write
+
+concurrency:
+  group: darwin-factory-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 成績表を生成
+        run: python darwin_factory/factory.py report
+
+      - name: レポートをコミット
+        run: |
+          git config user.name "darwin-factory-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add darwin_factory/reports
+          if git diff --cached --quiet; then
+            echo "変更なし"
+          else
+            git commit -m "darwin-factory: 週次成績表 [skip ci]"
+            git push
+          fi

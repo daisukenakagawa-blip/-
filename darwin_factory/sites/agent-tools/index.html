@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Tools Depot — AIエージェント専用API</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Hiragino Sans", "Noto Sans JP", sans-serif; background: #0b0e14; color: #e6e9f0; line-height: 1.8; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px; }
+  header { padding: 80px 0 48px; text-align: center; }
+  .badge { display: inline-block; background: #1c2333; color: #7aa2f7; border: 1px solid #2c3752; border-radius: 999px; padding: 4px 16px; font-size: 13px; margin-bottom: 24px; }
+  h1 { font-size: 34px; line-height: 1.4; margin-bottom: 16px; }
+  h1 .accent { color: #7aa2f7; }
+  .lead { color: #9aa5b8; font-size: 16px; }
+  section { padding: 40px 0; border-top: 1px solid #1c2333; }
+  h2 { font-size: 22px; margin-bottom: 20px; }
+  .tools { display: grid; gap: 12px; }
+  .tool { background: #12161f; border: 1px solid #1c2333; border-radius: 10px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .tool b { font-size: 15px; }
+  .tool small { color: #9aa5b8; display: block; }
+  .price { color: #7aa2f7; font-weight: bold; white-space: nowrap; }
+  ul { list-style: none; }
+  ul li { padding: 8px 0 8px 28px; position: relative; }
+  ul li::before { content: "▸"; position: absolute; left: 8px; color: #7aa2f7; }
+  .cta { text-align: center; padding: 56px 0 80px; }
+  .btn { display: inline-block; background: #7aa2f7; color: #0b0e14; font-weight: bold; font-size: 17px; padding: 16px 48px; border-radius: 10px; text-decoration: none; }
+  .btn[href="#"] { background: #2c3752; color: #9aa5b8; pointer-events: none; }
+  .btn[href="#"]::after { content: "(準備中)"; font-weight: normal; }
+  .note { color: #6b7689; font-size: 13px; margin-top: 16px; }
+  footer { text-align: center; color: #4a5468; font-size: 12px; padding: 24px 0 48px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="badge">🤖 人間のお客様、お断り。</div>
+  <h1>あなたのAIエージェントに、<br><span class="accent">日本仕様の手足</span>を。</h1>
+  <p class="lead">Agent Tools Depot は、AIエージェントが自律的に呼び出して使う<br>日本特化の従量課金APIストアです。1回0.1円から。契約書も営業もなし。</p>
+</header>
+
+<section>
+  <h2>並ぶ予定の棚</h2>
+  <div class="tools">
+    <div class="tool"><span><b>住所正規化API</b><small>表記ゆれ・旧字体・番地欠けを吸収して正規化</small></span><span class="price">¥0.1/回</span></div>
+    <div class="tool"><span><b>法人番号ルックアップ</b><small>社名から法人番号・所在地・登記情報を取得</small></span><span class="price">¥0.3/回</span></div>
+    <div class="tool"><span><b>営業日・祝日判定</b><small>祝日・振替休日・年末年始を考慮した営業日計算</small></span><span class="price">¥0.1/回</span></div>
+    <div class="tool"><span><b>敬語変換</b><small>カジュアル文をビジネス敬語へ、逆方向も対応</small></span><span class="price">¥0.5/回</span></div>
+    <div class="tool"><span><b>終電チェッカー</b><small>駅名と時刻から「今日中に帰れるか」を判定</small></span><span class="price">¥0.5/回</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>なぜエージェント専用か</h2>
+  <ul>
+    <li>MCP / OpenAPI 両対応。エージェントが<b>検索して、勝手に使い、勝手に払う</b>設計。</li>
+    <li>ダッシュボードにログインするのは月1回、請求書を見るときだけ。</li>
+    <li>最低利用料金なし。呼ばれた分だけ。1円未満は切り捨て。</li>
+  </ul>
+</section>
+
+<div class="cta">
+  <a class="btn" href="__FORM_URL__">事前登録する(無料)</a>
+  <p class="note">正式公開時に早期アクセスと初月無料クーポンをお送りします。</p>
+</div>
+
+<footer>Agent Tools Depot — Darwin Factory 第1期生 No.1</footer>
+</div>
+</body>
+</html>

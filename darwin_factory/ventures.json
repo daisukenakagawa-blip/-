@@ -1,0 +1,52 @@
+{
+  "ventures": [
+    {
+      "id": "agent-tools",
+      "name": "Agent Tools Depot(AIエージェント向け従量課金API)",
+      "type": "waitlist",
+      "status": "incubating",
+      "launched": null,
+      "site": "sites/agent-tools",
+      "form_url": "",
+      "signup_csv_url": "",
+      "criteria": { "observe_days": 30, "min_signups": 10 },
+      "notes": "顧客が人間ではなくAIエージェント。まずは開発者の事前登録数で需要を観測する。"
+    },
+    {
+      "id": "jdm-export",
+      "name": "JDM Auction Intel(日本車オークション情報の海外向けサブスク)",
+      "type": "waitlist",
+      "status": "incubating",
+      "launched": null,
+      "site": "sites/jdm-export",
+      "form_url": "",
+      "signup_csv_url": "",
+      "criteria": { "observe_days": 30, "min_signups": 15 },
+      "notes": "言語の壁を関税にする輸出商社。英語LP。単価が高いので基準もやや高め。"
+    },
+    {
+      "id": "cancel-watch",
+      "name": "キャンセル拾い(人気施設の空き枠監視・通知)",
+      "type": "waitlist",
+      "status": "incubating",
+      "launched": null,
+      "site": "sites/cancel-watch",
+      "form_url": "",
+      "signup_csv_url": "",
+      "criteria": { "observe_days": 30, "min_signups": 20 },
+      "notes": "フォームで「どの施設を監視してほしいか」も収集し、最初に作る監視対象を市場に決めさせる。"
+    },
+    {
+      "id": "site-reit",
+      "name": "デジタル不動産の再生大家(収益サイトの買収・AI管理)",
+      "type": "internal",
+      "status": "paused",
+      "launched": null,
+      "site": null,
+      "form_url": "",
+      "signup_csv_url": "",
+      "criteria": {},
+      "notes": "外部顧客がいない内部投資型。元手(10万円以下の練習物件)が必要なため、第1期の観測対象から除外。B〜Eのどれかが収益化したら、その利益を原資に着工する。"
+    }
+  ]
+}

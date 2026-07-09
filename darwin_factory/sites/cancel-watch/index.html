@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>キャンセル拾い — 取れない予約の空きを24時間監視</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Hiragino Sans", "Noto Sans JP", sans-serif; background: #f7f5f0; color: #1f2a24; line-height: 1.8; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px; }
+  header { padding: 72px 0 48px; text-align: center; }
+  .badge { display: inline-block; background: #e4efe7; color: #2e7d5b; border-radius: 999px; padding: 4px 16px; font-size: 13px; margin-bottom: 24px; }
+  h1 { font-size: 32px; line-height: 1.45; margin-bottom: 16px; }
+  h1 .accent { color: #2e7d5b; }
+  .lead { color: #5a6660; font-size: 16px; }
+  section { padding: 40px 0; border-top: 1px solid #e3ded4; }
+  h2 { font-size: 21px; margin-bottom: 20px; }
+  .steps { counter-reset: step; display: grid; gap: 12px; }
+  .step { background: #fff; border: 1px solid #e3ded4; border-radius: 10px; padding: 18px 20px 18px 64px; position: relative; }
+  .step::before { counter-increment: step; content: counter(step); position: absolute; left: 20px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border-radius: 50%; background: #2e7d5b; color: #fff; font-weight: bold; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .targets { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: #fff; border: 1px solid #e3ded4; border-radius: 999px; padding: 6px 16px; font-size: 14px; }
+  .cta { text-align: center; padding: 56px 0 72px; }
+  .btn { display: inline-block; background: #2e7d5b; color: #fff; font-weight: bold; font-size: 17px; padding: 16px 48px; border-radius: 10px; text-decoration: none; }
+  .btn[href="#"] { background: #b8c4bd; pointer-events: none; }
+  .btn[href="#"]::after { content: "(準備中)"; font-weight: normal; }
+  .note { color: #8a938d; font-size: 13px; margin-top: 16px; }
+  footer { text-align: center; color: #a8b0aa; font-size: 12px; padding: 24px 0 48px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="badge">🌙 あなたが寝ている間も、ボットは予約サイトを見ている</div>
+  <h1>「取れない予約」は、<br><span class="accent">キャンセルで取る。</span></h1>
+  <p class="lead">人気キャンプ場、人間ドック、予約困難サウナ——<br>キャンセルで空いた枠を24時間監視して、出た瞬間にLINEでお知らせします。</p>
+</header>
+
+<section>
+  <h2>使い方</h2>
+  <div class="steps">
+    <div class="step">監視したい施設と希望日を登録する</div>
+    <div class="step">ボットが24時間365日、空きをチェックし続ける</div>
+    <div class="step">キャンセルが出た瞬間、LINEに通知が届く。あとは公式サイトで予約するだけ</div>
+  </div>
+</section>
+
+<section>
+  <h2>監視対象(予定)</h2>
+  <div class="targets">
+    <span class="chip">⛺ 人気キャンプ場</span>
+    <span class="chip">🏥 人間ドック</span>
+    <span class="chip">🧖 予約困難サウナ</span>
+    <span class="chip">🍣 人気レストラン</span>
+    <span class="chip">💇 カリスマ美容師</span>
+    <span class="chip">📝 その他(リクエスト募集)</span>
+  </div>
+  <p class="note">事前登録フォームで「どこを監視してほしいか」を教えてください。リクエストが多い施設から対応します。</p>
+</section>
+
+<section>
+  <h2>大事なこと</h2>
+  <p>私たちがやるのは<b>「空きが出たことを教える」ことだけ</b>です。枠の確保・買い占め・転売は一切しませんし、転売目的のご利用はお断りします。予約はあなた自身が公式サイトで行います。</p>
+</section>
+
+<div class="cta">
+  <a class="btn" href="__FORM_URL__">事前登録する(無料)</a>
+  <p class="note">正式公開時、先行登録者は初月無料(予定価格: 月980円)。</p>
+</div>
+
+<footer>キャンセル拾い — Darwin Factory 第1期生 No.3</footer>
+</div>
+</body>
+</html>

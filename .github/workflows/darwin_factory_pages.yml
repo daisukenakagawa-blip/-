@@ -1,0 +1,51 @@
+# ダーウィン工場: LP を GitHub Pages に公開する
+# sites/ か ventures.json が更新されたら自動デプロイ。手動実行も可。
+#
+# 事前準備(1回だけ): リポジトリの Settings → Pages → Source を
+# 「GitHub Actions」に設定すること。
+name: darwin-factory-pages
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - claude/passive-income-system-rgt55f
+    paths:
+      - darwin_factory/sites/**
+      - darwin_factory/ventures.json
+      - darwin_factory/build_sites.py
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: LP をビルド(フォームURL注入)
+        run: python darwin_factory/build_sites.py _site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
