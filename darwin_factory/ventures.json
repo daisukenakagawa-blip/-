@@ -31,7 +31,7 @@
       "status": "incubating",
       "launched": null,
       "site": "sites/cancel-watch",
-      "form_url": "",
+      "form_url": "https://docs.google.com/forms/d/e/1FAIpQLSfURRpbrESTBIt3tH23tfE77KOiL5C35TkruZh_9VHY92tJFA/viewform",
       "signup_csv_url": "",
       "criteria": { "observe_days": 30, "min_signups": 20 },
       "notes": "フォームで「どの施設を監視してほしいか」も収集し、最初に作る監視対象を市場に決めさせる。"
