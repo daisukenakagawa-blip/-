@@ -1,0 +1,28 @@
+# ネットワーク不要のデモ設定。ローカルのサンプルHTMLを収集対象にする。
+# pachi-scraper ディレクトリ内で実行すること:
+#   python -m pachi collect --config config.demo.yaml
+#   python -m pachi report  --config config.demo.yaml
+
+hall_name: "デモホール"
+base_url: "tests/fixtures"
+
+user_agent: "pachi-scraper/0.1 (demo)"
+rate_limit_seconds: 0
+respect_robots_txt: false
+
+table_selector: "table.unit_list"
+
+columns:
+  unit_no: ["台番号"]
+  bb: ["BB"]
+  rb: ["RB"]
+  start: ["総スタート"]
+  max_medals: ["最大出メダル"]
+
+pages:
+  - name: "アイムジャグラーEX"
+    url: "im_juggler.html"
+  - name: "マイジャグラーV"
+    url: "my_juggler.html"
+
+db_path: "data/demo.db"

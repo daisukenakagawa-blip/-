@@ -1,0 +1,36 @@
+# pachi-scraper 設定ファイルの例
+#
+# 対象サイトのURLとテーブル構造に合わせて書き換えて使う。
+# 収集前に必ず対象サイトの利用規約と robots.txt を確認すること。
+
+hall_name: "サンプルホール新宿店"
+
+# 台データ公開ページのベースURL（店舗トップ）
+base_url: "https://daidata.example.com/100001"
+
+# 節度あるアクセスのための設定
+user_agent: "pachi-scraper/0.1 (個人利用)"
+rate_limit_seconds: 3      # 1リクエストごとに最低3秒空ける
+respect_robots_txt: true
+
+# データテーブルを特定するCSSセレクタ
+table_selector: "table.unit_list"
+
+# テーブル見出し -> フィールドの対応。
+# サイトによって表記が違うので、候補を複数書ける。
+# unit_no は必須。start / bb / rb があると合成確率が計算される。
+columns:
+  unit_no: ["台番号", "台番"]
+  bb: ["BB", "BB回数", "ビッグ"]
+  rb: ["RB", "RB回数", "レギュラー"]
+  start: ["総スタート", "スタート", "総回転数", "累計スタート"]
+  max_medals: ["最大出メダル", "最大持ちメダル"]
+
+# 収集対象ページ（機種ごと）。url は base_url からの相対パス。
+pages:
+  - name: "アイムジャグラーEX"
+    url: "unit_list?model=1"
+  - name: "マイジャグラーV"
+    url: "unit_list?model=2"
+
+db_path: "data/pachi.db"
