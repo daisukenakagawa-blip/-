@@ -1,19 +1,21 @@
 # ペカセン (pekasen.com) 用の設定テンプレート
 #
 # ★ 使う前に必ず ★
-# ペカセンは自動アクセスをブロックしている形跡があります（外部フェッチに403を返す）。
-# 利用規約 (https://pekasen.com) と robots.txt を確認し、スクレイピングが
-# 禁止されている場合はこのツールを使わないでください。ブロックされた場合に
-# ヘッダ偽装などで回避することも避けてください。
-# その場合の代替は、各ホールが直接公開している台データサイト
-# （台データオンライン等）を対象にする方法です。
+# ペカセンは自動アクセスをブロックしています（外部からの機械的な取得に403を返す）。
+# collect による直接スクレイピングはできません。ブロックをヘッダ偽装などで
+# 回避するのは避けてください。
 #
-# ★ 設定の完成手順 ★
-# 1. ブラウザで店舗ページ（例: https://pekasen.com/store/tokyo-100558）を開き
-#    Ctrl+S で「ウェブページ、完全」として保存する
-# 2. python -m pachi inspect 保存したファイル.html を実行する
-#    -> テーブルごとのセレクタ候補と columns 案が表示される
-# 3. 下の table_selector / columns を表示された内容で置き換える
+# 代わりに、あなたがブラウザで普通に開いて保存したページを取り込みます:
+#   1. ブラウザで店舗ページ（例: https://pekasen.com/store/tokyo-100558）を開き
+#      Ctrl+S で「ウェブページ、完全」として保存する（inbox/ フォルダへ）
+#   2. python -m pachi watch  --config config.pekasen.yaml --inbox inbox
+#      （または ingest で1ファイルずつ取り込む）
+#   3. python -m pachi report --config config.pekasen.yaml
+#
+# ingest/watch はページ内の全機種テーブルを自動判定するので、下の columns さえ
+# 合っていれば table_selector や pages は使いません（collect専用の項目です）。
+# 取り込みがうまくいかない時は inspect で見出しを確認して columns を直します:
+#   python -m pachi inspect 保存したファイル.html
 
 hall_name: "メッセ扇店"   # 対象店舗名に変更
 
@@ -27,13 +29,14 @@ respect_robots_txt: true
 # TODO: inspect の結果で置き換える
 table_selector: "table"
 
-# TODO: inspect の結果で置き換える（以下はジャグラーデータの一般的な項目の予想）
+# 取り込みで使う見出し対応（ペカセンの一般的な項目に合わせた初期値）。
+# 取り込み台数が0なら inspect で実際の見出しを確認して直す。
 columns:
   unit_no: ["台番号", "台番"]
   bb: ["BB", "BIG"]
   rb: ["RB", "REG"]
-  start: ["総回転数", "G数", "総スタート"]
-  diff_medals: ["差枚"]
+  start: ["総回転数", "G数", "総スタート", "累計スタート"]
+  diff_medals: ["差枚", "差メダル"]
 
 # 店舗ページ。機種ごとにテーブルが分かれている場合は、同じURLを複数書いて
 # ページ個別の table_selector (例: "table:nth-of-type(2)") で振り分ける

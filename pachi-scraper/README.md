@@ -51,6 +51,33 @@ python -m pachi report  --config config.yaml --out reports
 python -m pachi inspect 保存したページ.html
 ```
 
+## 保存するだけで自動集計（ペカセン等、自動取得できないサイト向け）
+
+自動アクセスを拒否しているサイトは、あなたが**ブラウザで普通に開いて保存**し、
+そのHTMLをツールに渡せば集計できます（あなたは正規の訪問者なので、何も回避
+していません）。店舗ページのように機種ごとにテーブルが分かれていても、
+`ingest` / `watch` は**ページ内の全機種テーブルを自動で切り出し**、見出しから
+機種名を判定して取り込みます。
+
+**その場で1ファイル取り込む:**
+
+```bash
+python -m pachi ingest --config config.pekasen.yaml メッセ扇店.html
+python -m pachi report --config config.pekasen.yaml
+```
+
+**フォルダに入れるだけ運用（一番ラク）:** `inbox/` フォルダを監視し、保存した
+HTMLを置くだけで取り込み→`processed/`へ退避まで自動化します。
+
+```bash
+# 一回だけ処理:
+python -m pachi watch --config config.pekasen.yaml --inbox inbox
+# 常駐して監視（30秒間隔・Ctrl+Cで終了）:
+python -m pachi watch --config config.pekasen.yaml --inbox inbox --interval 30
+```
+
+毎日の手間は「店舗ページを開いて Ctrl+S で `inbox/` に保存」するだけになります。
+
 ## ペカセン (pekasen.com) を対象にする場合
 
 `config.pekasen.yaml` にテンプレートを用意しています。ただし**ペカセンは

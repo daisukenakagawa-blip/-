@@ -49,6 +49,30 @@ def test_list_tables():
     assert t["suggested_columns"]["start"] == "総スタート"
 
 
+def test_extract_all_unit_tables():
+    from pachi.parse import extract_all_unit_tables
+
+    columns = {
+        "unit_no": ["台番号"],
+        "bb": ["BB"],
+        "rb": ["RB"],
+        "start": ["総回転数"],
+        "diff_medals": ["差枚"],
+    }
+    html = (FIXTURES / "store_page.html").read_text(encoding="utf-8")
+    tables = extract_all_unit_tables(html, columns)
+
+    # 機種ごとに見出しが拾えて、2つのテーブルに分かれる
+    assert [t["model"] for t in tables] == ["マイジャグラーV", "アイムジャグラーEX"]
+    assert len(tables[0]["units"]) == 3
+    assert len(tables[1]["units"]) == 2
+
+    # 差枚の符号（+/-）も正しく取れる
+    myjug = tables[0]["units"]
+    assert myjug[0]["metrics"]["diff_medals"] == 1240
+    assert myjug[1]["metrics"]["diff_medals"] == -820
+
+
 def test_parse_missing_table():
     import pytest
 
