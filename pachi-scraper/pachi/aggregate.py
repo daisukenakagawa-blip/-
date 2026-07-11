@@ -36,6 +36,7 @@ def daily_model_summary(readings: list[dict]) -> list[dict]:
         total_bb = sum(r.get("bb") or 0 for r in rows)
         total_rb = sum(r.get("rb") or 0 for r in rows)
         total_bonus = sum(_bonus_total(r) for r in rows)
+        diffs = [r["diff_medals"] for r in rows if r.get("diff_medals") is not None]
         summary.append(
             {
                 "date": date,
@@ -49,6 +50,8 @@ def daily_model_summary(readings: list[dict]) -> list[dict]:
                 "combined_prob": (
                     round(total_start / total_bonus, 1) if total_start and total_bonus else None
                 ),
+                "total_diff": sum(diffs) if diffs else None,
+                "avg_diff": round(sum(diffs) / len(diffs), 1) if diffs else None,
             }
         )
     return summary

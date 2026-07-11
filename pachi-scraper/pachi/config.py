@@ -12,6 +12,7 @@ import yaml
 class PageConfig:
     name: str  # 機種名（集計時のラベルになる）
     url: str   # base_url からの相対URL、または絶対URL/ローカルパス
+    table_selector: str | None = None  # ページ個別のセレクタ（省略時は全体設定を使う）
 
 
 @dataclasses.dataclass
@@ -30,7 +31,10 @@ class Config:
 def load_config(path: str | Path) -> Config:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
 
-    pages = [PageConfig(name=p["name"], url=p["url"]) for p in raw["pages"]]
+    pages = [
+        PageConfig(name=p["name"], url=p["url"], table_selector=p.get("table_selector"))
+        for p in raw["pages"]
+    ]
 
     # columns は "bb: BB" のような単一文字列も許容し、常にリストへ正規化する
     columns: dict[str, list[str]] = {}

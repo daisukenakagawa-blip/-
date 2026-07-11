@@ -33,6 +33,22 @@ def test_parse_unit_table():
     assert first["metrics"] == {"bb": 25, "rb": 18, "start": 7234, "max_medals": 3560}
 
 
+def test_list_tables():
+    from pachi.parse import list_tables
+
+    html = (FIXTURES / "im_juggler.html").read_text(encoding="utf-8")
+    tables = list_tables(html)
+
+    assert len(tables) == 1
+    t = tables[0]
+    assert t["selector"] == "table.unit_list"
+    assert t["headers"] == ["台番号", "BB", "RB", "総スタート", "最大出メダル"]
+    assert t["rows"] == 5  # 広告行込みの生の行数
+    assert t["suggested_columns"]["unit_no"] == "台番号"
+    assert t["suggested_columns"]["bb"] == "BB"
+    assert t["suggested_columns"]["start"] == "総スタート"
+
+
 def test_parse_missing_table():
     import pytest
 

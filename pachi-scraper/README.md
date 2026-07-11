@@ -42,6 +42,23 @@ python -m pachi collect --config config.yaml --date 2026-07-10
 python -m pachi report  --config config.yaml --out reports
 ```
 
+## 新しいサイトへの対応を楽にする inspect コマンド
+
+対象ページをブラウザで保存（Ctrl+S）して渡すと、テーブル構造を解析して
+`config.yaml` に貼り付けられる `table_selector` / `columns` の案を出力します。
+
+```bash
+python -m pachi inspect 保存したページ.html
+```
+
+## ペカセン (pekasen.com) を対象にする場合
+
+`config.pekasen.yaml` にテンプレートを用意しています。ただし**ペカセンは
+自動アクセスをブロックしている形跡があります**（外部からの機械的な取得に403を
+返す）。利用規約を確認し、拒否されている場合は使わないでください。ブロックを
+ヘッダ偽装などで回避するのは避け、その場合は各ホールが直接公開している
+台データサイトを対象にすることを推奨します。
+
 ## 毎日自動で収集する
 
 cron（Linux/Mac）の例。閉店後の時間帯に1日1回:

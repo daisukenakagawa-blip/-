@@ -3,6 +3,7 @@
 使い方:
     python -m pachi collect --config config.yaml [--date 2026-07-11]
     python -m pachi report  --config config.yaml [--out reports/]
+    python -m pachi inspect saved_page.html   # 保存したHTMLから設定を提案
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from urllib.parse import urljoin
 from .aggregate import daily_model_summary, unit_history, write_csv
 from .config import load_config
 from .http import Fetcher
-from .parse import parse_unit_table
+from .parse import list_tables, parse_unit_table
 from .storage import connect, load_readings, save_readings
 
 
@@ -33,9 +34,10 @@ def cmd_collect(args: argparse.Namespace) -> int:
     for page in cfg.pages:
         url = urljoin(cfg.base_url + "/", page.url)
         print(f"[collect] {page.name}: {url}")
+        selector = page.table_selector or cfg.table_selector
         try:
             html = fetcher.fetch(url)
-            units = parse_unit_table(html, cfg.table_selector, cfg.columns)
+            units = parse_unit_table(html, selector, cfg.columns)
         except Exception as exc:  # 1機種の失敗で全体を止めない
             print(f"  !! 失敗: {exc}", file=sys.stderr)
             continue
@@ -73,6 +75,32 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_inspect(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    html = Path(args.html_file).read_text(encoding="utf-8")
+    tables = list_tables(html)
+    if not tables:
+        print("テーブルが見つかりませんでした。JavaScriptで描画されるページの可能性があります。")
+        print("その場合はブラウザで完全に表示された状態で保存し直してください（Ctrl+S）。")
+        return 1
+
+    print(f"{len(tables)} 個のテーブルが見つかりました。\n")
+    for t in tables:
+        print(f"■ セレクタ候補: {t['selector']}  (データ行数: {t['rows']})")
+        print(f"  見出し: {t['headers']}")
+        if t["sample"]:
+            print(f"  1行目: {t['sample']}")
+        if t["suggested_columns"]:
+            print("  --- config.yaml に貼り付ける columns 案 ---")
+            print(f"  table_selector: \"{t['selector']}\"")
+            print("  columns:")
+            for field, header in t["suggested_columns"].items():
+                print(f"    {field}: [\"{header}\"]")
+        print()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pachi", description="台データ収集・集計ツール")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -86,6 +114,12 @@ def main(argv: list[str] | None = None) -> int:
     p_report.add_argument("--config", required=True)
     p_report.add_argument("--out", default="reports")
     p_report.set_defaults(func=cmd_report)
+
+    p_inspect = sub.add_parser(
+        "inspect", help="保存済みHTMLのテーブル構造を解析して設定を提案"
+    )
+    p_inspect.add_argument("html_file")
+    p_inspect.set_defaults(func=cmd_inspect)
 
     args = parser.parse_args(argv)
     return args.func(args)

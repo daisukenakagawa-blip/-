@@ -1,0 +1,47 @@
+# ペカセン (pekasen.com) 用の設定テンプレート
+#
+# ★ 使う前に必ず ★
+# ペカセンは自動アクセスをブロックしている形跡があります（外部フェッチに403を返す）。
+# 利用規約 (https://pekasen.com) と robots.txt を確認し、スクレイピングが
+# 禁止されている場合はこのツールを使わないでください。ブロックされた場合に
+# ヘッダ偽装などで回避することも避けてください。
+# その場合の代替は、各ホールが直接公開している台データサイト
+# （台データオンライン等）を対象にする方法です。
+#
+# ★ 設定の完成手順 ★
+# 1. ブラウザで店舗ページ（例: https://pekasen.com/store/tokyo-100558）を開き
+#    Ctrl+S で「ウェブページ、完全」として保存する
+# 2. python -m pachi inspect 保存したファイル.html を実行する
+#    -> テーブルごとのセレクタ候補と columns 案が表示される
+# 3. 下の table_selector / columns を表示された内容で置き換える
+
+hall_name: "メッセ扇店"   # 対象店舗名に変更
+
+# 店舗ページのURL。複数店舗を追いたい場合は店舗ごとに設定ファイルを分ける
+base_url: "https://pekasen.com"
+
+user_agent: "pachi-scraper/0.1 (個人利用)"
+rate_limit_seconds: 5      # 外部サイトなので長めに
+respect_robots_txt: true
+
+# TODO: inspect の結果で置き換える
+table_selector: "table"
+
+# TODO: inspect の結果で置き換える（以下はジャグラーデータの一般的な項目の予想）
+columns:
+  unit_no: ["台番号", "台番"]
+  bb: ["BB", "BIG"]
+  rb: ["RB", "REG"]
+  start: ["総回転数", "G数", "総スタート"]
+  diff_medals: ["差枚"]
+
+# 店舗ページ。機種ごとにテーブルが分かれている場合は、同じURLを複数書いて
+# ページ個別の table_selector (例: "table:nth-of-type(2)") で振り分ける
+pages:
+  - name: "ジャグラー全機種"
+    url: "store/tokyo-100558"   # TODO: 対象店舗のパスに変更
+  # - name: "マイジャグラーV"
+  #   url: "store/tokyo-100558"
+  #   table_selector: "table:nth-of-type(2)"
+
+db_path: "data/pekasen.db"

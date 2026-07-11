@@ -28,6 +28,55 @@ def _clean(text: str) -> str:
     return unicodedata.normalize("NFKC", text).strip()
 
 
+# inspect コマンドが列マッピングを提案するときに使う見出しキーワード
+KNOWN_HEADER_FIELDS = {
+    "unit_no": ["台番号", "台番", "No"],
+    "bb": ["BB", "ビッグ", "BIG"],
+    "rb": ["RB", "レギュラー", "REG", "バケ"],
+    "start": ["総スタート", "スタート", "総回転", "G数", "ゲーム数", "総G数"],
+    "diff_medals": ["差枚", "差メダル"],
+    "max_medals": ["最大出メダル", "最大持ちメダル"],
+}
+
+
+def list_tables(html: str) -> list[dict]:
+    """HTML内の全テーブルを列挙し、設定ファイル作成の材料を返す。
+
+    各要素: {"selector": "table:nth-of-type(1)", "headers": [...],
+             "rows": 行数, "sample": 最初のデータ行, "suggested_columns": {...}}
+    """
+    soup = BeautifulSoup(html, "lxml")
+    tables = []
+    for i, table in enumerate(soup.find_all("table"), start=1):
+        rows = table.find_all("tr")
+        if not rows:
+            continue
+        headers = [_clean(c.get_text()) for c in rows[0].find_all(["th", "td"])]
+        sample = (
+            [_clean(c.get_text()) for c in rows[1].find_all(["th", "td"])]
+            if len(rows) > 1
+            else []
+        )
+        suggested: dict[str, str] = {}
+        for field, keywords in KNOWN_HEADER_FIELDS.items():
+            for header in headers:
+                if any(kw.lower() in header.lower() for kw in keywords):
+                    suggested[field] = header
+                    break
+        klass = table.get("class")
+        selector = f"table.{klass[0]}" if klass else f"table:nth-of-type({i})"
+        tables.append(
+            {
+                "selector": selector,
+                "headers": headers,
+                "rows": len(rows) - 1,
+                "sample": sample,
+                "suggested_columns": suggested,
+            }
+        )
+    return tables
+
+
 def parse_unit_table(
     html: str,
     table_selector: str,
