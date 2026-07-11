@@ -27,6 +27,7 @@ from modules import (
     review_board,
     script_generator,
     thumbnail_generator,
+    topic_generator,
     video_editor,
     voice_generator,
 )
@@ -197,6 +198,35 @@ def _parse_date(date_str: str):
         except ValueError:
             continue
     return None
+
+
+def used_topic_names(rows: list) -> list:
+    """過去に使った (topics.csv + uploaded_log.csv の) テーマ名一覧。"""
+    names = [r["topic"].strip() for r in rows if (r.get("topic") or "").strip()]
+    if config.UPLOADED_LOG_CSV.exists():
+        with open(config.UPLOADED_LOG_CSV, encoding="utf-8", newline="") as f:
+            for r in csv.DictReader(f):
+                t = (r.get("topic") or "").strip()
+                if t and t not in names:
+                    names.append(t)
+    return names
+
+
+def auto_fill_topic(rows: list) -> dict:
+    """pending が無いときに新テーマを自動生成して topics.csv に追加する。"""
+    topic = topic_generator.generate_topic(used_topic_names(rows))
+    row = {
+        "date": date.today().isoformat(),  # 当日扱い → PUBLISH_TIME に予約投稿
+        "topic": topic,
+        "platform": "youtube",
+        "status": "pending",
+        "background": "",
+        "script": "",
+        "bgm": "",
+    }
+    rows.append(row)
+    save_topics(rows)
+    return row
 
 
 def pending_topics(rows: list) -> list:
@@ -459,6 +489,10 @@ def main() -> int:
     parser.add_argument("--auth-only", action="store_true", help="YouTube の OAuth 認証のみ行う")
     parser.add_argument("--topic", help="topics.csv を使わず、このテーマを単発処理する")
     parser.add_argument("--date", help="--topic 使用時の投稿予定日 (YYYY-MM-DD)")
+    parser.add_argument(
+        "--auto-topic", action="store_true",
+        help="pending が無いとき新テーマを自動生成して処理する (AUTO_TOPIC=1 でも有効)",
+    )
     args = parser.parse_args()
 
     config.ensure_dirs()
@@ -485,8 +519,11 @@ def main() -> int:
     all_rows = load_topics()
     targets = pending_topics(all_rows)
     if not targets:
-        logger.info("処理対象 (status=pending) のテーマがありません")
-        return 0
+        if args.auto_topic or config.AUTO_TOPIC:
+            targets = [auto_fill_topic(all_rows)]
+        else:
+            logger.info("処理対象 (status=pending) のテーマがありません")
+            return 0
 
     if not args.all:
         targets = targets[:1]

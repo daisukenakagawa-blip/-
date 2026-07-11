@@ -10,9 +10,12 @@
 
 name: auto-video-upload
 
-# 自動(毎日の定時実行)は停止中。ユーザーの指示があったときだけ実行する。
+# 完全放置モード: 毎日 08:00 JST に自動実行。テーマが無ければ AI が自動生成する。
+# (schedule はデフォルトブランチのワークフローのみ動く点に注意)
 # 手動実行: GitHub の Run workflow ボタン、または run_now.txt の更新で起動。
 on:
+  schedule:
+    - cron: "0 23 * * *"  # 23:00 UTC = 08:00 JST
   workflow_dispatch: {}
   push:
     branches:
@@ -83,6 +86,7 @@ jobs:
           FONT_PATH: /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc
           FONT_NAME: Noto Sans CJK JP
           TTS_ENGINE: auto
+          AUTO_TOPIC: "1"  # テーマ在庫が無くても自動生成して投稿を続ける
         run: python main.py
 
       - name: 投稿状態をリポジトリに保存

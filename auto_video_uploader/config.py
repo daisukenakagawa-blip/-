@@ -24,6 +24,8 @@ TOPICS_CSV = BASE_DIR / "topics.csv"
 # Google スプレッドシートの「ウェブに公開 (CSV)」URL。設定すると実行時に
 # シートの内容を topics.csv へ自動で取り込む(スマホからのテーマ追加用)
 TOPICS_SHEET_URL = os.getenv("TOPICS_SHEET_URL", "").strip()
+# 1 にすると pending が無いとき新テーマを自動生成して投稿を続ける (完全放置モード)
+AUTO_TOPIC = os.getenv("AUTO_TOPIC", "0").strip().lower() in ("1", "true", "yes")
 UPLOADED_LOG_CSV = BASE_DIR / "uploaded_log.csv"
 ERROR_LOG_TXT = LOGS_DIR / "error_log.txt"
 APP_LOG_TXT = LOGS_DIR / "app.log"
