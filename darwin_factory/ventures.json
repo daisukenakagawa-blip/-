@@ -7,7 +7,7 @@
       "status": "incubating",
       "launched": null,
       "site": "sites/agent-tools",
-      "form_url": "",
+      "form_url": "https://docs.google.com/forms/d/e/1FAIpQLScAciE09fZlOGZ92Kqmqbk0w7M7GnecEbO4SuqTx0E-iSuwVg/viewform",
       "signup_csv_url": "",
       "criteria": { "observe_days": 30, "min_signups": 10 },
       "notes": "顧客が人間ではなくAIエージェント。まずは開発者の事前登録数で需要を観測する。"
