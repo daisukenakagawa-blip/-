@@ -1,0 +1,29 @@
+{
+  "_readme": "サイトを追加するときは sites に要素を足すだけ。type は 'rss' か 'html'。html の場合は selectors (CSSセレクタ) を設定する。enabled を false にすると一時的に無効化できる。",
+  "sites": [
+    {
+      "name": "グリーンべると(業界ニュース)",
+      "type": "rss",
+      "url": "https://web-greenbelt.jp/feed/",
+      "enabled": true
+    },
+    {
+      "name": "パチンコビレッジ(新台・業界ニュース)",
+      "type": "rss",
+      "url": "https://www.pachinkovillage.com/feed/",
+      "enabled": true
+    },
+    {
+      "name": "サンプル: HTMLサイトの設定例",
+      "type": "html",
+      "url": "https://example.com/news/",
+      "enabled": false,
+      "selectors": {
+        "item": "article.post",
+        "title": "h2",
+        "link": "a",
+        "date": "time"
+      }
+    }
+  ]
+}
